@@ -1,1 +1,33 @@
 @import "tailwindcss";
+
+:root {
+  --dynamic-cell-size: 10px; 
+}
+
+html:fullscreen, body:fullscreen {
+  overflow: hidden;
+}
+
+/* Stronger prevention of pinch-zoom on trackpads/touchscreens */
+html, body {
+  touch-action: none;
+  -ms-touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Additional CSS to override browser zoom behavior */
+@media (pointer: fine) {
+  /* For devices with precise pointer (mouse/trackpad) */
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+/* Additional rule to prevent any text selection that might trigger gestures */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+

@@ -11,5 +11,5 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 if (supabaseUrl && supabaseAnonKey) {
   console.log("Supabase client initialized successfully.");
 } else {
-  console.warn("Supabase client initialized with missing URL or Key. This will likely lead to errors.");
+  console.warn("Supabase initialization failed due to missing environment variables.");
 }

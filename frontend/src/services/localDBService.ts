@@ -49,72 +49,111 @@ export const openLocalDB = (): Promise<void> => {
 
 export const storePixelUpdates = async (pixels: Pixel[]): Promise<void> => {
   if (!db) {
-    console.warn('Local database not initialized');
+    console.warn('Local database not initialized. Cannot store pixel updates.');
     return;
   }
-  
-  return new Promise((resolve, reject) => {
-    try {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      
-      let completedOps = 0;
-      const totalOps = pixels.length;
-      
-      pixels.forEach(pixel => {
-        try {
-          const id = `${pixel.x}:${pixel.y}`;
-          
-          const pixelWithId = {
-            id: id, 
-            x: pixel.x,
-            y: pixel.y,
-            color: pixel.color,
-            timestamp: pixel.timestamp || Date.now()
-          };
-          
-          const putRequest = store.put(pixelWithId);
-          
-          putRequest.onsuccess = () => {
-            completedOps++;
-            if (completedOps === totalOps) {
-              resolve();
-            }
-          };
-          
-          putRequest.onerror = (event) => {
-            console.error(`Error putting pixel at ${pixel.x},${pixel.y}:`, event);
-            completedOps++;
-            if (completedOps === totalOps) {
-              resolve();
-            }
-          };
-        } catch (putError) {
-          console.error('Error in put operation:', putError);
-          completedOps++;
-          if (completedOps === totalOps) {
-            resolve();
-          }
-        }
-      });
-      
-      if (pixels.length === 0) {
-        resolve();
+  if (!pixels || pixels.length === 0) {
+    return; 
+  }
+
+  let transaction: IDBTransaction | null = null;
+  try {
+    transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+
+    const putOperations: Promise<void>[] = pixels.map(pixel => {
+      if (pixel === null || typeof pixel !== 'object') {
+        console.warn('storePixelUpdates: Invalid pixel data (null or not an object), skipping:', JSON.stringify(pixel));
+        return Promise.resolve(); 
+      }
+      if (typeof pixel.x !== 'number' || isNaN(pixel.x)) {
+        console.warn('storePixelUpdates: Invalid pixel.x (not a number or NaN), skipping pixel:', JSON.stringify(pixel));
+        return Promise.resolve();
+      }
+      if (typeof pixel.y !== 'number' || isNaN(pixel.y)) {
+        console.warn('storePixelUpdates: Invalid pixel.y (not a number or NaN), skipping pixel:', JSON.stringify(pixel));
+        return Promise.resolve();
+      }
+      if (typeof pixel.color !== 'string') {
+        console.warn('storePixelUpdates: Invalid pixel.color (not a string), skipping pixel:', JSON.stringify(pixel));
+        return Promise.resolve();
+      }
+
+      const generatedId = `${pixel.x}:${pixel.y}`;
+
+      const objectToStore: { id: string; x: number; y: number; color: string; timestamp: number } = {
+        id: generatedId,
+        x: pixel.x,
+        y: pixel.y,
+        color: pixel.color,
+        timestamp: (typeof pixel.timestamp === 'number' && !isNaN(pixel.timestamp)) ? pixel.timestamp : Date.now(),
+      };
+
+      if (typeof objectToStore.id !== 'string' || objectToStore.id === undefined) {
+          console.error(
+            'storePixelUpdates: CRITICAL PRE-FLIGHT CHECK FAILED - objectToStore.id is invalid before put.',
+            `Generated ID was: '${generatedId}'. objectToStore.id is: '${objectToStore.id}'.`,
+            'Full objectToStore:', JSON.stringify(objectToStore),
+            'Original pixel:', JSON.stringify(pixel)
+          );
+          return Promise.reject(new Error(`Invalid 'id' property on object for IndexedDB keyPath: value was ${objectToStore.id}`));
       }
       
-      transaction.oncomplete = () => {
+      const finalObjectForPut = { ...objectToStore };
+
+      return new Promise<void>((resolveRequest, rejectRequest) => {
+        try {
+          const request = store.put(finalObjectForPut);
+          
+          request.onsuccess = () => resolveRequest();
+          request.onerror = (event) => {
+            const error = (event.target as IDBRequest).error;
+            console.error(
+              `storePixelUpdates: IDBRequest failed for id '${finalObjectForPut.id}'. Error: ${error?.name} - ${error?.message}`,
+              'Object attempted:', JSON.stringify(finalObjectForPut)
+            );
+            rejectRequest(error);
+          };
+        } catch (e: any) { 
+          console.error(
+            `storePixelUpdates: Synchronous error during store.put() for id '${finalObjectForPut.id}'. Error: ${e?.name} - ${e?.message}`, e,
+            'Object attempted:', JSON.stringify(finalObjectForPut)
+          );
+          rejectRequest(e);
+        }
+      });
+    });
+
+    await Promise.all(putOperations);
+
+    return new Promise<void>((resolve, reject) => {
+      if (transaction) {
+        transaction.oncomplete = () => {
+          resolve();
+        };
+        transaction.onerror = (event) => {
+          const error = (event.target as IDBTransaction).error;
+          console.error('storePixelUpdates: Transaction failed:', error?.name, error?.message);
+          reject(error);
+        };
+      } else {
+        console.warn("storePixelUpdates: Transaction was null after map operations, resolving.");
         resolve();
-      };
-      
-      transaction.onerror = (event) => {
-        console.error('Transaction error in storePixelUpdates:', event);
-        resolve();
-      };
-    } catch (error) {
-      console.error('Error in storePixelUpdates:', error);
-      resolve();
+      }
+    });
+
+  } catch (error: any) {
+    console.error('storePixelUpdates: Error during pixel storage process:', error?.name, error?.message, error);
+    if (transaction && transaction.error === null && transaction.readyState !== "done") {
+        try {
+            transaction.abort();
+            console.log("storePixelUpdates: Transaction aborted due to error.");
+        } catch (abortError: any) {
+            console.error('storePixelUpdates: Error aborting transaction:', abortError?.name, abortError?.message);
+        }
     }
-  });
+    throw error; 
+  }
 };
 export const getLocalGrid = async (): Promise<string[][] | null> => {
   if (!db) {
@@ -190,7 +229,6 @@ export const clearLocalGrid = async (): Promise<void> => {
       
       request.onerror = (event) => {
         console.error('Error clearing local grid data:', event);
-        // Don't reject on error, just log it
         resolve();
       };
       
