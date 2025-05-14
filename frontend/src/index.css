@@ -31,3 +31,22 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Performance optimization for Canvas grid rendering */
+.canvas-cell {
+  will-change: transform;
+  contain: strict;
+}
+
+/* Add contain: paint to improve rendering performance */
+.canvas-grid-container {
+  contain: layout paint;
+  will-change: transform;
+}
+
+/* Use GPU acceleration for certain animations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
