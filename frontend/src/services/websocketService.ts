@@ -23,7 +23,7 @@ class WebSocketService {
     this.isConnecting = true;
     
     try {
-      const wsServerUrl = import.meta.env.VITE_WEBSOCKET_URL || 'ws://192.168.157.248:8080';
+      const wsServerUrl = import.meta.env.VITE_WEBSOCKET_URL || 'ws://192.168.111.248:8080';
       console.log("Connecting to websocket at:", wsServerUrl);
       
       this.socket = new WebSocket(wsServerUrl);

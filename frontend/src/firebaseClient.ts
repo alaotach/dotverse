@@ -15,6 +15,7 @@ const firebaseConfig = {
 
 // Log the configuration to check if Vite is loading .env Variables correctly
 // This is useful for debugging but should be removed in production
+// to avoid exposing sensitive information
 console.log("Firebase Config Loaded:", firebaseConfig);
 
 // Check for missing essential configuration keys
@@ -25,6 +26,7 @@ if (missingKeys.length > 0) {
   const errorMessage = `Firebase configuration is missing required keys: ${missingKeys.join(', ')}. Please check your .env file and Vite setup.`;
   console.error(errorMessage);
   alert(errorMessage); // Also alert to make it very visible during development
+  // Optionally, you can throw an error to stop execution
   throw new Error(errorMessage);
 }
 

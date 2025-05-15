@@ -77,14 +77,24 @@ const CLIENT_ID = `client_${Math.random().toString(36).substring(2, 15)}`;
 // Add this utility function for line drawing (Bresenham's algorithm)
 const plotLine = (x0: number, y0: number, x1: number, y1: number): {x: number, y: number}[] => {
   const points: {x: number, y: number}[] = [];
+  
+  // Use high-quality line algorithm with pixel-perfect coverage
   const dx = Math.abs(x1 - x0);
   const dy = Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
+  
+  // Create a set to track unique points (avoid duplicates for efficiency)
+  const addedPoints = new Set<string>();
 
   while (true) {
-    points.push({x: x0, y: y0});
+    // Only add points we haven't seen before
+    const pointKey = `${x0},${y0}`;
+    if (!addedPoints.has(pointKey)) {
+      addedPoints.add(pointKey);
+      points.push({x: x0, y: y0});
+    }
     
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
@@ -194,10 +204,16 @@ export default function Canvas() {
   const canvasContainerRef = useRef<HTMLDivElement>(null); 
   // REMOVE: pixelPaintBatchRef is managed by PixelBatchManager
   // const pixelPaintBatchRef = useRef<Pixel[]>([]); 
-  const animationFrameIdRef = useRef<number | null>(null);
+  // REMOVE: animationFrameIdRef is now animationFrameRequestRef for viewport/zoom
+  // const animationFrameIdRef = useRef<number | null>(null);
   const panStartMousePositionRef = useRef<{ x: number, y: number } | null>(null);
   const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);
   const isSpacebarHeldRef = useRef<boolean>(false); // For Spacebar + Left Click panning
+
+  // Refs for requestAnimationFrame based viewport/zoom updates
+  const latestViewportOffsetTargetRef = useRef(viewportOffset);
+  const latestZoomLevelTargetRef = useRef(zoomLevel);
+  const animationFrameRequestRef = useRef<number | null>(null);
 
   // Fixed: Properly define toggleDebugMode as a useCallback function
   const toggleDebugMode = useCallback(() => {
@@ -205,69 +221,95 @@ export default function Canvas() {
     console.log("Debug mode toggled:", !debugMode);
   }, [debugMode]);
 
+  // Effect to keep RAF target refs in sync with state if changed by other means
+  useEffect(() => {
+    latestViewportOffsetTargetRef.current = viewportOffset;
+  }, [viewportOffset]);
+
+  useEffect(() => {
+    latestZoomLevelTargetRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  // RAF callback to apply batched viewport/zoom state updates
+  const processViewportUpdatesRAF = useCallback(() => {
+    setViewportOffset(latestViewportOffsetTargetRef.current);
+    setZoomLevel(latestZoomLevelTargetRef.current);
+    animationFrameRequestRef.current = null;
+  }, [setViewportOffset, setZoomLevel]); // setViewportOffset and setZoomLevel are stable
+
+  // Function to request an animation frame for viewport/zoom updates
+  const requestViewportUpdateRAF = useCallback(() => {
+    if (!animationFrameRequestRef.current) {
+      animationFrameRequestRef.current = requestAnimationFrame(processViewportUpdatesRAF);
+    }
+  }, [processViewportUpdatesRAF]);
+
+
   // Add the handleWheel function here inside the component
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement> | WheelEvent) => {
     if (!canvasContainerRef.current) return;
     
-    // Always prevent default to avoid browser zoom
-    event.preventDefault();
+    event.preventDefault(); // Always prevent default for custom handling
+
+    const currentZoom = latestZoomLevelTargetRef.current; // Use target ref for calculations
+    const currentOffset = latestViewportOffsetTargetRef.current; // Use target ref
+    const currentEffectiveCellSize = CELL_SIZE * currentZoom;
+
 
     if (event.ctrlKey || event.metaKey) { // Support both Ctrl (Windows/Linux) and Cmd (Mac)
-      // Store current grid before zoom changes
-      previousGridRef.current = new Map(grid);
+      previousGridRef.current = new Map(grid); // For flicker reduction, not direct responsiveness
       
-      // Zooming logic
       const rect = canvasContainerRef.current.getBoundingClientRect();
-      const mouseXOnCanvas = event.clientX - rect.left; // Mouse X relative to canvas
-      const mouseYOnCanvas = event.clientY - rect.top;  // Mouse Y relative to canvas
+      const mouseXOnCanvas = event.clientX - rect.left;
+      const mouseYOnCanvas = event.clientY - rect.top;
 
-      // World coordinates of the pixel under the mouse before zoom
-      const worldXBeforeZoom = viewportOffset.x + mouseXOnCanvas / effectiveCellSize;
-      const worldYBeforeZoom = viewportOffset.y + mouseYOnCanvas / effectiveCellSize;
+      const worldXBeforeZoom = currentOffset.x + mouseXOnCanvas / currentEffectiveCellSize;
+      const worldYBeforeZoom = currentOffset.y + mouseYOnCanvas / currentEffectiveCellSize;
 
-      // Calculate new zoom level
       const zoomFactor = event.deltaY < 0 ? (1 + ZOOM_SENSITIVITY) : (1 - ZOOM_SENSITIVITY);
-      let newZoomLevel = zoomLevel * zoomFactor;
-      newZoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoomLevel));
+      let newZoomLevelTarget = currentZoom * zoomFactor;
+      newZoomLevelTarget = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoomLevelTarget));
       
-      setZoomLevel(newZoomLevel);
-      const newEffectiveCellSize = CELL_SIZE * newZoomLevel;
+      const newEffectiveCellSizeTarget = CELL_SIZE * newZoomLevelTarget;
 
-      // Calculate new viewport offset to keep the mouse pointer stationary
-      const newViewportX = worldXBeforeZoom - mouseXOnCanvas / newEffectiveCellSize;
-      const newViewportY = worldYBeforeZoom - mouseYOnCanvas / newEffectiveCellSize;
+      const newViewportXTarget = worldXBeforeZoom - mouseXOnCanvas / newEffectiveCellSizeTarget;
+      const newViewportYTarget = worldYBeforeZoom - mouseYOnCanvas / newEffectiveCellSizeTarget;
       
-      setViewportOffset({ x: newViewportX, y: newViewportY });
+      latestZoomLevelTargetRef.current = newZoomLevelTarget;
+      latestViewportOffsetTargetRef.current = { x: newViewportXTarget, y: newViewportYTarget };
+      requestViewportUpdateRAF();
+
     } else { // Panning
       let scrollPixelX = event.deltaX;
       let scrollPixelY = event.deltaY;
 
-      // Normalize scroll delta based on deltaMode
-      if (event.deltaMode === 1) { // DOM_DELTA_LINE
+      if (event.deltaMode === 1) { 
           scrollPixelX *= PIXELS_PER_LINE;
           scrollPixelY *= PIXELS_PER_LINE;
-      } else if (event.deltaMode === 2) { // DOM_DELTA_PAGE
+      } else if (event.deltaMode === 2) { 
           if (canvasContainerRef.current) {
-              scrollPixelX *= canvasContainerRef.current.clientWidth * 0.8; // 80% of viewport width
-              scrollPixelY *= canvasContainerRef.current.clientHeight * 0.8; // 80% of viewport height
+              scrollPixelX *= canvasContainerRef.current.clientWidth * 0.8;
+              scrollPixelY *= canvasContainerRef.current.clientHeight * 0.8;
           }
       }
 
-      // If Shift key is pressed with vertical scroll, interpret as horizontal scroll
       if (event.shiftKey && scrollPixelY !== 0 && scrollPixelX === 0) {
           scrollPixelX = scrollPixelY;
           scrollPixelY = 0;
       }
       
-      const panXAmount = scrollPixelX / effectiveCellSize;
-      const panYAmount = scrollPixelY / effectiveCellSize;
+      const panXAmount = scrollPixelX / currentEffectiveCellSize;
+      const panYAmount = scrollPixelY / currentEffectiveCellSize;
 
-      setViewportOffset(prevOffset => ({
-          x: prevOffset.x + panXAmount,
-          y: prevOffset.y + panYAmount,
-      }));
+      latestViewportOffsetTargetRef.current = {
+          x: currentOffset.x + panXAmount,
+          y: currentOffset.y + panYAmount,
+      };
+      // Ensure zoom target ref is also current, even if only offset changes
+      latestZoomLevelTargetRef.current = currentZoom; 
+      requestViewportUpdateRAF();
     }
-  }, [zoomLevel, viewportOffset, effectiveCellSize, setZoomLevel, setViewportOffset, grid]);
+  }, [grid, requestViewportUpdateRAF]); // Removed zoomLevel, viewportOffset, effectiveCellSize as direct deps
 
   // Effect to calculate viewport dimensions in cells
   useEffect(() => {
@@ -772,13 +814,39 @@ export default function Canvas() {
     }
 
     const currentPosition = { x: worldX, y: worldY };
+    
+    // Ensure we have a last position, even if doing first click-drag
     const lastPosition = lastPositionRef.current || currentPosition;
       
-    const linePoints = plotLine(lastPosition.x, lastPosition.y, currentPosition.x, currentPosition.y);
+    // Calculate distance moved since last point
+    const dx = Math.abs(currentPosition.x - lastPosition.x);
+    const dy = Math.abs(currentPosition.y - lastPosition.y);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Generate line points between last position and current position
+    // For very fast movements, generate more intermediary points
+    // This ensures we don't miss pixels even during fast drawing
+    let linePoints: {x: number, y: number}[] = [];
+    
+    // For longer distances, increase density of points for smoother lines
+    if (distance > 10) {
+      // Create more intermediary points for long lines
+      const steps = Math.ceil(distance * 1.5); // 1.5 points per unit of distance
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = Math.round(lastPosition.x + (currentPosition.x - lastPosition.x) * t);
+        const y = Math.round(lastPosition.y + (currentPosition.y - lastPosition.y) * t);
+        linePoints.push({x, y});
+      }
+    } else {
+      // For shorter movements, use the standard Bresenham line algorithm
+      linePoints = plotLine(lastPosition.x, lastPosition.y, currentPosition.x, currentPosition.y);
+    }
       
     const pixelsToBatch: Pixel[] = [];
     const effectiveColor = getEffectiveColor();
 
+    // Process each point in the line
     linePoints.forEach(point => {
       if (isEraserActive) {
         pixelsToBatch.push(...getPixelsInEraserArea(point.x, point.y, eraserSize, effectiveColor));
@@ -796,12 +864,22 @@ export default function Canvas() {
       // Filter for optimistic update before adding to batch manager
       const drawablePixelsForOptimisticUpdate = pixelsToBatch.filter(p => canDrawAtPoint(p.x, p.y));
       
-      if (drawablePixelsForOptimisticUpdate.length > 0) {
+      // Use a Set to ensure we don't have duplicate pixels in the update
+      // This prevents wasteful redrawing of the same pixel
+      const uniqueDrawablePixels = new Map<string, Pixel>();
+      drawablePixelsForOptimisticUpdate.forEach(pixel => {
+        const key = `${pixel.x}:${pixel.y}`;
+        uniqueDrawablePixels.set(key, pixel);
+      });
+      
+      const uniquePixelsArray = Array.from(uniqueDrawablePixels.values());
+      
+      if (uniquePixelsArray.length > 0) {
         // Optimistic UI update for responsiveness
         setGrid(prevGrid => {
           const newGrid = new Map(prevGrid);
           let hasChanges = false;
-          drawablePixelsForOptimisticUpdate.forEach(({ x, y, color }) => {
+          uniquePixelsArray.forEach(({ x, y, color }) => {
               const key = getPixelKey(x,y);
               const chunkKey = getChunkKeyForPixel(x,y);
               if(activeChunkKeysRef.current.has(chunkKey)){
@@ -814,78 +892,90 @@ export default function Canvas() {
           return hasChanges ? newGrid : prevGrid;
         });
         setLastPlaced(Date.now());
-      }
-      
-      // Add all pixels (drawable or not) to the batch manager; it will filter again in its callback.
-      // This ensures that if canDrawAtPoint changes (e.g. land expansion), previously invalid pixels might become valid.
-      // However, for simplicity and to avoid sending clearly invalid pixels, we can pre-filter here.
-      // Let's send only drawable pixels to the manager.
-      if (drawablePixelsForOptimisticUpdate.length > 0) {
-        console.log('[Canvas] paintCellOnMove: Adding updates to PixelBatchManager:', drawablePixelsForOptimisticUpdate);
-        pixelBatchManagerRef.current.addUpdates(drawablePixelsForOptimisticUpdate);
+        
+        // Add all pixels to the batch manager
+        console.log(`[Canvas] paintCellOnMove: Adding ${uniquePixelsArray.length} unique updates to PixelBatchManager`);
+        pixelBatchManagerRef.current.addUpdates(uniquePixelsArray);
       }
     }
       
+    // Always update lastPositionRef with the current position to ensure continuous drawing
     lastPositionRef.current = currentPosition;
-      
-    // requestAnimationFrame is no longer needed here to batch for backend, PixelBatchManager handles that.
-    // It was primarily for batching pixelPaintBatchRef.current.
-    // The optimistic setGrid above handles UI responsiveness.
-
   }, [isMouseDown, isPanning, getEffectiveColor, memoizedCanPlacePixel, isEraserActive, eraserSize, getPixelsInEraserArea, getChunkKeyForPixel, canDrawAtPoint, setLastPlaced, getPixelKey]);
 
+  // Improve mouse movement handling for smoother drawing
   const handleWindowMouseMove = useCallback((event: MouseEvent) => {
     if (isPanning && panStartMousePositionRef.current && panStartViewportOffsetRef.current) {
+      const currentEffectiveCellSize = CELL_SIZE * latestZoomLevelTargetRef.current; // Use target ref
+      if (currentEffectiveCellSize === 0) return; // Avoid division by zero
+
       const deltaX = event.clientX - panStartMousePositionRef.current.x;
       const deltaY = event.clientY - panStartMousePositionRef.current.y;
 
-      const offsetDeltaX = deltaX / effectiveCellSize; 
-      const offsetDeltaY = deltaY / effectiveCellSize;
+      const offsetDeltaX = deltaX / currentEffectiveCellSize; 
+      const offsetDeltaY = deltaY / currentEffectiveCellSize;
       
-      const newViewportX = panStartViewportOffsetRef.current.x - offsetDeltaX;
-      const newViewportY = panStartViewportOffsetRef.current.y - offsetDeltaY;
+      const newViewportXTarget = panStartViewportOffsetRef.current.x - offsetDeltaX;
+      const newViewportYTarget = panStartViewportOffsetRef.current.y - offsetDeltaY;
 
-      setViewportOffset({ x: newViewportX, y: newViewportY }); // Allow float viewport offset
+      latestViewportOffsetTargetRef.current = { x: newViewportXTarget, y: newViewportYTarget };
+      // Ensure zoom target ref is also current
+      latestZoomLevelTargetRef.current = zoomLevel; // Read from current state for this one-off sync
+      requestViewportUpdateRAF();
+
     } else if (isMouseDown && !isPanning && canvasContainerRef.current) { // isMouseDown is true only for drawing
+      const currentEffectiveCellSize = CELL_SIZE * zoomLevel; // Use committed zoom for drawing coordinate calculation
+      if (currentEffectiveCellSize === 0) return;
+
       const rect = canvasContainerRef.current.getBoundingClientRect();
       
-      const canvasX = Math.floor((event.clientX - rect.left) / effectiveCellSize);
-      const canvasY = Math.floor((event.clientY - rect.top) / effectiveCellSize);
+      const canvasX = Math.floor((event.clientX - rect.left) / currentEffectiveCellSize);
+      const canvasY = Math.floor((event.clientY - rect.top) / currentEffectiveCellSize);
 
-      // Ensure world coordinates are integers
-      const worldX = Math.floor(canvasX + viewportOffset.x);
-      const worldY = Math.floor(canvasY + viewportOffset.y);
+      const currentCommittedOffset = viewportOffset; // Use committed offset for drawing coordinate calculation
+      const worldX = Math.floor(canvasX + currentCommittedOffset.x);
+      const worldY = Math.floor(canvasY + currentCommittedOffset.y);
 
-      // Call paintCellOnMove to draw continuously
-      paintCellOnMove(worldX, worldY);
-      lastPaintedCellRef.current = { x: worldX, y: worldY };
-    }
-  }, [isPanning, isMouseDown, panStartMousePositionRef, panStartViewportOffsetRef, viewportOffset, paintCellOnMove, effectiveCellSize]);
-
-  const handleWindowMouseUp = useCallback((event: MouseEvent) => {
-    const wasPanning = isPanning; 
-
-    if (isPanning) {
-        setIsPanning(false);
-        panStartMousePositionRef.current = null;
-        panStartViewportOffsetRef.current = null;
-        if (canvasContainerRef.current) {
-            canvasContainerRef.current.style.cursor = isSpacebarHeldRef.current ? 'grab' : 'default';
-        }
-        document.body.style.cursor = 'default';
-    }
-    
-    if (isMouseDown) { 
-        setIsMouseDown(false); 
-        // No need to manually process a batch here, PixelBatchManager handles it.
-        // If PixelBatchManager has a flush mechanism and it's desired on mouse up:
-        // pixelBatchManagerRef.current?.flush(); 
+      // Get the last painted cell position
+      const lastCell = lastPaintedCellRef.current;
+      
+      // If the new position is different from the last painted cell,
+      // or we don't have a last painted cell yet, paint the cell
+      if (!lastCell || lastCell.x !== worldX || lastCell.y !== worldY) {
+        paintCellOnMove(worldX, worldY);
+        lastPaintedCellRef.current = { x: worldX, y: worldY };
         
-        lastPaintedCellRef.current = null;
-        lastPositionRef.current = null; 
+        // Set a timestamp for debugging fast-drawing issues
+        const now = Date.now();
+        if (debugMode && (!lastDrawTimestampRef.current || now - lastDrawTimestampRef.current > 100)) {
+          console.log(`[Canvas] Drew at (${worldX}, ${worldY}) at ${new Date().toISOString().slice(11, 23)}`);
+          lastDrawTimestampRef.current = now;
+        }
+      }
     }
-  }, [isPanning, isMouseDown, setIsPanning, setIsMouseDown]);
+  }, [isPanning, isMouseDown, paintCellOnMove, requestViewportUpdateRAF, zoomLevel, viewportOffset, debugMode]);
 
+  // Add this missing handler for mouse up events
+  const handleWindowMouseUp = useCallback((event: MouseEvent) => {
+    // End panning if active
+    if (isPanning) {
+      setIsPanning(false);
+      panStartMousePositionRef.current = null;
+      panStartViewportOffsetRef.current = null;
+      if (canvasContainerRef.current) {
+        canvasContainerRef.current.style.cursor = isSpacebarHeldRef.current ? 'grab' : 'default';
+      }
+      document.body.style.cursor = 'default';
+    }
+    // End drawing if active
+    if (isMouseDown) {
+      setIsMouseDown(false);
+      lastPaintedCellRef.current = null;
+      lastPositionRef.current = null;
+    }
+  }, [isPanning, isMouseDown]);
+
+  // Improve canvas mouse down to better initialize the drawing state
   const handleCanvasMouseDown = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current) return;
     const rect = canvasContainerRef.current.getBoundingClientRect();
@@ -895,7 +985,7 @@ export default function Canvas() {
     // console.log("handleCanvasMouseDown: UserProfile in Canvas:", userProfile ? userProfile.landInfo : "No profile");
 
     if (event.button === 0) { // Left click
-        if (isSpacebarHeldRef.current) { // Spacebar is held: Left click initiates panning
+        if (isSpacebarHeldRef.current) {
             event.preventDefault(); // Prevent text selection, etc.
             setIsPanning(true);
             // isMouseDown remains false, as this is a pan, not a draw.
@@ -932,6 +1022,7 @@ export default function Canvas() {
             // }
             // pixelPaintBatchRef.current = []; // Not needed with PixelBatchManager
             lastPositionRef.current = { x: worldX, y: worldY };
+            lastPaintedCellRef.current = { x: worldX, y: worldY }; // Ensure last painted cell is set
 
             if (memoizedCanPlacePixel() || COOLDOWN_SECONDS === 0) {
                 const effectiveColor = getEffectiveColor();
@@ -990,7 +1081,7 @@ export default function Canvas() {
         if (canvasContainerRef.current) canvasContainerRef.current.style.cursor = 'grabbing';
         document.body.style.cursor = 'grabbing'; // Also set on body to ensure cursor stays during fast drags
     }
-  }, [viewportOffset, memoizedCanPlacePixel, getEffectiveColor, isEraserActive, eraserSize, getPixelsInEraserArea, updateMultiplePixels, setLastPlaced, setIsMouseDown, setIsPanning, clientIdRef, isPanning, effectiveCellSize, getChunkKeyForPixel, canDrawAtPoint, currentUser, userProfile, showAuthWarning, setShowAuthWarning]);
+  }, [viewportOffset, memoizedCanPlacePixel, getEffectiveColor, isEraserActive, eraserSize, getPixelsInEraserArea, updateMultiplePixels, setLastPlaced, setIsMouseDown, setIsPanning, clientIdRef, isPanning, effectiveCellSize, getChunkKeyForPixel, canDrawAtPoint, currentUser, userProfile, showAuthWarning, setShowAuthWarning, debugMode]);
   
 
   // Effect to calculate viewport dimensions in cells
@@ -1345,22 +1436,23 @@ export default function Canvas() {
     };
   }, [updateMultiplePixels]); // updateMultiplePixels is stable due to useCallback
 
+  // Improve the PixelBatchManager initialization to optimize for low-latency drawing
   useEffect(() => {
-    const loadInitialData = async () => {
-      if (!initialDataLoaded && !syncInProgressRef.current) { // CHANGED
-        console.log("loadInitialData effect: Condition met. Calling requestFullSync.");
-        await requestFullSync();
-        // After requestFullSync, initialDataLoaded state will be true, triggering other effects.
-        console.log("loadInitialData effect: requestFullSync finished. initialDataLoaded is now expected to be true via state update.");
-      } else {
-        console.log(`loadInitialData effect: Condition NOT met. initialDataLoaded=${initialDataLoaded}, syncInProgressRef.current=${syncInProgressRef.current}`);
-      }
-    };
+    // Initialize the PixelBatchManager with improved parameters
+    pixelBatchManagerRef.current = new PixelBatchManager(
+        updateMultiplePixels,
+        { 
+          initialBatchInterval: 50, // Reduced from 200ms to 50ms for more responsive updates
+          maxBatchSize: BATCH_SIZE, 
+          minBatchInterval: 16  // ~60fps target for processing start
+        }
+    );
     
-    console.log("loadInitialData effect: Running effect setup.");
-    loadInitialData();
-  }, [requestFullSync, initialDataLoaded]); // CHANGED: Added initialDataLoaded to dependencies
-
+    return () => {
+      pixelBatchManagerRef.current?.clear();
+    };
+  }, [updateMultiplePixels]);
+  
   // This is the key useEffect for fetching lands
   useEffect(() => {
     console.log(`useEffect[fetchAllLands, initialDataLoaded]: Effect triggered. initialDataLoaded = ${initialDataLoaded}`);
@@ -1436,22 +1528,34 @@ export default function Canvas() {
     if (currentUser && userProfile && userProfile.landInfo && canvasContainerRef.current) {
       const { centerX, centerY } = userProfile.landInfo;
       
+      // Target values for RAF update if needed, or direct set for one-off navigation
+      let targetOffsetX, targetOffsetY;
+      const targetZoom = 1; // Example: reset zoom to 1
+
       if (viewportCellWidth > 0 && viewportCellHeight > 0) {
-          const newOffsetX = centerX - (viewportCellWidth / 2);
-          const newOffsetY = centerY - (viewportCellHeight / 2);
-          setViewportOffset({ x: newOffsetX, y: newOffsetY });
-          // Optionally, set zoom to a specific level, e.g., 1, if desired
-          // setZoomLevel(1); 
-          console.log("Navigated to user land:", { newOffsetX, newOffsetY });
+          targetOffsetX = centerX - (viewportCellWidth / 2);
+          targetOffsetY = centerY - (viewportCellHeight / 2);
       } else {
           console.warn("Cannot navigate to user land: Viewport dimensions not yet calculated. Centering approximately.");
-          // Fallback: center based on a default assumption or just set to center of land
-          setViewportOffset({ x: centerX - ( (canvasContainerRef.current.clientWidth / (CELL_SIZE * zoomLevel)) / 2), y: centerY - ( (canvasContainerRef.current.clientHeight / (CELL_SIZE * zoomLevel)) / 2) });
+          const approxCellsWide = (canvasContainerRef.current.clientWidth / (CELL_SIZE * targetZoom)) / 2;
+          const approxCellsHigh = (canvasContainerRef.current.clientHeight / (CELL_SIZE * targetZoom)) / 2;
+          targetOffsetX = centerX - approxCellsWide;
+          targetOffsetY = centerY - approxCellsHigh;
       }
+      
+      // For one-off navigation, direct state update is fine, or use RAF refs
+      latestViewportOffsetTargetRef.current = { x: targetOffsetX, y: targetOffsetY };
+      latestZoomLevelTargetRef.current = targetZoom;
+      requestViewportUpdateRAF(); // Use RAF for smooth transition if desired
+      // Alternatively, for immediate jump:
+      // setViewportOffset({ x: targetOffsetX, y: targetOffsetY });
+      // setZoomLevel(targetZoom);
+
+      console.log("Navigated to user land:", { newOffsetX: targetOffsetX, newOffsetY: targetOffsetY });
     } else {
       console.log("Cannot navigate to user land: Missing user/profile/landInfo or canvas ref.");
     }
-  }, [currentUser, userProfile, viewportCellWidth, viewportCellHeight, zoomLevel, setViewportOffset /*, setZoomLevel if also changing zoom */]);
+  }, [currentUser, userProfile, viewportCellWidth, viewportCellHeight, requestViewportUpdateRAF]); // Removed zoomLevel, setViewportOffset, setZoomLevel
 
   // Effect for loading initial viewport position or navigating to user's land
   useEffect(() => {
@@ -1537,6 +1641,8 @@ export default function Canvas() {
     }
   }, [isEraserActive]);
 
+ 
+
   const handleEraserSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const size = Math.max(1, Math.min(25, parseInt(event.target.value, 10))); // Clamp between 1 and 25
     setEraserSize(size);
@@ -1619,7 +1725,7 @@ export default function Canvas() {
   };
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault(); // Prevent default to avoid scrolling
+    event.preventDefault(); 
     const coords = getCoordsFromTouchEvent(event);
     if (coords) {
       const { x, y } = coords;
@@ -1627,42 +1733,49 @@ export default function Canvas() {
       if (isSpacebarHeldRef.current) {
         setIsPanning(true);
         panStartMousePositionRef.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-        panStartViewportOffsetRef.current = { ...viewportOffset };
+        panStartViewportOffsetRef.current = { ...latestViewportOffsetTargetRef.current }; // Use target ref
       } else {
-        // Initialize last position for the line drawing
         lastPositionRef.current = { x, y };
-        // Call paintCell directly to draw the initial point
-        paintCellOnMove(x, y);
+        paintCellOnMove(x, y); // Direct call for immediate feedback
         setIsMouseDown(true);
       }
     }
-  }, [paintCellOnMove, viewportOffset]);
+  }, [paintCellOnMove, viewportOffset]); // viewportOffset for getCoordsFromTouchEvent
 
   const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault(); // Prevent scrolling while drawing
+    event.preventDefault(); 
     
     if (isPanning && panStartMousePositionRef.current && panStartViewportOffsetRef.current) {
-      // Panning logic - unchanged
+      const currentEffectiveCellSize = CELL_SIZE * latestZoomLevelTargetRef.current;
+      if (currentEffectiveCellSize === 0) return;
+
       const deltaX = event.touches[0].clientX - panStartMousePositionRef.current.x;
       const deltaY = event.touches[0].clientY - panStartMousePositionRef.current.y;
 
-      const offsetDeltaX = deltaX / effectiveCellSize; 
-      const offsetDeltaY = deltaY / effectiveCellSize;
+      const offsetDeltaX = deltaX / currentEffectiveCellSize; 
+      const offsetDeltaY = deltaY / currentEffectiveCellSize;
       
-      const newViewportX = panStartViewportOffsetRef.current.x - offsetDeltaX;
-      const newViewportY = panStartViewportOffsetRef.current.y - offsetDeltaY;
+      const newViewportXTarget = panStartViewportOffsetRef.current.x - offsetDeltaX;
+      const newViewportYTarget = panStartViewportOffsetRef.current.y - offsetDeltaY;
 
-      setViewportOffset({ x: newViewportX, y: newViewportY });
+      latestViewportOffsetTargetRef.current = { x: newViewportXTarget, y: newViewportYTarget };
+      latestZoomLevelTargetRef.current = zoomLevel; // Read from current state
+      requestViewportUpdateRAF();
+
     } else if (isMouseDown && !isPanning) {
-      // Drawing logic - get current touch position and paint
       const coords = getCoordsFromTouchEvent(event);
       if (coords) {
         const { x, y } = coords;
-        // Call paintCellOnMove for every move event
-        paintCellOnMove(x, y);
+        
+        // Similar check as in mouse move to avoid redundant draws of the same pixel
+        const lastCell = lastPaintedCellRef.current;
+        if (!lastCell || lastCell.x !== x || lastCell.y !== y) {
+          paintCellOnMove(x, y);
+          lastPaintedCellRef.current = { x, y };
+        }
       }
     }
-  }, [isPanning, isMouseDown, paintCellOnMove, effectiveCellSize]);
+  }, [isPanning, isMouseDown, paintCellOnMove, requestViewportUpdateRAF, zoomLevel, viewportOffset]);
 
   const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1678,14 +1791,22 @@ export default function Canvas() {
 
   // Effect to attach global mouse move and up listeners for panning
   useEffect(() => {
-    window.addEventListener('mousemove', handleWindowMouseMove, { passive: false });
+    // Ensure passive: false for mousemove if preventDefault might be called by its logic or downstream.
+    // paintCellOnMove doesn't call preventDefault, but panning logic might.
+    // handleWindowMouseMove itself doesn't call preventDefault, but it's good practice if it controls behavior that should override defaults.
+    window.addEventListener('mousemove', handleWindowMouseMove, NON_PASSIVE_EVENT_OPTIONS);
     window.addEventListener('mouseup', handleWindowMouseUp);
 
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      // Clean up animation frame request on unmount
+      if (animationFrameRequestRef.current) {
+        cancelAnimationFrame(animationFrameRequestRef.current);
+        animationFrameRequestRef.current = null;
+      }
     };
-  }, [handleWindowMouseMove, handleWindowMouseUp]);
+  }, [handleWindowMouseMove, handleWindowMouseUp]); // handleWindowMouseMove will be stable with useCallback
 
   // Add keyboard event listeners for spacebar handling
   useEffect(() => {
@@ -1740,7 +1861,6 @@ export default function Canvas() {
     // Check if we can draw at this point
     if (!canDrawAtPoint(worldX, worldY)) {
       if (!currentUser && !showAuthWarning) { 
- 
         setShowAuthWarning(true);
         console.warn("Login required to draw.");
       } else if (currentUser && userProfile?.landInfo) { 
@@ -2010,7 +2130,7 @@ export default function Canvas() {
     initialDataLoaded,
     isPanning,
     isMouseDown,
-    paintCellOnMove,
+    // paintCellOnMove, // Removed as individual cell mouseover for drawing is complex with RAF viewport
     handleCellClick,
     zoomLevel,
   ]);
@@ -2042,14 +2162,18 @@ export default function Canvas() {
   return (
     <div 
       ref={canvasContainerRef}
-      className="relative w-screen h-screen overflow-hidden bg-gray-200" 
+      className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default" // Added cursor-default
       style={{ 
-        touchAction: "none",
-        WebkitOverflowScrolling: "touch",
-        overscrollBehavior: "none",
+        touchAction: "none", // Crucial for preventing default touch behaviors
+        WebkitOverflowScrolling: "touch", // For momentum scrolling on iOS (though touch-action: none might override)
+        overscrollBehavior: "none", // Prevents pull-to-refresh, etc.
       }} 
-      onWheel={handleWheel}
+      onWheel={handleWheel} // Already calls preventDefault
       onMouseDown={handleCanvasMouseDown}
+      // Touch events for drawing and panning
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {/* UI controls */}
       <div className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2">
@@ -2157,8 +2281,9 @@ export default function Canvas() {
         className="absolute inset-0 grid z-10"
         style={{ 
           gridTemplateColumns: `repeat(${viewportCellWidth}, ${effectiveCellSize}px)`,
-          willChange: 'transform',
-          contain: 'layout paint style',
+          willChange: 'transform', // Hint to browser for transform optimization
+          contain: 'layout paint style', // Performance hint for rendering isolation
+          // The cursor style will be managed by canvasContainerRef.current.style.cursor
         }}
       >
         {gridCells}

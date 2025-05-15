@@ -53,30 +53,38 @@ export class PixelBatchManager {
   addUpdates(pixels: Pixel[]) {
     if (!pixels.length) return;
     
+    // Track if we have "important" pixels that should be processed sooner
+    // Important pixels are the first few pixels of a drawing action
+    const isImportantBatch = this.batch.size === 0 && pixels.length <= 5;
+    
     // Use a map with pixel coordinates as key to prevent duplicates
-    // This ensures only the latest update for each pixel is sent
     pixels.forEach(pixel => {
       const key = `${pixel.x}:${pixel.y}`;
       this.batch.set(key, pixel);
     });
     
     // Schedule processing if not already scheduled
-    this.scheduleProcessing();
+    this.scheduleProcessing(isImportantBatch);
     
-    // If batch exceeds max size, process immediately
-    if (this.batch.size >= this.maxBatchSize) {
+    // If batch exceeds max size or this is the first pixel,
+    // process immediately for responsiveness
+    if (this.batch.size >= this.maxBatchSize || isImportantBatch) {
       this.processBatch();
     }
   }
 
   /**
    * Schedule batch processing if not already scheduled
+   * @param immediate Whether to process immediately (for first pixel)
    */
-  private scheduleProcessing() {
+  private scheduleProcessing(immediate: boolean = false) {
     if (this.processingTimer === null && !this.isProcessing) {
       const timeSinceLastProcess = Date.now() - this.lastProcessTime;
-      const timeUntilNextProcess = Math.max(this.minBatchInterval, 
-                                          this.batchInterval - timeSinceLastProcess);
+      
+      // If immediate or this is the first pixel, use minimal delay
+      const timeUntilNextProcess = immediate ? 
+        this.minBatchInterval : 
+        Math.max(this.minBatchInterval, this.batchInterval - timeSinceLastProcess);
       
       this.processingTimer = setTimeout(() => this.processBatch(), timeUntilNextProcess);
     }
@@ -139,6 +147,10 @@ export class PixelBatchManager {
    */
   async flush() {
     if (this.batch.size > 0) {
+      if (this.processingTimer) {
+        clearTimeout(this.processingTimer);
+        this.processingTimer = null;
+      }
       await this.processBatch();
     }
   }
