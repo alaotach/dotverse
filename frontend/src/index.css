@@ -1,5 +1,4 @@
-@import "tailwindcss";
-
+/* @import "tailwindcss"; */
 :root {
   --dynamic-cell-size: 10px; 
 }

@@ -3,12 +3,10 @@ import { db } from "../src/firebaseClient";
 import { ref, onValue, set, update, get } from "firebase/database";
 import websocketService from "../src/services/websocketService";
 import { useAuth } from "../src/context/AuthContext";
-import { quotaManager } from "../src/services/quotaManager";
 import { openDB } from 'idb';
 import { getLocalCache, updateLocalCache } from "../src/services/localStorageCache";
-import { doc, getDoc, collection, getDocs, query, writeBatch } from "firebase/firestore"; // Added writeBatch
+import { doc, getDoc, collection, getDocs, query, writeBatch, setDoc } from "firebase/firestore"; // Added setDoc import here
 import { fs } from "../src/firebaseClient";
-import { PixelBatchManager } from "../src/services/pixelBatchManager"; // Import PixelBatchManager
 import { firestoreDebugger, isMissingDocError, isNetworkError } from "../src/services/debugTools";
 
 const CELL_SCROLL_STEP = 5; // How many cells to scroll with arrow keys
@@ -22,8 +20,19 @@ const ZOOM_SENSITIVITY = 0.1;
 const CHUNK_SIZE = 25; 
 const BATCH_SIZE = 1000; 
 const UPDATE_BATCH_INTERVAL = 100; 
-const SYNC_THROTTLE_MS = 5000; 
+const SYNC_THROTTLE_MS = 30000; // Changed from 5000 to 30000 (30 seconds)
 const PIXELS_PER_LINE = 20; // For normalizing scroll when deltaMode is by lines
+
+// Add debounce utility function
+const debounce = (func: Function, delay: number) => {
+  let timeoutId: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+};
 
 // Add these missing constants near the other constants
 const LOCAL_CACHE_ENABLED = true;
@@ -111,7 +120,7 @@ const plotLine = (x0: number, y0: number, x1: number, y1: number): {x: number, y
   return points;
 };
 
-// Near the top of the file, add this constant for event options
+// Near the top of the file, modify the event options to allow preventDefault
 const NON_PASSIVE_EVENT_OPTIONS = { passive: false };
 
 // Utility function for handling browser fullscreen
@@ -157,8 +166,23 @@ export default function Canvas() {
   
   const [allLands, setAllLands] = useState<LandInfo[]>([]);
   const [loadingLands, setLoadingLands] = useState<boolean>(true);
-  const [initialDataLoaded, setInitialDataLoaded] = useState<boolean>(false); // CHANGED from ref to state
+  const [initialDataLoaded, setInitialDataLoaded] = useState<boolean>(false);
   const [initialViewportSet, setInitialViewportSet] = useState<boolean>(false);
+  
+  // Define debouncedSaveViewport here, before it's used
+  const debouncedSaveViewport = useCallback(
+    debounce((vpOffset: { x: number; y: number }, zmLevel: number) => {
+      if (!initialDataLoaded || !initialViewportSet) return;
+      try {
+        localStorage.setItem(LOCAL_STORAGE_VIEWPORT_X_KEY, vpOffset.x.toString());
+        localStorage.setItem(LOCAL_STORAGE_VIEWPORT_Y_KEY, vpOffset.y.toString());
+        localStorage.setItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY, zmLevel.toString());
+      } catch (e) {
+        console.error("Error saving viewport to localStorage:", e);
+      }
+    }, 1000), // Debounce by 1 second
+    [initialDataLoaded, initialViewportSet]
+  );
   
   // Colors for different land types
   const userLandBorderColor = "rgba(255, 0, 0, 0.7)"; // Current user's land - red
@@ -191,7 +215,7 @@ export default function Canvas() {
   // const pendingUpdatesRef = useRef<Map<string, Pixel>>(new Map()); 
   
   // USE PixelBatchManager from services
-  const pixelBatchManagerRef = useRef<PixelBatchManager | null>(null);
+  // const pixelBatchManagerRef = useRef<PixelBatchManager | null>(null);
   
   // REMOVE: updateManager was for the old PixelUpdateManager
   // const updateManager = useRef<PixelUpdateManager | null>(null); 
@@ -209,6 +233,7 @@ export default function Canvas() {
   const panStartMousePositionRef = useRef<{ x: number, y: number } | null>(null);
   const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);
   const isSpacebarHeldRef = useRef<boolean>(false); // For Spacebar + Left Click panning
+  const lastDrawTimestampRef = useRef<number | null>(null); // Ensure this ref is initialized
 
   // Refs for requestAnimationFrame based viewport/zoom updates
   const latestViewportOffsetTargetRef = useRef(viewportOffset);
@@ -249,7 +274,10 @@ export default function Canvas() {
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement> | WheelEvent) => {
     if (!canvasContainerRef.current) return;
     
-    event.preventDefault(); // Always prevent default for custom handling
+    // Always prevent default for custom handling
+    if (event.cancelable) {
+      event.preventDefault();
+    }
 
     const currentZoom = latestZoomLevelTargetRef.current; // Use target ref for calculations
     const currentOffset = latestViewportOffsetTargetRef.current; // Use target ref
@@ -309,7 +337,7 @@ export default function Canvas() {
       latestZoomLevelTargetRef.current = currentZoom; 
       requestViewportUpdateRAF();
     }
-  }, [grid, requestViewportUpdateRAF]); // Removed zoomLevel, viewportOffset, effectiveCellSize as direct deps
+  }, [requestViewportUpdateRAF]); // Removed zoomLevel, viewportOffset, effectiveCellSize as direct deps
 
   // Effect to calculate viewport dimensions in cells
   useEffect(() => {
@@ -426,26 +454,37 @@ export default function Canvas() {
 
     activeChunkKeysRef.current = visibleKeys;
     setGrid(newGrid);
-  }, [getVisibleChunkKeys, CHUNK_SIZE, initialDataLoaded, grid]);
+  }, [getVisibleChunkKeys, CHUNK_SIZE, initialDataLoaded]);
 
   useEffect(() => {
     if (initialDataLoaded) { // CHANGED
       updateGridFromVisibleChunks();
     }
-  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, updateGridFromVisibleChunks, initialDataLoaded]); // CHANGED: Added initialDataLoaded
+  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks]); // CHANGED: Added initialDataLoaded
 
-  // Modify the requestFullSync function to ensure initial data is loaded
+  // Modify the requestFullSync function to add more logging
   const requestFullSync = useCallback(async () => {
-    if (syncInProgressRef.current || 
-        Date.now() - lastSyncRequestTimeRef.current < SYNC_THROTTLE_MS) {
-      console.log("Full sync request throttled or already in progress.");
-      return;
-    }
-    
-    pixelBatchManagerRef.current?.clear(); // Clear any pending batches before full sync
-
-    syncInProgressRef.current = true;
-    lastSyncRequestTimeRef.current = Date.now();
+  console.log("requestFullSync called:", { 
+    syncInProgress: syncInProgressRef.current,
+    timeSinceLastSync: Date.now() - lastSyncRequestTimeRef.current,
+    wsConnected
+  });
+  
+  if (syncInProgressRef.current) {
+    console.log("Full sync request ignored: sync already in progress.");
+    return;
+  }
+  
+  const timeSinceLastSync = Date.now() - lastSyncRequestTimeRef.current;
+  if (timeSinceLastSync < SYNC_THROTTLE_MS) {
+    console.log(`Full sync request throttled: last sync was ${timeSinceLastSync}ms ago, min interval is ${SYNC_THROTTLE_MS}ms`);
+    return;
+  }
+  
+  // Continue with existing implementation...
+  console.log("Starting full sync operation...");
+  syncInProgressRef.current = true;
+  lastSyncRequestTimeRef.current = Date.now();
     
     let cachedPixels: Array<{ key: string, value: string, timestamp: number }> = [];
     if (LOCAL_CACHE_ENABLED) {
@@ -605,6 +644,7 @@ export default function Canvas() {
     return canDraw;
   }, [currentUser, userProfile, debugMode]);
 
+  // Modify the updateMultiplePixels function to prioritize WebSockets for real-time updates
   const updateMultiplePixels = useCallback(async (pixelsToProcess: Pixel[]) => {
     if (!pixelsToProcess.length) return false;
     
@@ -664,43 +704,50 @@ export default function Canvas() {
       }
     }
     
-    // WebSocket updates - these are fast but not guaranteed persistent
+    // WebSocket updates - PRIORITY CHANGE: WebSocket is now the primary real-time path
+    // All drawing operations go through WebSocket first for real-time sync
     let wsUpdateSuccess = false;
     if (wsConnected) {
       try {
         const WS_BATCH_SIZE = 50;
         for (let i = 0; i < enhancedPixels.length; i += WS_BATCH_SIZE) { 
           const batch = enhancedPixels.slice(i, i + WS_BATCH_SIZE); 
-          websocketService.send('pixel_update', batch); // Assuming send is fire-and-forget or returns boolean quickly
+          wsUpdateSuccess = websocketService.send('pixel_update', batch);
         }
-        wsUpdateSuccess = true; // Assume success if send doesn't throw immediately
-        console.log('[Canvas] updateMultiplePixels: WebSocket update sent.');
+        console.log('[Canvas] updateMultiplePixels: WebSocket update sent successfully.');
+        
+        // If WebSocket succeeds, we still persist to Firestore but can consider it a background operation
+        // This allows for lower-priority Firebase operations, reducing quota usage
+        setTimeout(() => {
+          persistToFirestore(enhancedPixels, timestamp).catch(error => {
+            console.error("[Canvas] Background Firestore persistence failed:", error);
+          });
+        }, 1000); // Wait 1 second before persisting to Firestore
+        
+        return true; // If WebSocket succeeds, consider the operation successful
       } catch (error) {
         console.error("[Canvas] updateMultiplePixels: WebSocket batch send error:", error);
         wsUpdateSuccess = false;
       }
     }
       
-    // Firestore operations via QuotaManager - more robust but slower
-    let firestoreUpdateAttempted = false;
-    let firestoreUpdateSuccess = false;
+    // If WebSocket failed or disconnected, fall back to direct Firestore
+    if (!wsUpdateSuccess) {
+      console.log('[Canvas] WebSocket update failed, falling back to direct Firestore...');
+      return await persistToFirestore(enhancedPixels, timestamp);
+    }
+    
+    return wsUpdateSuccess;
+  }, [wsConnected, clientIdRef, getChunkKeyForPixel, canDrawAtPoint, currentUser, showAuthWarning, getPixelKey, CHUNK_SIZE, PIXELS_PATH, firestoreDebugger]);
+
+  // New function to extract Firestore persistence logic
+  const persistToFirestore = async (pixels: Pixel[], timestamp: number): Promise<boolean> => {
     try {
-      const currentQuotaStatus = quotaManager.getQuotaStatus();
-      setQuotaStatus(currentQuotaStatus);
-      const hasQuotaLeft = currentQuotaStatus.percentUsed < (QUOTA_SAFETY_MARGIN * 100);
-        
-      if (!hasQuotaLeft) {
-        console.warn(`[Canvas] updateMultiplePixels: Firestore quota at ${currentQuotaStatus.percentUsed.toFixed(1)}%, using local/WS only operations for this batch`);
-        // If quota is full, we don't attempt Firestore write, so success depends on WebSocket
-        return wsUpdateSuccess; 
-      }
-        
-      firestoreUpdateAttempted = true;
       if (USE_CHUNKED_STORAGE) {
         const pixelsByChunk = new Map<string, Pixel[]>();
         
         // Group pixels by chunk to minimize Firestore operations
-        enhancedPixels.forEach(pixel => {
+        pixels.forEach(pixel => {
           const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
           if (!pixelsByChunk.has(chunkKey)) {
             pixelsByChunk.set(chunkKey, []);
@@ -708,7 +755,9 @@ export default function Canvas() {
           pixelsByChunk.get(chunkKey)!.push(pixel);
         });
           
-        for (const [chunkKey, chunkPixels] of pixelsByChunk.entries()) {
+        // Process chunks in smaller batches to avoid large writes
+        const chunkEntries = Array.from(pixelsByChunk.entries());
+        for (const [chunkKey, chunkPixels] of chunkEntries) {
           try {
             const pixelUpdatesForFirestore: Record<string, any> = {};
             chunkPixels.forEach(({ x, y, color, timestamp: opTimestamp, clientId: opClientId }) => {
@@ -722,807 +771,65 @@ export default function Canvas() {
               };
             });
             
-            console.log(`[Canvas] updateMultiplePixels: Queuing chunk ${chunkKey} for Firestore write.`);
-            await quotaManager.safeWrite({
-              path: `firestore/${CHUNK_COLLECTION}/${chunkKey}`,
-              type: 'update',
-              data: { 
-                pixels: pixelUpdatesForFirestore, 
-                lastUpdated: timestamp 
-              }
-            });
-            // Assuming safeWrite queues successfully, we mark this part as "successful" for now
-            // The actual write happens asynchronously via QuotaManager
+            console.log(`[Canvas] persistToFirestore: Writing chunk ${chunkKey} to Firestore.`);
+            const chunkDocRef = doc(fs, `${CHUNK_COLLECTION}/${chunkKey}`);
+            
+            // Use merge: true to avoid overwriting other pixels in the chunk
+            await setDoc(chunkDocRef, { 
+              pixels: pixelUpdatesForFirestore, 
+              lastUpdated: timestamp 
+            }, { merge: true });
+            
+            console.log(`[Canvas] persistToFirestore: Successfully wrote chunk ${chunkKey} to Firestore.`);
           } catch (chunkError) {
-            // Log chunk error but continue with other chunks
-            console.error(`[Canvas] updateMultiplePixels: Error queuing chunk ${chunkKey}:`, chunkError);
+            console.error(`[Canvas] persistToFirestore: Error writing chunk ${chunkKey}:`, chunkError);
             firestoreDebugger.logError(chunkError, `${CHUNK_COLLECTION}/${chunkKey}`, 'update');
-            // If one chunk fails to queue, we might still succeed with others.
-            // For simplicity, we'll still aim for an overall success if any chunk is queued.
           }
         }
-        firestoreUpdateSuccess = true; // If loop completes, assume queuing was successful for attempts made
+        
+        // Update last sync time to indicate successful write
+        setLastSyncTime(Date.now());
+        return true;
       } else {
-        // Original non-chunked batch update approach via quotaManager
+        // Original non-chunked direct update (for Realtime DB)
         const updates: Record<string, any> = {};
-        enhancedPixels.forEach(({ x, y, color, timestamp: opTimestamp, clientId: opClientId }) => {
+        pixels.forEach(({ x, y, color, timestamp: opTimestamp, clientId: opClientId }) => {
           updates[getPixelKey(x,y)] = { color, timestamp: opTimestamp, clientId: opClientId };
         });
         
-        console.log('[Canvas] updateMultiplePixels: Queuing non-chunked update for Firestore write.');
-        await quotaManager.safeWrite({ 
-          path: `${PIXELS_PATH}`, 
-          type: 'update', 
-          data: updates 
-        });
-        firestoreUpdateSuccess = true; // Assume queuing was successful
+        console.log('[Canvas] persistToFirestore: Writing directly to Realtime Database.');
+        await update(ref(db, PIXELS_PATH), updates);
+        
+        setLastSyncTime(Date.now());
+        return true;
       }
     } catch (error) {
-      console.error("[Canvas] updateMultiplePixels: Error during Firestore operation queuing:", error);
-      firestoreDebugger.logError(error, 'updateMultiplePixels', 'batch');
-      firestoreUpdateSuccess = false;
-    }
-
-    // Return true if either WebSocket or Firestore queuing was successful.
-    // The PixelBatchManager uses this return value. If true, batch is cleared.
-    // If false, batch might be retried.
-    // Prioritize Firestore success for persistence.
-    if (firestoreUpdateAttempted) {
-      return firestoreUpdateSuccess;
-    }
-    return wsUpdateSuccess; // Fallback to WS success if Firestore wasn't attempted (e.g. no quota)
-
-  }, [wsConnected, clientIdRef, getChunkKeyForPixel, canDrawAtPoint, currentUser, showAuthWarning, getPixelKey, CHUNK_SIZE, PIXELS_PATH, quotaManager, firestoreDebugger, setQuotaStatus]);
-
-
-  const memoizedCanPlacePixel = useCallback(() => {
-    return Date.now() - lastPlaced > COOLDOWN_SECONDS * 1000;
-  }, [lastPlaced]);
-
-  const getEffectiveColor = useCallback(() => {
-    return isEraserActive ? "#ffffff" : selectedColor;
-  }, [isEraserActive, selectedColor]);
-
-  const getPixelsInEraserArea = useCallback((centerX: number, centerY: number, size: number, color: string): Pixel[] => {
-    const pixelsToUpdate: Pixel[] = [];
-    if (size <= 0) return pixelsToUpdate;
-
-    const halfSizeFloor = Math.floor((size -1) / 2);
-    const halfSizeCeil = Math.ceil((size -1) / 2);
-
-    const startX = centerX - halfSizeFloor;
-    const endX = centerX + halfSizeCeil;
-    const startY = centerY - halfSizeFloor;
-    const endY = centerY + halfSizeCeil;
-
-    for (let y = startY; y <= endY; y++) {
-      for (let x = startX; x <= endX; x++) {
-        pixelsToUpdate.push({ x, y, color }); // x, y are world coordinates
-      }
-    }
-    return pixelsToUpdate;
-  }, []);
-
-
-  const paintCellOnMove = useCallback((worldX: number, worldY: number) => {
-    if (!isMouseDown || isPanning) { 
-      return;
-    }
-
-    if (COOLDOWN_SECONDS > 0 && !memoizedCanPlacePixel()) {
-      return;
-    }
-
-    const currentPosition = { x: worldX, y: worldY };
-    
-    // Ensure we have a last position, even if doing first click-drag
-    const lastPosition = lastPositionRef.current || currentPosition;
-      
-    // Calculate distance moved since last point
-    const dx = Math.abs(currentPosition.x - lastPosition.x);
-    const dy = Math.abs(currentPosition.y - lastPosition.y);
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Generate line points between last position and current position
-    // For very fast movements, generate more intermediary points
-    // This ensures we don't miss pixels even during fast drawing
-    let linePoints: {x: number, y: number}[] = [];
-    
-    // For longer distances, increase density of points for smoother lines
-    if (distance > 10) {
-      // Create more intermediary points for long lines
-      const steps = Math.ceil(distance * 1.5); // 1.5 points per unit of distance
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = Math.round(lastPosition.x + (currentPosition.x - lastPosition.x) * t);
-        const y = Math.round(lastPosition.y + (currentPosition.y - lastPosition.y) * t);
-        linePoints.push({x, y});
-      }
-    } else {
-      // For shorter movements, use the standard Bresenham line algorithm
-      linePoints = plotLine(lastPosition.x, lastPosition.y, currentPosition.x, currentPosition.y);
-    }
-      
-    const pixelsToBatch: Pixel[] = [];
-    const effectiveColor = getEffectiveColor();
-
-    // Process each point in the line
-    linePoints.forEach(point => {
-      if (isEraserActive) {
-        pixelsToBatch.push(...getPixelsInEraserArea(point.x, point.y, eraserSize, effectiveColor));
-      } else {
-        pixelsToBatch.push({
-          x: point.x,
-          y: point.y,
-          color: effectiveColor
-        });
-      }
-    });
-      
-    // Add to PixelBatchManager
-    if (pixelsToBatch.length > 0 && pixelBatchManagerRef.current) {
-      // Filter for optimistic update before adding to batch manager
-      const drawablePixelsForOptimisticUpdate = pixelsToBatch.filter(p => canDrawAtPoint(p.x, p.y));
-      
-      // Use a Set to ensure we don't have duplicate pixels in the update
-      // This prevents wasteful redrawing of the same pixel
-      const uniqueDrawablePixels = new Map<string, Pixel>();
-      drawablePixelsForOptimisticUpdate.forEach(pixel => {
-        const key = `${pixel.x}:${pixel.y}`;
-        uniqueDrawablePixels.set(key, pixel);
-      });
-      
-      const uniquePixelsArray = Array.from(uniqueDrawablePixels.values());
-      
-      if (uniquePixelsArray.length > 0) {
-        // Optimistic UI update for responsiveness
-        setGrid(prevGrid => {
-          const newGrid = new Map(prevGrid);
-          let hasChanges = false;
-          uniquePixelsArray.forEach(({ x, y, color }) => {
-              const key = getPixelKey(x,y);
-              const chunkKey = getChunkKeyForPixel(x,y);
-              if(activeChunkKeysRef.current.has(chunkKey)){
-                if (newGrid.get(key) !== color) {
-                  newGrid.set(key, color);
-                  hasChanges = true;
-                }
-              }
-          });
-          return hasChanges ? newGrid : prevGrid;
-        });
-        setLastPlaced(Date.now());
-        
-        // Add all pixels to the batch manager
-        console.log(`[Canvas] paintCellOnMove: Adding ${uniquePixelsArray.length} unique updates to PixelBatchManager`);
-        pixelBatchManagerRef.current.addUpdates(uniquePixelsArray);
-      }
-    }
-      
-    // Always update lastPositionRef with the current position to ensure continuous drawing
-    lastPositionRef.current = currentPosition;
-  }, [isMouseDown, isPanning, getEffectiveColor, memoizedCanPlacePixel, isEraserActive, eraserSize, getPixelsInEraserArea, getChunkKeyForPixel, canDrawAtPoint, setLastPlaced, getPixelKey]);
-
-  // Improve mouse movement handling for smoother drawing
-  const handleWindowMouseMove = useCallback((event: MouseEvent) => {
-    if (isPanning && panStartMousePositionRef.current && panStartViewportOffsetRef.current) {
-      const currentEffectiveCellSize = CELL_SIZE * latestZoomLevelTargetRef.current; // Use target ref
-      if (currentEffectiveCellSize === 0) return; // Avoid division by zero
-
-      const deltaX = event.clientX - panStartMousePositionRef.current.x;
-      const deltaY = event.clientY - panStartMousePositionRef.current.y;
-
-      const offsetDeltaX = deltaX / currentEffectiveCellSize; 
-      const offsetDeltaY = deltaY / currentEffectiveCellSize;
-      
-      const newViewportXTarget = panStartViewportOffsetRef.current.x - offsetDeltaX;
-      const newViewportYTarget = panStartViewportOffsetRef.current.y - offsetDeltaY;
-
-      latestViewportOffsetTargetRef.current = { x: newViewportXTarget, y: newViewportYTarget };
-      // Ensure zoom target ref is also current
-      latestZoomLevelTargetRef.current = zoomLevel; // Read from current state for this one-off sync
-      requestViewportUpdateRAF();
-
-    } else if (isMouseDown && !isPanning && canvasContainerRef.current) { // isMouseDown is true only for drawing
-      const currentEffectiveCellSize = CELL_SIZE * zoomLevel; // Use committed zoom for drawing coordinate calculation
-      if (currentEffectiveCellSize === 0) return;
-
-      const rect = canvasContainerRef.current.getBoundingClientRect();
-      
-      const canvasX = Math.floor((event.clientX - rect.left) / currentEffectiveCellSize);
-      const canvasY = Math.floor((event.clientY - rect.top) / currentEffectiveCellSize);
-
-      const currentCommittedOffset = viewportOffset; // Use committed offset for drawing coordinate calculation
-      const worldX = Math.floor(canvasX + currentCommittedOffset.x);
-      const worldY = Math.floor(canvasY + currentCommittedOffset.y);
-
-      // Get the last painted cell position
-      const lastCell = lastPaintedCellRef.current;
-      
-      // If the new position is different from the last painted cell,
-      // or we don't have a last painted cell yet, paint the cell
-      if (!lastCell || lastCell.x !== worldX || lastCell.y !== worldY) {
-        paintCellOnMove(worldX, worldY);
-        lastPaintedCellRef.current = { x: worldX, y: worldY };
-        
-        // Set a timestamp for debugging fast-drawing issues
-        const now = Date.now();
-        if (debugMode && (!lastDrawTimestampRef.current || now - lastDrawTimestampRef.current > 100)) {
-          console.log(`[Canvas] Drew at (${worldX}, ${worldY}) at ${new Date().toISOString().slice(11, 23)}`);
-          lastDrawTimestampRef.current = now;
-        }
-      }
-    }
-  }, [isPanning, isMouseDown, paintCellOnMove, requestViewportUpdateRAF, zoomLevel, viewportOffset, debugMode]);
-
-  // Add this missing handler for mouse up events
-  const handleWindowMouseUp = useCallback((event: MouseEvent) => {
-    // End panning if active
-    if (isPanning) {
-      setIsPanning(false);
-      panStartMousePositionRef.current = null;
-      panStartViewportOffsetRef.current = null;
-      if (canvasContainerRef.current) {
-        canvasContainerRef.current.style.cursor = isSpacebarHeldRef.current ? 'grab' : 'default';
-      }
-      document.body.style.cursor = 'default';
-    }
-    // End drawing if active
-    if (isMouseDown) {
-      setIsMouseDown(false);
-      lastPaintedCellRef.current = null;
-      lastPositionRef.current = null;
-    }
-  }, [isPanning, isMouseDown]);
-
-  // Improve canvas mouse down to better initialize the drawing state
-  const handleCanvasMouseDown = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!canvasContainerRef.current) return;
-    const rect = canvasContainerRef.current.getBoundingClientRect();
-    const screenX = event.clientX;
-    const screenY = event.clientY;
-
-    // console.log("handleCanvasMouseDown: UserProfile in Canvas:", userProfile ? userProfile.landInfo : "No profile");
-
-    if (event.button === 0) { // Left click
-        if (isSpacebarHeldRef.current) {
-            event.preventDefault(); // Prevent text selection, etc.
-            setIsPanning(true);
-            // isMouseDown remains false, as this is a pan, not a draw.
-            panStartMousePositionRef.current = { x: screenX, y: screenY };
-            panStartViewportOffsetRef.current = { ...viewportOffset };
-            if (canvasContainerRef.current) canvasContainerRef.current.style.cursor = 'grabbing';
-            document.body.style.cursor = 'grabbing';
-        } else { // Spacebar is NOT held: Left click initiates drawing
-            // Prevent drawing if a pan just ended with this click (e.g. middle mouse was released)
-            if (isPanning) return;
-
-            const canvasX = Math.floor((screenX - rect.left) / effectiveCellSize);
-            const canvasY = Math.floor((screenY - rect.top) / effectiveCellSize);
-            const worldX = Math.floor(canvasX + viewportOffset.x);
-            const worldY = Math.floor(canvasY + viewportOffset.y);
-            
-            // console.log(`handleCanvasMouseDown: Attempting to draw at (${worldX}, ${worldY}). Checking canDrawAtPoint.`);
-
-            if (!canDrawAtPoint(worldX, worldY)) {
-                if (!currentUser && !showAuthWarning) { 
-                    setShowAuthWarning(true);
-                    console.warn("Login required to draw.");
-                } else if (currentUser && userProfile?.landInfo) { 
-                    console.warn(`Cannot draw at (${worldX}, ${worldY}). Outside land boundaries. Center: (${userProfile.landInfo.centerX}, ${userProfile.landInfo.centerY}), Radius: ${userProfile.landInfo.expandableRadius}`);
-                }
-                return; // Prevent drawing
-            }
-            setShowAuthWarning(false); // Clear warning if drawing is allowed
-
-
-            // if (animationFrameIdRef.current) {
-            //     cancelAnimationFrame(animationFrameIdRef.current);
-            //     animationFrameIdRef.current = null;
-            // }
-            // pixelPaintBatchRef.current = []; // Not needed with PixelBatchManager
-            lastPositionRef.current = { x: worldX, y: worldY };
-            lastPaintedCellRef.current = { x: worldX, y: worldY }; // Ensure last painted cell is set
-
-            if (memoizedCanPlacePixel() || COOLDOWN_SECONDS === 0) {
-                const effectiveColor = getEffectiveColor();
-                let pixelsToUpdate: Pixel[];
-
-                if (isEraserActive) {
-                    pixelsToUpdate = getPixelsInEraserArea(worldX, worldY, eraserSize, effectiveColor);
-                } else {
-                    pixelsToUpdate = [{ x: worldX, y: worldY, color: effectiveColor }];
-                }
-                
-                const drawablePixels = pixelsToUpdate.filter(p => canDrawAtPoint(p.x, p.y));
-
-                if (drawablePixels.length > 0) {
-                  // Optimistic UI update
-                  const timestamp = Date.now();
-                  drawablePixels.forEach(pixel => {
-                      masterGridDataRef.current.set(getPixelKey(pixel.x, pixel.y), pixel.color);
-                      optimisticUpdatesMapRef.current.set(getPixelKey(pixel.x, pixel.y), { timestamp, color: pixel.color });
-                  });
-
-                  setGrid(prevGrid => {
-                      const newGrid = new Map(prevGrid);
-                      let hasChanges = false;
-                      drawablePixels.forEach(pixel => {
-                          const key = getPixelKey(pixel.x, pixel.y);
-                          const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
-                          if(activeChunkKeysRef.current.has(chunkKey)){
-                            if (newGrid.get(key) !== pixel.color) {
-                              newGrid.set(key, pixel.color);
-                              hasChanges = true;
-                            }
-                          }
-                      });
-                      return hasChanges ? newGrid : prevGrid;
-                  });
-                  
-                  // Add to PixelBatchManager
-                  if (pixelBatchManagerRef.current) {
-                    const pixelsForBatchManager = drawablePixels.map(p => ({...p, clientId: clientIdRef.current, timestamp }));
-                    console.log('[Canvas] handleCanvasMouseDown: Adding updates to PixelBatchManager:', pixelsForBatchManager);
-                    pixelBatchManagerRef.current.addUpdates(pixelsForBatchManager);
-                  }
-                  setLastPlaced(Date.now());
-                  lastPaintedCellRef.current = { x: worldX, y: worldY };
-                }
-            }
-            setIsMouseDown(true); // For drawing state
-        }
-    } else if (event.button === 1) { // Middle click for panning
-        event.preventDefault(); // Prevent default middle-click behavior (e.g., autoscroll)
-        setIsPanning(true);
-        // isMouseDown remains false
-        panStartMousePositionRef.current = { x: screenX, y: screenY };
-        panStartViewportOffsetRef.current = { ...viewportOffset };
-        if (canvasContainerRef.current) canvasContainerRef.current.style.cursor = 'grabbing';
-        document.body.style.cursor = 'grabbing'; // Also set on body to ensure cursor stays during fast drags
-    }
-  }, [viewportOffset, memoizedCanPlacePixel, getEffectiveColor, isEraserActive, eraserSize, getPixelsInEraserArea, updateMultiplePixels, setLastPlaced, setIsMouseDown, setIsPanning, clientIdRef, isPanning, effectiveCellSize, getChunkKeyForPixel, canDrawAtPoint, currentUser, userProfile, showAuthWarning, setShowAuthWarning, debugMode]);
-  
-
-  // Effect to calculate viewport dimensions in cells
-  useEffect(() => {
-    const calculateAndSetDimensions = () => {
-      if (canvasContainerRef.current && effectiveCellSize > 0) {
-        const containerWidth = canvasContainerRef.current.clientWidth;
-        const containerHeight = canvasContainerRef.current.clientHeight;
-        
-        console.log("Container dimensions:", { width: containerWidth, height: containerHeight });
-        
-        if (containerWidth > 0 && containerHeight > 0) {
-          const newWidth = Math.ceil(containerWidth / effectiveCellSize);
-          const newHeight = Math.ceil(containerHeight / effectiveCellSize);
-          
-          console.log("Calculated viewport dimensions:", { newWidth, newHeight });
-          
-          setViewportCellWidth(newWidth);
-          setViewportCellHeight(newHeight);
-        } else {
-          console.warn("Container dimensions are zero or negative");
-        }
-      } else {
-        console.log("Cannot calculate dimensions:", {
-          containerRef: canvasContainerRef.current ? "exists" : "null",
-          effectiveCellSize
-        });
-      }
-    };
-
-    // Initial calculation
-    calculateAndSetDimensions();
-
-    // Set up resize observer for dynamic recalculation
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect) {
-          console.log("Resize observed:", entry.contentRect);
-          calculateAndSetDimensions();
-        }
-      }
-    });
-    
-    if (canvasContainerRef.current) {
-      observer.observe(canvasContainerRef.current);
-    }
-
-    // Handle window resize as a fallback
-    const handleResize = () => calculateAndSetDimensions();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      if (canvasContainerRef.current) {
-        observer.unobserve(canvasContainerRef.current);
-      }
-      observer.disconnect();
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [effectiveCellSize]); 
-
-  // This effect runs once to load all initial data
-  useEffect(() => {
-    const loadData = async () => {
-      console.log("Canvas mount: Requesting initial data sync from Firebase.");
-      await requestFullSync();
-    };
-
-    loadData();
-  }, [requestFullSync]); // requestFullSync is stable due to useCallback
-
-  const fetchAllLands = useCallback(async () => {
-    console.log("fetchAllLands: Function called.");
-    setLoadingLands(true);
-    
-    // Ensure currentUser is available before proceeding
-    if (!currentUser) {
-      console.log("fetchAllLands: No current user, aborting land fetch.");
-      setLoadingLands(false);
-      setAllLands([]); // Clear any existing lands if user logs out
-      return;
-    }
-    
-    try {
-      // Attempt to load from IndexedDB first
-      const dbInstance = await openDB('dotverse', 1, {
-        upgrade(db) {
-          if (!db.objectStoreNames.contains('lands')) {
-            db.createObjectStore('lands', { keyPath: 'id' });
-          }
-        },
-      });
-      
-      const txCache = dbInstance.transaction('lands', 'readonly');
-      const storeCache = txCache.objectStore('lands');
-      
-      // Track all lands with a Set to avoid duplicates
-      const lands: LandInfo[] = [];
-      const seenCenters = new Set<string>();
-      
-      console.log("fetchAllLands: Starting to fetch all user lands from Firestore (global)...");
-
-      // 1. Check the dedicated 'lands' collection (global lands)
-      console.log("fetchAllLands: Querying 'lands' collection...");
-      const landsCollectionRef = collection(fs, 'lands');
-      const landsCollectionQuery = query(landsCollectionRef);
-      const landsSnapshot = await getDocs(landsCollectionQuery);
-
-      if (!landsSnapshot.empty) {
-        console.log(`fetchAllLands: Found ${landsSnapshot.size} documents in 'lands' collection.`);
-        landsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          const docId = doc.id;
-
-          if (data.size && data.owner && data.isBorder !== true) {
-            const coords = docId.split(',');
-            if (coords.length === 2) {
-              const centerX = parseInt(coords[0], 10);
-              const centerY = parseInt(coords[1], 10);
-
-              if (!isNaN(centerX) && !isNaN(centerY)) {
-                const centerKey = `${centerX}:${centerY}`;
-
-                const isCurrentUserOwnLand = currentUser && userProfile?.landInfo &&
-                                        userProfile.landInfo.centerX === centerX &&
-                                        userProfile.landInfo.centerY === centerY &&
-                                        currentUser.uid === data.owner;
-
-                if (isCurrentUserOwnLand) {
-                  // Skip current user's own land
-                } else if (seenCenters.has(centerKey)) {
-                  // Skip already seen land
-                } else {
-                  seenCenters.add(centerKey);
-                  lands.push({
-                    centerX,
-                    centerY,
-                    ownedSize: data.size,
-                    owner: data.owner,
-                    displayName: data.displayName || `User ${data.owner.substring(0, 6)}`,
-                    isEmpty: data.isEmpty === undefined ? false : data.isEmpty, // Default to not empty unless specified
-                  });
-                }
-              }
-            }
-          }
-        });
-      } else {
-        console.log("fetchAllLands: 'lands' collection is empty or no matching documents.");
-      }
-
-      // 2. Check user profiles for land info (if `lands` collection isn't the sole source)
-      console.log("fetchAllLands: Querying 'users' collection for landInfo...");
-      const usersRef = collection(fs, 'users');
-      const usersQueryFs = query(usersRef);
-      const usersSnapshot = await getDocs(usersQueryFs);
-
-      if (!usersSnapshot.empty) {
-        console.log(`fetchAllLands: Found ${usersSnapshot.size} user profiles in 'users' collection.`);
-        usersSnapshot.docs.forEach(userDoc => {
-          const userData = userDoc.data();
-          const userId = userDoc.id;
-
-          if (userData?.landInfo?.centerX !== undefined &&
-              userData?.landInfo?.centerY !== undefined &&
-              userData?.landInfo?.ownedSize &&
-              userId !== currentUser.uid) { // Ensure it's not the current user's land from their profile
-
-            const { centerX, centerY, ownedSize } = userData.landInfo;
-            const owner = userId;
-            const centerKey = `${centerX}:${centerY}`;
-
-            if (!seenCenters.has(centerKey)) { // Check if already added from 'lands' collection
-              seenCenters.add(centerKey);
-              lands.push({
-                centerX,
-                centerY,
-                ownedSize,
-                owner,
-                displayName: userData.displayName || `User ${owner.substring(0,6)}`,
-                isEmpty: userData.landInfo.isEmpty === undefined ? false : userData.landInfo.isEmpty,
-              });
-            }
-          }
-        });
-      } else {
-        console.log("fetchAllLands: 'users' collection is empty.");
-      }
-      
-      console.log(`fetchAllLands: Total unique other lands compiled: ${lands.length}.`);
-      setAllLands(lands);
-
-    } catch (error) {
-      console.error("Error fetching all lands:", error);
-      setAllLands([]); // Clear lands on error
-    } finally {
-      setLoadingLands(false);
-      console.log("fetchAllLands: Function finished.");
-    }
-  }, [currentUser, userProfile]); // fs, collection, getDocs, query from 'firebase/firestore' are stable
-
-  // Effect to load lands from IndexedDB on initial load
-  useEffect(() => {
-    // This effect was for loading current user's lands from cache.
-    // Since fetchAllLands now fetches global lands, this might be redundant or need adjustment
-    // if current user's land is also part of `allLands` and needs caching.
-    // For now, let's rely on the main fetchAllLands triggered by initialDataLoaded.
-    // If caching for *other* lands is desired, fetchAllLands would need to implement it.
-    console.log("useEffect for loading lands from cache (currently placeholder). currentUser:", !!currentUser);
-    if (initialDataLoaded && currentUser) {
-        // fetchAllLands is already called when initialDataLoaded becomes true.
-        // No need for a separate call here unless the logic is different.
-    }
-  }, [currentUser, initialDataLoaded, fetchAllLands]); // Added fetchAllLands to dependencies
-
-  useEffect(() => {
-    websocketService.connect();
-    websocketService.onConnectionChange((connected) => {
-      setWsConnected(connected);
-      if (connected && initialDataLoaded) { // CHANGED
-        requestFullSync();
-      }
-    });
-    
-    const handlePixelUpdate = (data: any) => {
-      const incomingPixels: Pixel[] = Array.isArray(data) ? data : (data ? [data] : []);
-      if (incomingPixels.length === 0) return;
-
-      const actuallyChangedMasterGrid: Pixel[] = [];
-
-      incomingPixels.forEach((pixel) => {
-        if (typeof pixel.x !== 'number' || typeof pixel.y !== 'number' || typeof pixel.color !== 'string') {
-          console.warn("[Canvas] WS handlePixelUpdate: Received invalid pixel data", pixel);
-          return; // Skip this invalid pixel
-        }
-
-        const pixelKey = getPixelKey(pixel.x, pixel.y);
-        const optimisticEntry = optimisticUpdatesMapRef.current.get(pixelKey);
-        let applyUpdateToMaster = true;
-
-        if (optimisticEntry) {
-          if (pixel.clientId === clientIdRef.current) {
-            // Echo of our own write
-            if (pixel.timestamp && optimisticEntry.timestamp > pixel.timestamp) {
-              // Our local optimistic update is newer than this echo. Ignore the echo.
-              applyUpdateToMaster = false;
-              // console.log(`[Canvas] WS handlePixelUpdate: Ignored older echo for ${pixelKey}. Optimistic: ${optimisticEntry.timestamp}, Echo: ${pixel.timestamp}`);
-            } else {
-              // Echo confirms our optimistic update (or is newer). Clear optimistic flag.
-              // console.log(`[Canvas] WS handlePixelUpdate: Confirmed optimistic ${pixelKey} by echo. Optimistic: ${optimisticEntry.timestamp}, Echo: ${pixel.timestamp}`);
-              optimisticUpdatesMapRef.current.delete(pixelKey);
-            }
-          } else {
-            // Update from another client for a pixel we optimistically updated.
-            // Their update takes precedence over our unconfirmed one. Clear our optimistic flag.
-            // console.log(`[Canvas] WS handlePixelUpdate: Other client ${pixel.clientId} overwrote optimistic ${pixelKey}.`);
-            optimisticUpdatesMapRef.current.delete(pixelKey);
-          }
-        }
-
-        if (applyUpdateToMaster) {
-          if (masterGridDataRef.current.get(pixelKey) !== pixel.color) {
-            masterGridDataRef.current.set(pixelKey, pixel.color);
-            actuallyChangedMasterGrid.push(pixel);
-          }
-        }
-      });
-
-      if (actuallyChangedMasterGrid.length > 0) {
-        setGrid(prevGrid => {
-          const newGrid = new Map(prevGrid);
-          actuallyChangedMasterGrid.forEach(p => {
-            const currentPixelKey = getPixelKey(p.x, p.y);
-            const chunkKeyForPixel = getChunkKeyForPixel(p.x, p.y);
-            if (activeChunkKeysRef.current.has(chunkKeyForPixel)) {
-              newGrid.set(currentPixelKey, p.color);
-            }
-          });
-          return newGrid;
-        });
-      }
-    };
-
-    
-    const handleCanvasReset = () => {
-      console.log("Received canvas reset via WebSocket");
-      
-      const resetInitiator = (arguments[0] as any)?.clientId;
-      if (resetInitiator && resetInitiator === clientIdRef.current) {
-          console.log("Reset was initiated by this client, already handled locally.");
-          return;
-      }
-
-      masterGridDataRef.current.clear(); 
-      setGrid(new Map()); 
-      optimisticUpdatesMapRef.current.clear();
-      activeChunkKeysRef.current.clear();
-      console.log("Canvas reset based on WebSocket event.");
-      // Optionally, trigger a full sync if there's a concern about missed updates
-      // requestFullSync(); 
-    };
-    
-    const handleSyncNeeded = () => {
-      console.log("Sync needed, fetching latest data from Firebase");
-      requestFullSync();
-    };
-    
-    websocketService.on('pixel_update', handlePixelUpdate);
-    websocketService.on('canvas_reset', handleCanvasReset);
-    websocketService.on('sync_needed', handleSyncNeeded);
-    
-    // Set up periodic sync - but with safeguards against too frequent syncs
-    const syncInterval = setInterval(() => {
-      // Only sync if we haven't synced in the last minute AND initial data has been loaded
-      if (Date.now() - 60000 > lastSyncTime && initialDataLoaded) { // CHANGED
-        requestFullSync();
-      }
-    }, 60000); // Check every minute
-    
-    return () => {
-      websocketService.offConnectionChange(setWsConnected);
-      websocketService.off('pixel_update', handlePixelUpdate);
-      websocketService.off('canvas_reset', handleCanvasReset);
-      websocketService.off('sync_needed', handleSyncNeeded);
-      clearInterval(syncInterval);
-    };
-  }, [requestFullSync, lastSyncTime, getChunkKeyForPixel, initialDataLoaded]); // CHANGED: Added initialDataLoaded
-  
-  
-  const loadGridChunk = useCallback(async (startX: number, startY: number, endX: number, endY: number) => {
-    console.warn("loadGridChunk is stubbed for infinite canvas. Data is loaded via requestFullSync.");
-    // In a full implementation, this would fetch a specific region from Firebase.
-  }, []);
-
-  const updateVisibleChunk = useCallback((startX: number, startY: number, endX: number, endY: number) => {
-     console.warn("updateVisibleChunk is stubbed for infinite canvas.");
-    // This would typically trigger loadGridChunk for the new viewport.
-  }, [loadGridChunk]);
-  
-  useEffect(() => {
-    // Initialize the PixelBatchManager
-    pixelBatchManagerRef.current = new PixelBatchManager(
-        updateMultiplePixels, // Pass the refined updateMultiplePixels as the callback
-        { 
-          initialBatchInterval: UPDATE_BATCH_INTERVAL, // from existing constant
-          maxBatchSize: BATCH_SIZE, // from existing constant
-          // minBatchInterval can be set if needed, e.g., 16 for ~60fps target for processing start
-        }
-    );
-    
-    return () => {
-      pixelBatchManagerRef.current?.clear(); // Clear any pending batches on unmount
-    };
-  }, [updateMultiplePixels]); // updateMultiplePixels is stable due to useCallback
-
-  // Improve the PixelBatchManager initialization to optimize for low-latency drawing
-  useEffect(() => {
-    // Initialize the PixelBatchManager with improved parameters
-    pixelBatchManagerRef.current = new PixelBatchManager(
-        updateMultiplePixels,
-        { 
-          initialBatchInterval: 50, // Reduced from 200ms to 50ms for more responsive updates
-          maxBatchSize: BATCH_SIZE, 
-          minBatchInterval: 16  // ~60fps target for processing start
-        }
-    );
-    
-    return () => {
-      pixelBatchManagerRef.current?.clear();
-    };
-  }, [updateMultiplePixels]);
-  
-  // This is the key useEffect for fetching lands
-  useEffect(() => {
-    console.log(`useEffect[fetchAllLands, initialDataLoaded]: Effect triggered. initialDataLoaded = ${initialDataLoaded}`);
-    if (initialDataLoaded) { // CHANGED
-      console.log("useEffect[fetchAllLands, initialDataLoaded]: Condition initialDataLoaded is true. Calling fetchAllLands.");
-      fetchAllLands();
-    } else {
-      console.log("useEffect[fetchAllLands, initialDataLoaded]: Condition initialDataLoaded is false. Not calling fetchAllLands yet.");
-    }
-  }, [fetchAllLands, initialDataLoaded]); // CHANGED: Depends on initialDataLoaded state
-
-  // Periodic refresh of lands data
-  useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      if (initialDataLoaded) { // CHANGED
-        console.log("Periodic land refresh: Calling fetchAllLands.");
-        fetchAllLands();
-      }
-    }, 60000); // Refresh every minute
-    
-    return () => clearInterval(refreshInterval);
-  }, [fetchAllLands, initialDataLoaded]); // CHANGED: Added initialDataLoaded
-
-  const updatePixelsInFirebase = async (pixels: Array<{x: number, y: number, color: string}>) => {
-    if (!pixels.length) return;
-    
-    // This function might be deprecated if all updates go through PixelBatchManager -> updateMultiplePixels
-    // For now, ensure it uses quotaManager correctly if called directly.
-    const updates: Record<string, any> = {};
-    const timestamp = Date.now();
-    
-    pixels.forEach(({ x, y, color }) => {
-      updates[getPixelKey(x, y)] = {
-        color,
-        timestamp,
-        clientId: clientIdRef.current
-      };
-    });
-    
-    try {
-      await quotaManager.safeWrite({
-        path: `${PIXELS_PATH}`,
-        type: 'update',
-        data: updates
-      });
-      setLastSyncTime(Date.now());
-    } catch (error) {
-      console.error("Error updating pixels in Firebase:", error);
+      console.error("[Canvas] persistToFirestore: Error during Firestore operation:", error);
+      firestoreDebugger.logError(error, 'persistToFirestore', 'batch');
+      return false;
     }
   };
 
-  const updatePixelInFirebase = async (x: number, y: number, color: string) => {
-    // This function might be deprecated if all updates go through PixelBatchManager -> updateMultiplePixels
-    try {
-      await quotaManager.safeWrite({
-        path: `${PIXELS_PATH}`,
-        type: 'update',
-        data: {
-          [getPixelKey(x, y)]: {
-            color,
-            timestamp: Date.now(),
-            clientId: clientIdRef.current
-          }
-        }
-      });
-      setLastSyncTime(Date.now());
-    } catch (error) {
-      console.error("Error updating pixel in Firebase:", error);
+  // Debug mode logging - log grid and viewport info
+  useEffect(() => {
+    if (debugMode) {
+      console.log("DEBUG MODE - Current grid and viewport state:");
+      console.log("Grid size:", grid.size);
+      console.log("Viewport offset:", viewportOffset);
+      console.log("Viewport cell size:", effectiveCellSize);
+      console.log("Zoom level:", zoomLevel);
+      console.log("Last sync time:", lastSyncTime);
+      console.log("Connected users:", wsConnected);
+      console.log("All lands:", JSON.stringify(allLands, null, 2));
     }
-  };
+  }, [debugMode, grid, viewportOffset, effectiveCellSize, zoomLevel, lastSyncTime, wsConnected, allLands]);
+
+  // Effect to log warnings for potential issues
+  useEffect(() => {
+    if (initialDataLoaded && !wsConnected) {
+      console.warn("Warning: WebSocket not connected but initial data is loaded. Real-time features will not work.");
+    }
+  }, [initialDataLoaded, wsConnected]);
 
   const navigateToUserLand = useCallback(() => {
     if (currentUser && userProfile && userProfile.landInfo && canvasContainerRef.current) {
@@ -1616,18 +923,11 @@ export default function Canvas() {
     setInitialViewportSet(true); // Mark as set
   }, [initialDataLoaded, currentUser, userProfile, initialViewportSet, setViewportOffset, setZoomLevel]);
 
-  // Effect for saving viewport changes
+  // Effect for saving viewport changes (now debounced)
   useEffect(() => {
-    if (!initialDataLoaded || !initialViewportSet) return; // Don't save until initial setup is done
-
-    try {
-      localStorage.setItem(LOCAL_STORAGE_VIEWPORT_X_KEY, viewportOffset.x.toString());
-      localStorage.setItem(LOCAL_STORAGE_VIEWPORT_Y_KEY, viewportOffset.y.toString());
-      localStorage.setItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY, zoomLevel.toString());
-    } catch (e) {
-      console.error("Error saving viewport to localStorage:", e);
-    }
-  }, [viewportOffset, zoomLevel, initialDataLoaded, initialViewportSet]);
+    // No need to check initialDataLoaded/initialViewportSet here, debouncedSaveViewport does it
+    debouncedSaveViewport(viewportOffset, zoomLevel);
+  }, [viewportOffset, zoomLevel, debouncedSaveViewport]);
 
 
   const handleColorChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1649,67 +949,68 @@ export default function Canvas() {
   };
 
   const clearCanvas = useCallback(async () => {
-    // Optional: Add an authorization check here (e.g., if (!currentUser || !isAdmin)) return;
-    if (!currentUser) {
-        setShowAuthWarning(true);
-        console.warn("Clear canvas: User not logged in.");
-        return;
-    }
-    setShowAuthWarning(false);
+  // Optional: Add an authorization check here (e.g., if (!currentUser || !isAdmin)) return;
+  if (!currentUser) {
+      setShowAuthWarning(true);
+      console.warn("Clear canvas: User not logged in.");
+      return;
+  }
+  setShowAuthWarning(false);
 
-    setIsClearing(true);
-    
-    try {
-      // 1. Clear Backend Data
-      if (USE_CHUNKED_STORAGE) {
-        console.log("Clearing Firestore chunks...");
-        const chunksCollectionRef = collection(fs, CHUNK_COLLECTION);
-        const querySnapshot = await getDocs(chunksCollectionRef);
-        if (!querySnapshot.empty) {
-          const batch = writeBatch(fs);
-          querySnapshot.forEach(docSnapshot => {
-            batch.delete(docSnapshot.ref);
-          });
-          await batch.commit();
-          console.log(`Deleted ${querySnapshot.size} Firestore chunks.`);
-        } else {
-          console.log("No Firestore chunks to delete.");
-        }
-      } else {
-        console.log("Clearing Realtime Database pixels...");
-        await set(ref(db, PIXELS_PATH), null);
-        console.log("Realtime Database pixels cleared.");
-      }
-
-      // 2. Clear Local Data
-      masterGridDataRef.current.clear();
-      setGrid(new Map());
-      optimisticUpdatesMapRef.current.clear();
-      activeChunkKeysRef.current.clear();
-      console.log("Local canvas data cleared.");
-
-      // 3. Notify Other Clients
-      if (websocketService.isConnected()) {
-        websocketService.send('canvas_reset', { clientId: clientIdRef.current });
-        console.log("Sent canvas_reset WebSocket message.");
-      } else {
-        console.warn("WebSocket not connected. Cannot send canvas_reset message.");
-      }
-      
-      // 4. Perform a full sync to ensure consistency with the now-empty backend
-      // This also updates lastSyncTime.
-      await requestFullSync(); 
-      console.log("Full sync after clear completed.");
-
-    } catch (error) {
-      console.error("Error during canvas clear:", error);
-      // Attempt to re-sync even on error to get a consistent state
-      await requestFullSync();
-    } finally {
-      setIsClearing(false);
-    }
-  }, [requestFullSync, clientIdRef, currentUser, setShowAuthWarning]); // fs, db, collection, getDocs, writeBatch, set, ref are stable
+  setIsClearing(true);
   
+  try {
+    // 1. Clear Backend Data
+    if (USE_CHUNKED_STORAGE) {
+      console.log("Clearing Firestore chunks...");
+      const chunksCollectionRef = collection(fs, CHUNK_COLLECTION);
+      const querySnapshot = await getDocs(chunksCollectionRef);
+      if (!querySnapshot.empty) {
+        const batch = writeBatch(fs);
+        querySnapshot.forEach(docSnapshot => {
+          batch.delete(docSnapshot.ref);
+        });
+        await batch.commit();
+        console.log(`Deleted ${querySnapshot.size} Firestore chunks.`);
+      } else {
+        console.log("No Firestore chunks to delete.");
+      }
+    } else {
+      console.log("Clearing Realtime Database pixels...");
+      await set(ref(db, PIXELS_PATH), null);
+      console.log("Realtime Database pixels cleared.");
+    }
+
+    // 2. Clear Local Data
+    masterGridDataRef.current.clear();
+    setGrid(new Map());
+    optimisticUpdatesMapRef.current.clear();
+    activeChunkKeysRef.current.clear();
+    console.log("Local canvas data cleared.");
+
+    // 3. Notify Other Clients - FIXED: use wsConnected instead of isConnected()
+    if (wsConnected) {
+      websocketService.send('canvas_reset', { clientId: clientIdRef.current });
+      console.log("Sent canvas_reset WebSocket message.");
+    } else {
+      console.warn("WebSocket not connected. Cannot send canvas_reset message.");
+    }
+    
+    // 4. Perform a full sync to ensure consistency with the now-empty backend
+    // This also updates lastSyncTime.
+    await requestFullSync(); 
+    console.log("Full sync after clear completed.");
+
+  } catch (error) {
+    console.error("Error during canvas clear:", error);
+    // Attempt to re-sync even on error to get a consistent state
+    await requestFullSync();
+  } finally {
+    setIsClearing(false);
+  }
+}, [requestFullSync, clientIdRef, currentUser, setShowAuthWarning, wsConnected]); // Added wsConnected dependency
+  // Removed quotaManager reference
+
   const getCoordsFromTouchEvent = (event: React.TouchEvent<HTMLDivElement>): { x: number, y: number } | null => {
     if (event.touches.length !== 1) return null;
     
@@ -1722,10 +1023,180 @@ export default function Canvas() {
     const y = Math.floor((touch.clientY - rect.top) / effectiveCellSize) + viewportOffset.y;
     
     return { x, y };
+
   };
 
+  const memoizedCanPlacePixel = useCallback((): boolean => {
+  if (COOLDOWN_SECONDS === 0) return true; // No cooldown
+  
+  const now = Date.now();
+  const timeSinceLastPlacement = now - lastPlaced;
+  return timeSinceLastPlacement > (COOLDOWN_SECONDS * 1000);
+}, [lastPlaced]);
+
+  const getEffectiveColor = useCallback((): string => {
+  // If eraser is active, return white (or whatever your background color is)
+  if (isEraserActive) {
+    return "#ffffff"; // Default eraser color (white)
+  }
+  // Otherwise return the selected color
+  return selectedColor;
+}, [isEraserActive, selectedColor]);
+
+  // Add missing helper function for eraser
+  const getPixelsInEraserArea = useCallback((centerX: number, centerY: number, size: number, color: string): Pixel[] => {
+    const pixels: Pixel[] = [];
+    const radius = Math.floor(size / 2);
+    
+    for (let y = centerY - radius; y <= centerY + radius; y++) {
+      for (let x = centerX - radius; x <= centerX + radius; x++) {
+        pixels.push({ x, y, color });
+      }
+    }
+    return pixels;
+  }, []);
+  const paintCellOnMove = useCallback((worldX: number, worldY: number) => {
+    if (!isMouseDown || isPanning) {
+      return;
+    }
+
+    if (COOLDOWN_SECONDS > 0 && !memoizedCanPlacePixel()) {
+      return;
+    }
+
+    const currentPosition = { x: worldX, y: worldY };
+    
+    // Ensure we have a last position, even if doing first click-drag
+    const lastPosition = lastPositionRef.current || currentPosition;
+      
+    // Calculate distance moved since last point
+    const dx = Math.abs(currentPosition.x - lastPosition.x);
+    const dy = Math.abs(currentPosition.y - lastPosition.y);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Generate line points between last position and current position
+    // For very fast movements, generate more intermediary points
+    // This ensures we don't miss pixels even during fast drawing
+    let linePoints: {x: number, y: number}[] = [];
+    
+    // For longer distances, increase density of points for smoother lines
+    if (distance > 10) {
+      // Create more intermediary points for long lines
+      const steps = Math.ceil(distance * 1.5); // 1.5 points per unit of distance
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = Math.round(lastPosition.x + (currentPosition.x - lastPosition.x) * t);
+        const y = Math.round(lastPosition.y + (currentPosition.y - lastPosition.y) * t);
+        linePoints.push({x, y});
+      }
+    } else {
+      // For shorter movements, use the standard Bresenham line algorithm
+      linePoints = plotLine(lastPosition.x, lastPosition.y, currentPosition.x, currentPosition.y);
+    }
+      
+    const pixelsToBatch: Pixel[] = [];
+    const effectiveColor = getEffectiveColor();
+
+    // Process each point in the line
+    linePoints.forEach(point => {
+      if (isEraserActive) {
+        pixelsToBatch.push(...getPixelsInEraserArea(point.x, point.y, eraserSize, effectiveColor));
+      } else {
+        pixelsToBatch.push({
+          x: point.x,
+          y: point.y,
+          color: effectiveColor
+        });
+      }
+    });
+      
+    // Add to batch for processing
+    if (pixelsToBatch.length > 0) {
+      // Filter for optimistic update before adding to batch
+      const drawablePixelsForOptimisticUpdate = pixelsToBatch.filter(p => canDrawAtPoint(p.x, p.y));
+      
+      // Use a Set to ensure we don't have duplicate pixels in the update
+      // This prevents wasteful redrawing of the same pixel
+      const uniqueDrawablePixels = new Map<string, Pixel>();
+      drawablePixelsForOptimisticUpdate.forEach(pixel => {
+        const key = `${pixel.x}:${pixel.y}`;
+        uniqueDrawablePixels.set(key, pixel);
+      });
+      
+      const uniquePixelsArray = Array.from(uniqueDrawablePixels.values());
+      if (uniquePixelsArray.length > 0) {
+        // Immediate send updates:
+        updateMultiplePixels(uniquePixelsArray);
+        setLastPlaced(Date.now());
+      }
+    }
+      
+    // Always update lastPositionRef with the current position to ensure continuous drawing
+    lastPositionRef.current = currentPosition;
+  }, [
+    isMouseDown,
+    isPanning,
+    getEffectiveColor,
+    memoizedCanPlacePixel,
+    isEraserActive,
+    eraserSize,
+    getPixelsInEraserArea,
+    canDrawAtPoint,
+    updateMultiplePixels,
+    setLastPlaced
+  ]);
+
+  const handleWindowMouseMove = useCallback((event: MouseEvent) => {
+    if (!canvasContainerRef.current) return;
+    
+    if (isPanning && panStartMousePositionRef.current && panStartViewportOffsetRef.current) {
+      const dx = event.clientX - panStartMousePositionRef.current.x;
+      const dy = event.clientY - panStartMousePositionRef.current.y;
+      
+      const newOffsetX = panStartViewportOffsetRef.current.x - dx / effectiveCellSize;
+      const newOffsetY = panStartViewportOffsetRef.current.y - dy / effectiveCellSize;
+      
+      latestViewportOffsetTargetRef.current = { x: newOffsetX, y: newOffsetY };
+      requestViewportUpdateRAF();
+    } else if (isMouseDown) {
+      const rect = canvasContainerRef.current.getBoundingClientRect();
+      const x = Math.floor((event.clientX - rect.left) / effectiveCellSize) + viewportOffset.x;
+      const y = Math.floor((event.clientY - rect.top) / effectiveCellSize) + viewportOffset.y;
+      
+      const lastCell = lastPaintedCellRef.current;
+      if (!lastCell || lastCell.x !== x || lastCell.y !== y) {
+        paintCellOnMove(x, y);
+        lastPaintedCellRef.current = { x, y };
+      }
+    }
+  }, [effectiveCellSize, isMouseDown, isPanning, viewportOffset, paintCellOnMove, requestViewportUpdateRAF]);
+
+
+  const handleCanvasMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button === 0) { // Left click only
+      const rect = canvasContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      const x = Math.floor((event.clientX - rect.left) / effectiveCellSize) + viewportOffset.x;
+      const y = Math.floor((event.clientY - rect.top) / effectiveCellSize) + viewportOffset.y;
+      
+      if (isSpacebarHeldRef.current || event.altKey) {
+        setIsPanning(true);
+        panStartMousePositionRef.current = { x: event.clientX, y: event.clientY };
+        panStartViewportOffsetRef.current = { ...viewportOffset };
+      } else {
+        lastPositionRef.current = { x, y };
+        paintCellOnMove(x, y);
+        setIsMouseDown(true);
+      }
+    }
+  }, [effectiveCellSize, viewportOffset, paintCellOnMove]);
+
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault(); 
+    if (event.cancelable) {
+
+      event.preventDefault();
+    }
     const coords = getCoordsFromTouchEvent(event);
     if (coords) {
       const { x, y } = coords;
@@ -1742,43 +1213,29 @@ export default function Canvas() {
     }
   }, [paintCellOnMove, viewportOffset]); // viewportOffset for getCoordsFromTouchEvent
 
+
+
   const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault(); 
-    
-    if (isPanning && panStartMousePositionRef.current && panStartViewportOffsetRef.current) {
-      const currentEffectiveCellSize = CELL_SIZE * latestZoomLevelTargetRef.current;
-      if (currentEffectiveCellSize === 0) return;
-
-      const deltaX = event.touches[0].clientX - panStartMousePositionRef.current.x;
-      const deltaY = event.touches[0].clientY - panStartMousePositionRef.current.y;
-
-      const offsetDeltaX = deltaX / currentEffectiveCellSize; 
-      const offsetDeltaY = deltaY / currentEffectiveCellSize;
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+    const coords = getCoordsFromTouchEvent(event);
+    if (coords) {
+      const { x, y } = coords;
       
-      const newViewportXTarget = panStartViewportOffsetRef.current.x - offsetDeltaX;
-      const newViewportYTarget = panStartViewportOffsetRef.current.y - offsetDeltaY;
-
-      latestViewportOffsetTargetRef.current = { x: newViewportXTarget, y: newViewportYTarget };
-      latestZoomLevelTargetRef.current = zoomLevel; // Read from current state
-      requestViewportUpdateRAF();
-
-    } else if (isMouseDown && !isPanning) {
-      const coords = getCoordsFromTouchEvent(event);
-      if (coords) {
-        const { x, y } = coords;
-        
-        // Similar check as in mouse move to avoid redundant draws of the same pixel
-        const lastCell = lastPaintedCellRef.current;
-        if (!lastCell || lastCell.x !== x || lastCell.y !== y) {
-          paintCellOnMove(x, y);
-          lastPaintedCellRef.current = { x, y };
-        }
+      // Similar check as in mouse move to avoid redundant draws of the same pixel
+      const lastCell = lastPaintedCellRef.current;
+      if (!lastCell || lastCell.x !== x || lastCell.y !== y) {
+        paintCellOnMove(x, y);
+        lastPaintedCellRef.current = { x, y };
       }
     }
   }, [isPanning, isMouseDown, paintCellOnMove, requestViewportUpdateRAF, zoomLevel, viewportOffset]);
 
   const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault();
+    if (event.cancelable) {
+      event.preventDefault();
+    }
     if (isPanning) {
       setIsPanning(false);
       panStartMousePositionRef.current = null;
@@ -1788,6 +1245,17 @@ export default function Canvas() {
       lastPositionRef.current = null; // Clear the last position
     }
   }, [setIsPanning, setIsMouseDown]);
+
+  const handleWindowMouseUp = useCallback(() => {
+    if (isPanning) {
+      setIsPanning(false);
+      panStartMousePositionRef.current = null;
+      panStartViewportOffsetRef.current = null;
+    }
+    setIsMouseDown(false);
+    lastPositionRef.current = null;
+    lastPaintedCellRef.current = null;
+  }, [isPanning]);
 
   // Effect to attach global mouse move and up listeners for panning
   useEffect(() => {
@@ -1836,120 +1304,108 @@ export default function Canvas() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+  
+
+  // Add this effect around line 1290, after the keyboard spacebar effect
+
+// Effect to handle WebSocket connection setup
+useEffect(() => {
+  // Initialize websocket connection 
+  websocketService.connect();
+  
+  // Use onConnectionChange to update wsConnected state
+  const handleConnectionChange = (isConnected: boolean) => {
+    console.log(`WebSocket connection status changed: ${isConnected}`);
+    setWsConnected(isConnected);
+  };
+  
+  websocketService.onConnectionChange(handleConnectionChange);
+  
+  const handlePixelUpdate = (data: any) => {
+    // Handle incoming pixel updates
+    if (Array.isArray(data)) {
+      data.forEach(pixel => {
+        if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
+          const pixelKey = getPixelKey(pixel.x, pixel.y);
+          
+          // Check if this is a pixel we just placed (avoid flickering)
+          const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
+          if (optimisticUpdate && optimisticUpdate.timestamp > (pixel.timestamp || 0)) {
+            // Skip this update as our local version is newer
+            return;
+          }
+          
+          // Update master data
+          masterGridDataRef.current.set(pixelKey, pixel.color);
+          
+          // Update visible grid if the pixel is in view
+          const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
+          if (activeChunkKeysRef.current.has(chunkKey)) {
+            setGrid(prev => {
+              const newGrid = new Map(prev);
+              newGrid.set(pixelKey, pixel.color);
+              return newGrid;
+            });
+          }
+        }
+      });
+    }
+  };
+  
+  // Register WebSocket event listeners
+  // websocketService.on('connected', handleConnected); // REMOVE
+  // websocketService.on('disconnected', handleDisconnected); // REMOVE
+  websocketService.on('pixel_update', handlePixelUpdate);
+  
+  // Initial sync once connected
+  const syncOnceConnected = () => {
+    // FIX: Use wsConnected state variable instead of isConnected method
+    if (wsConnected && !initialDataLoaded) {
+      requestFullSync();
+    }
+  };
+  
+  // Try to sync immediately if already connected, otherwise wait for connection
+  const syncInterval = setInterval(syncOnceConnected, 2000);
+  
+  return () => {
+    // websocketService.off('connected', handleConnected); // REMOVE
+    // websocketService.off('disconnected', handleDisconnected); // REMOVE
+    websocketService.offConnectionChange(handleConnectionChange); // Add cleanup for onConnectionChange
+    websocketService.off('pixel_update', handlePixelUpdate);
+    clearInterval(syncInterval);
+  };
+}, [getPixelKey, getChunkKeyForPixel, requestFullSync, initialDataLoaded]);
+
+useEffect(() => {
+  // If data doesn't load within 10 seconds, show empty canvas anyway
+  const loadingTimeout = setTimeout(() => {
+    if (!initialDataLoaded) {
+      console.log("Loading timeout reached - forcing canvas to display");
+      setInitialDataLoaded(true);
+      // Trigger a sync attempt as a backup
+      requestFullSync();
+    }
+  }, 10000);
+  
+  return () => clearTimeout(loadingTimeout);
+}, [initialDataLoaded, requestFullSync]);
+
+  
 
   // Render logic
-  const gridCellsMemoDeps = useMemo(() => {
-    // Extract only the necessary data for comparison to reduce re-renders
-    return {
-      gridSize: grid.size,
-      viewportX: Math.floor(viewportOffset.x),
-      viewportY: Math.floor(viewportOffset.y),
-      width: viewportCellWidth,
-      height: viewportCellHeight,
-      zoom: effectiveCellSize,
-      debugMode,
-      hasUser: !!currentUser,
-      hasLandInfo: !!(userProfile?.landInfo)
-    };
-  }, [grid.size, viewportOffset.x, viewportOffset.y, viewportCellWidth, viewportCellHeight, effectiveCellSize, debugMode, currentUser, userProfile?.landInfo]);
+  // REMOVE the first/earlier declaration of cellLandMap and gridCells (including their useMemo blocks)
+  // If you see:
+  // const cellLandMap = useMemo(() => { ... }, [...]);
+  // const gridCells = useMemo(() => { ... }, [...]);
+  // ...delete these lines if they appear before the render logic...
 
-  // Define handleCellClick BEFORE gridCells useMemo to fix the reference error
-  const handleCellClick = useCallback((worldX: number, worldY: number, event: React.MouseEvent) => {
-    // Only handle left clicks
-    if (event.button !== 0) return;
-    
-    // Check if we can draw at this point
-    if (!canDrawAtPoint(worldX, worldY)) {
-      if (!currentUser && !showAuthWarning) { 
-        setShowAuthWarning(true);
-        console.warn("Login required to draw.");
-      } else if (currentUser && userProfile?.landInfo) { 
-        console.warn(`Cannot draw at (${worldX}, ${worldY}). Outside land boundaries.`);
-      }
-      return;
-    }
-    
-    setShowAuthWarning(false);
-    
-    // Start drawing
-    setIsMouseDown(true); // Still set this for mouse move tracking
-    lastPositionRef.current = { x: worldX, y: worldY };
-    
-    if (memoizedCanPlacePixel() || COOLDOWN_SECONDS === 0) {
-      const effectiveColor = getEffectiveColor();
-      let pixelsToUpdate: Pixel[];
-      
-      if (isEraserActive) {
-        pixelsToUpdate = getPixelsInEraserArea(worldX, worldY, eraserSize, effectiveColor);
-      } else {
-        pixelsToUpdate = [{ x: worldX, y: worldY, color: effectiveColor }];
-      }
-      
-      const drawablePixels = pixelsToUpdate.filter(p => canDrawAtPoint(p.x, p.y));
-      
-      if (drawablePixels.length > 0) {
-        // Optimistic UI update
-        const timestamp = Date.now();
-        drawablePixels.forEach(pixel => {
-          masterGridDataRef.current.set(getPixelKey(pixel.x, pixel.y), pixel.color);
-          optimisticUpdatesMapRef.current.set(getPixelKey(pixel.x, pixel.y), { timestamp, color: pixel.color });
-        });
-        
-        setGrid(prevGrid => {
-          const newGrid = new Map(prevGrid);
-          let hasChanges = false;
-          drawablePixels.forEach(pixel => {
-              const key = getPixelKey(pixel.x, pixel.y);
-              const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
-              if(activeChunkKeysRef.current.has(chunkKey)){
-                if (newGrid.get(key) !== pixel.color) {
-                  newGrid.set(key, pixel.color);
-                  hasChanges = true;
-                }
-              }
-          });
-          return hasChanges ? newGrid : prevGrid;
-        });
-        
-        // Add to PixelBatchManager
-        if (pixelBatchManagerRef.current) {
-          const pixelsForBatchManager = drawablePixels.map(p => ({...p, clientId: clientIdRef.current, timestamp }));
-          console.log('[Canvas] handleCellClick: Adding updates to PixelBatchManager:', pixelsForBatchManager);
-          pixelBatchManagerRef.current.addUpdates(pixelsForBatchManager);
-        }
-        
-        setLastPlaced(Date.now());
-        lastPaintedCellRef.current = { x: worldX, y: worldY };
-      }
-    }
-  }, [
-    canDrawAtPoint, 
-    memoizedCanPlacePixel, 
-    getEffectiveColor, 
-    isEraserActive, 
-    eraserSize, 
-    getPixelsInEraserArea,
-    updateMultiplePixels,
-    currentUser,
-    userProfile,
-    showAuthWarning,
-    setShowAuthWarning,
-    getChunkKeyForPixel,
-    clientIdRef
-  ]);
+  // KEEP ONLY the cellLandMap and gridCells useMemo blocks that are just before the render/return statement
 
-  const gridCells = useMemo(() => {
-    console.log(`gridCells: Computing. initialDataLoaded = ${initialDataLoaded}, allLands.length = ${allLands.length}`);
-    if (viewportCellWidth === 0 || viewportCellHeight === 0) {
-      return []; 
-    }
-    
-    const cells = [];
-    const roundedViewportX = Math.floor(viewportOffset.x);
-    const roundedViewportY = Math.floor(viewportOffset.y);
-    
-    // Build the land map
-    const cellLandMap = new Map<string, {landInfo: LandInfo, isCurrentUserLand: boolean}>();
+  // Memoize cellLandMap
+  const cellLandMap = useMemo(() => {
+    // console.log("Recomputing cellLandMap");
+    const newCellLandMap = new Map<string, {landInfo: LandInfo, isCurrentUserLand: boolean}>();
     
     // Add current user's land to map
     if (currentUser && userProfile && userProfile.landInfo) {
@@ -1958,7 +1414,7 @@ export default function Canvas() {
       
       for (let y = centerY - halfOwnedSize; y <= centerY + halfOwnedSize; y++) {
         for (let x = centerX - halfOwnedSize; x <= centerX + halfOwnedSize; x++) {
-          cellLandMap.set(`${x}:${y}`, { 
+          newCellLandMap.set(`${x}:${y}`, { 
             landInfo: {
               centerX,
               centerY,
@@ -1978,12 +1434,13 @@ export default function Canvas() {
                             userProfile.landInfo.centerX === land.centerX && 
                             userProfile.landInfo.centerY === land.centerY;
     
-      if (!isCurrentUserLand) {
+      if (!isCurrentUserLand) { // Only add if it's not the current user's land already processed
         const halfSize = Math.floor(land.ownedSize / 2);
         for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
           for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
-            if (!cellLandMap.has(`${x}:${y}`)) {
-              cellLandMap.set(`${x}:${y}`, { 
+            // Only add if no other land (including current user's) is already mapped to this cell
+            if (!newCellLandMap.has(`${x}:${y}`)) { 
+              newCellLandMap.set(`${x}:${y}`, { 
                 landInfo: land, 
                 isCurrentUserLand: false 
               });
@@ -1992,21 +1449,32 @@ export default function Canvas() {
         }
       }
     });
+    return newCellLandMap;
+  }, [currentUser, userProfile?.landInfo, allLands]);
+
+
+  const gridCells = useMemo(() => {
+    // console.log(`gridCells: Computing. initialDataLoaded = ${initialDataLoaded}, allLands.length = ${allLands.length}`);
+    if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
+      return []; 
+    }
     
-    // Determine if we should show grid lines based on zoom level
+    const cells = [];
+    const roundedViewportX = Math.floor(viewportOffset.x);
+    const roundedViewportY = Math.floor(viewportOffset.y);
+    
     const showGridLines = SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD;
     
-    // Generate visible cells
     for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
       for (let screenX = 0; screenX < viewportCellWidth; screenX++) {
         const worldX = screenX + roundedViewportX;
         const worldY = screenY + roundedViewportY;
         const pixelKey = getPixelKey(worldX, worldY);
         
-        // Get cell color from grid data
         const color = grid.get(pixelKey) || "#ffffff";
         
-        const isDrawableHere = currentUser && userProfile && canDrawAtPoint(worldX, worldY);
+        // isDrawableHere check depends on currentUser and userProfile
+        const isDrawableHere = !!currentUser && !!userProfile && canDrawAtPoint(worldX, worldY);
         
         const cellStyle: React.CSSProperties = {
           width: `${effectiveCellSize}px`,
@@ -2017,8 +1485,7 @@ export default function Canvas() {
         };
         
         let landOwnerInfo = null;
-        
-        const landMapEntry = cellLandMap.get(pixelKey);
+        const landMapEntry = cellLandMap.get(pixelKey); // Use memoized cellLandMap
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
           const { centerX, centerY, ownedSize, owner, displayName, isEmpty } = land;
@@ -2060,17 +1527,14 @@ export default function Canvas() {
             `linear-gradient(rgba(255, 0, 0, 0.3), rgba(255, 0, 0, 0.3)), ${color}`;
         }
         
-        // Add grid lines ONLY if enabled, at sufficient zoom level, AND this cell doesn't have land borders
         const hasLandBorder = 
           cellStyle.borderLeft || cellStyle.borderRight || 
           cellStyle.borderTop || cellStyle.borderBottom;
           
         if (showGridLines && !hasLandBorder) {
-          // Use a subtle inset box shadow for grid lines that won't interfere with borders
           cellStyle.boxShadow = `inset 0 0 0 1px ${GRID_LINE_COLOR}`;
         }
         
-        // Create cell with click handler
         cells.push(
           <div
             key={pixelKey}
@@ -2081,8 +1545,7 @@ export default function Canvas() {
             // Individual cell onMouseDown might conflict or be redundant.
             // If specific cell click logic beyond drawing is needed, it can be added here.
             // For drawing, handleCanvasMouseDown initiates it.
-            // onMouseDown={(e) => !isPanning && handleCellClick(worldX, worldY, e)} // This was the previous line
-            
+            // onMouseDown={(e) => !isPanning && handleCellClick(worldX, worldY, e)} 
             // MouseOver for continuous drawing is handled by global mousemove when isMouseDown is true
             onMouseOver={(e) => {
               // This local onMouseOver might still be useful if global mousemove isn't precise enough
@@ -2115,62 +1578,72 @@ export default function Canvas() {
     }
     return cells;
   }, [
-    gridCellsMemoDeps,
     grid,
-    userProfile, 
-    allLands, 
-    currentUser, 
-    canDrawAtPoint, 
-    debugMode, 
-    userLandBorderColor, // Included as it's now defined in component scope
-    otherLandBorderColor, // Included as it's now defined in component scope
-    emptyLandFillColor, 
+    viewportOffset,
+    viewportCellWidth,
+    viewportCellHeight,
     effectiveCellSize,
-    viewportOffset, 
-    initialDataLoaded,
+    cellLandMap,
+    currentUser,
+    userProfile,
+    canDrawAtPoint,
+    debugMode,
     isPanning,
-    isMouseDown,
-    // paintCellOnMove, // Removed as individual cell mouseover for drawing is complex with RAF viewport
-    handleCellClick,
     zoomLevel,
+    initialDataLoaded,
+    getPixelKey // This should be stable, but double-check that it's not recreated on each render
   ]);
 
-  // Modify the loading check to only depend on initialDataLoaded
-  if (!initialDataLoaded) { // CHANGED
-    console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
-    // setIsLoading(true); // Potentially set global loading state if needed elsewhere
+  // Modify the loading screen return statement around line 1509
 
-    return (
-      <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <div>Loading Canvas...</div>
+if (!initialDataLoaded) {
+  console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
+  
+  return (
+    <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
+      <div className="flex flex-col items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+        <div className="text-lg mb-2">Loading Canvas...</div>
+        <div className="text-sm text-gray-600 mb-4">
+          {wsConnected ? 
+            "Connected to server, loading data..." : 
+            "Connecting to server..."}
+        </div>
+        <div className="flex space-x-4">
           <button 
             onClick={() => {
-              setInitialDataLoaded(true); // CHANGED
+              setInitialDataLoaded(true);
               setGrid(new Map());
             }}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             Skip Loading
           </button>
+          <button
+            onClick={() => {
+              requestFullSync();
+            }}
+            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+          >
+            Retry Sync
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div 
       ref={canvasContainerRef}
-      className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default" // Added cursor-default
+      className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default"
       style={{ 
-        touchAction: "none", // Crucial for preventing default touch behaviors
-        WebkitOverflowScrolling: "touch", // For momentum scrolling on iOS (though touch-action: none might override)
-        overscrollBehavior: "none", // Prevents pull-to-refresh, etc.
+        touchAction: "none", // This is crucial for preventing default touch behaviors
+        WebkitOverflowScrolling: "touch",
+        overscrollBehavior: "none",
       }} 
-      onWheel={handleWheel} // Already calls preventDefault
+      onWheel={handleWheel} 
       onMouseDown={handleCanvasMouseDown}
-      // Touch events for drawing and panning
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -2230,9 +1703,6 @@ export default function Canvas() {
             <span className={`inline-block w-3 h-3 rounded-full mr-1 ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
             {wsConnected ? 'Real-time connected' : 'Real-time disconnected'}
           </div>
-          {pixelBatchManagerRef.current && pixelBatchManagerRef.current.pendingCount > 0 && (
-            <span className="text-amber-600 text-xs">Syncing: {pixelBatchManagerRef.current.pendingCount} updates pending</span>
-          )}
         </div>
         <button 
           onClick={requestFullSync}

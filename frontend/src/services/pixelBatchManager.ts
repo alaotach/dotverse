@@ -94,51 +94,34 @@ export class PixelBatchManager {
    * Process the current batch of pixel updates
    */
   async processBatch() {
-    if (this.isProcessing || this.batch.size === 0) return; // Changed .length to .size
-    
-    // Clear any pending timer
-    if (this.processingTimer) {
-      clearTimeout(this.processingTimer);
-      this.processingTimer = null;
-    }
-    
+    if (this.isProcessing || this.batch.size === 0) return;
+    if (this.processingTimer) { clearTimeout(this.processingTimer); this.processingTimer = null; }
     this.isProcessing = true;
-    
+
+    const batchToProcess = Array.from(this.batch.values());
+    this.batch = new Map();
+
     try {
-      // Get the batch to process and reset the batch map
-      const batchToProcess = Array.from(this.batch.values()); // Correctly get values from Map
-      this.batch = new Map(); // Reset to a new Map
-      
-      console.log(`[PixelBatchManager] Processing batch of ${batchToProcess.length} pixels`);
-      
-      // Process the batch with the callback
       const success = await this.updateCallback(batchToProcess);
-      
       if (!success) {
-        console.warn('[PixelBatchManager] updateCallback returned false, indicating issues processing or queuing the batch. Batch will not be re-added automatically by manager.', batchToProcess);
-        // If processing failed, and re-queuing is desired, add failed pixels back to the new batch map
-        // For example, to re-add (though this was simplified in the previous step):
-        // batchToProcess.forEach(pixel => {
-        //   const key = `${pixel.x}:${pixel.y}`;
-        //   // Only re-add if not already updated by a newer batch (if this.batch could have new items)
-        //   if (!this.batch.has(key)) { 
-        //     this.batch.set(key, pixel);
-        //   }
-        // });
+        console.warn('[PixelBatchManager] updateCallback returned false – re-queuing batch', batchToProcess);
+        // ← re-add failed pixels back into the batch
+        batchToProcess.forEach(pixel => {
+          const key = `${pixel.x}:${pixel.y}`;
+          this.batch.set(key, pixel);
+        });
       }
-      
       this.lastProcessTime = Date.now();
     } catch (error) {
-      console.error("[PixelBatchManager] Error processing pixel batch via updateCallback:", error);
-      // On error from updateCallback itself, batch is dropped.
-      // Consider if batchToProcess should be re-added here for certain types of errors.
+      console.error('[PixelBatchManager] Error processing batch:', error);
+      // on exception, also re-queue
+      batchToProcess.forEach(pixel => {
+        const key = `${pixel.x}:${pixel.y}`;
+        this.batch.set(key, pixel);
+      });
     } finally {
       this.isProcessing = false;
-      
-      // If there are more pixels to process, schedule another batch
-      if (this.batch.size > 0) {
-        this.scheduleProcessing();
-      }
+      if (this.batch.size > 0) this.scheduleProcessing();
     }
   }
 

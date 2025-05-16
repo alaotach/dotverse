@@ -5,199 +5,210 @@ interface WebSocketMessage {
 
 type ConnectionChangeHandler = (connected: boolean) => void;
 type MessageHandler = (data: any) => void;
+import { io, Socket } from 'socket.io-client';
 
+const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'ws://192.168.111.248:8080';
+const RECONNECT_DELAY_BASE = 1000; // 1 second
+const RECONNECT_DELAY_MAX = 30000; // 30 seconds
+const MAX_RECONNECT_ATTEMPTS = 10; // Max attempts before giving up temporarily
+const PING_INTERVAL = 25000; // Standard socket.io ping interval
+const PING_TIMEOUT = 5000;  // Standard socket.io ping timeout
+
+/**
+ * Enhanced WebSocketService: Handles real-time communication with WebSocket server
+ * - More reliable connection management using Socket.IO
+ * - Better error handling and reconnection logic (via Socket.IO)
+ * - Event-based message handling
+ * - Support for client identification and session tracking
+ */
 class WebSocketService {
-  private socket: WebSocket | null = null;
-  private isConnected = false;
-  private reconnectInterval: NodeJS.Timeout | null = null;
-  private eventHandlers: Map<string, MessageHandler[]> = new Map();
-  private connectionHandlers: ConnectionChangeHandler[] = [];
-  private reconnectAttempts = 0;
-  private readonly MAX_RECONNECT_ATTEMPTS = 5;
-  private readonly RECONNECT_INTERVAL_MS = 3000;
-  private isConnecting = false;
+  private socket: Socket | null = null;
+  private connectionState: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
+  private reconnectAttempts: number = 0;
+  private reconnectTimeoutId: NodeJS.Timeout | null = null;
 
-  connect() {
-    if (this.socket || this.isConnecting) return;
-    
-    this.isConnecting = true;
-    
-    try {
-      const wsServerUrl = import.meta.env.VITE_WEBSOCKET_URL || 'ws://192.168.111.248:8080';
-      console.log("Connecting to websocket at:", wsServerUrl);
-      
-      this.socket = new WebSocket(wsServerUrl);
-      
-      this.socket.onopen = () => {
-        console.log("WebSocket connection established");
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        this.notifyConnectionChange(true);
-        this.send('client_register', { clientId: `client_${Math.random().toString(36).substring(2, 15)}` });
-        
-        if (this.reconnectInterval) {
-          clearInterval(this.reconnectInterval);
-          this.reconnectInterval = null;
-        }
-        
-        this.isConnecting = false;
-      };
-      
-      this.socket.onclose = () => {
-        console.log("WebSocket connection closed");
-        this.isConnected = false;
-        this.socket = null;
-        this.notifyConnectionChange(false);
-        this.isConnecting = false;
-        
-        this.scheduleReconnect();
-      };
-      
-      this.socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        this.isConnected = false;
-        this.isConnecting = false;
-        
-        if (this.socket) {
-          this.socket.close();
-          this.socket = null;
-        }
-      };
-      
-      this.socket.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          
-          if (message && message.type) {
-            this.handleMessage(message.type, message.payload);
-          } else {
-            console.warn("Received invalid message format:", event.data);
-          }
-        } catch (error) {
-          console.error("Error processing WebSocket message:", error);
-        }
-      };
-    } catch (error) {
-      console.error("Failed to connect to WebSocket server:", error);
-      this.isConnecting = false;
-      this.scheduleReconnect();
-      
-      setTimeout(() => this.notifyConnectionChange(false), 200);
-    }
+  private eventListeners: Map<string, Set<(...args: any[]) => void>> = new Map();
+  private connectionChangeListeners: Set<(isConnected: boolean, state: 'disconnected' | 'connecting' | 'connected') => void> = new Set();
+
+  constructor() {
+    this.handleConnect = this.handleConnect.bind(this);
+    this.handleDisconnect = this.handleDisconnect.bind(this);
+    this.handleConnectError = this.handleConnectError.bind(this);
   }
-  
-  send(type: string, data: any) {
-    if (!this.isConnected || !this.socket) {
-      console.warn(`Cannot send ${type} message: WebSocket not connected`);
-      return false;
+
+  public connect(): void {
+    if (this.socket && (this.connectionState === 'connected' || this.connectionState === 'connecting')) {
+      console.log('[WS] Already connected or connecting.');
+      this.notifyConnectionChange(); // Notify current state if called again
+      return;
+    }
+
+    console.log('[WS] Attempting to connect to', WEBSOCKET_URL);
+    this.setConnectionState('connecting');
+
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket.removeAllListeners();
     }
     
-    try {
-      this.socket.send(JSON.stringify({ type, payload: data }));
-      return true;
-    } catch (error) {
-      console.error(`Error sending ${type} message:`, error);
-      return false;
+    this.socket = io(WEBSOCKET_URL, {
+      reconnection: false, // We handle reconnection manually for more control and logging
+      transports: ['websocket'],
+      pingInterval: PING_INTERVAL,
+      pingTimeout: PING_TIMEOUT,
+      // autoConnect: false, // We call connect explicitly
+    });
+
+    this.socket.on('connect', this.handleConnect);
+    this.socket.on('disconnect', this.handleDisconnect);
+    this.socket.on('connect_error', this.handleConnectError);
+    // 'pong' is handled internally by socket.io-client for keep-alive
+
+    // Re-register persistent listeners for custom events
+    this.eventListeners.forEach((callbacks, event) => {
+      callbacks.forEach(callback => {
+        this.socket?.on(event, callback);
+      });
+    });
+  }
+
+  private handleConnect(): void {
+    console.log('[WS] Connected successfully. Socket ID:', this.socket?.id);
+    this.setConnectionState('connected');
+    this.reconnectAttempts = 0;
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
     }
   }
-  
- 
-  on(eventType: string, handler: MessageHandler) {
-    if (!this.eventHandlers.has(eventType)) {
-      this.eventHandlers.set(eventType, []);
-    }
-    
-    this.eventHandlers.get(eventType)?.push(handler);
-  }
-  
-  off(eventType: string, handler: MessageHandler) {
-    if (!this.eventHandlers.has(eventType)) return;
-    
-    const handlers = this.eventHandlers.get(eventType);
-    if (handlers) {
-      const index = handlers.indexOf(handler);
-      if (index !== -1) {
-        handlers.splice(index, 1);
-      }
-    }
-  }
-  
-  onConnectionChange(handler: ConnectionChangeHandler) {
-    this.connectionHandlers.push(handler);
-  }
-  offConnectionChange(handler: ConnectionChangeHandler) {
-    const index = this.connectionHandlers.indexOf(handler);
-    if (index !== -1) {
-      this.connectionHandlers.splice(index, 1);
-    }
-  }
-  
-  private handleMessage(type: string, payload: any) {
-    if (this.eventHandlers.has(type)) {
-      const handlers = this.eventHandlers.get(type);
-      if (handlers) {
-        handlers.forEach((handler) => {
-          try {
-            handler(payload);
-          } catch (error) {
-            console.error(`Error in handler for ${type}:`, error);
-          }
-        });
-      }
+
+  private handleDisconnect(reason: Socket.DisconnectReason): void {
+    const socketId = this.socket?.id; // Capture before socket might be nulled
+    console.warn(`[WS] Disconnected. Reason: ${reason}. Socket ID was: ${socketId}`);
+    this.setConnectionState('disconnected');
+
+    if (reason === 'io server disconnect' || reason === 'io client disconnect') {
+      console.log('[WS] Intentional disconnect, not attempting to reconnect automatically.');
     } else {
-      console.log(`Unknown message type: ${type}`);
+      this.attemptReconnect();
     }
   }
+
+  private handleConnectError(error: Error): void {
+    console.error('[WS] Connection error:', error.message);
+    // This event is usually followed by a 'disconnect' event if the connection fails.
+    // We ensure state is 'disconnected' and attempt reconnect from handleDisconnect.
+    // If 'disconnect' isn't emitted, we might need to trigger reconnect here too.
+    // For now, relying on 'disconnect' to trigger reconnection logic.
+    if (this.connectionState !== 'disconnected') {
+        this.setConnectionState('disconnected'); // Ensure state reflects reality
+    }
+    // Socket.IO client might attempt its own reconnections if options.reconnection is true.
+    // Since we set it to false, we must handle it.
+    this.attemptReconnect(); 
+  }
   
-  private notifyConnectionChange(connected: boolean) {
-    this.connectionHandlers.forEach((handler) => {
+  private attemptReconnect(): void {
+    if (this.connectionState === 'connecting' || this.connectionState === 'connected') {
+        // Already connecting or connected, no need to attempt another reconnect cycle.
+        return;
+    }
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('[WS] Max reconnect attempts reached. Will try again later or on manual connect.');
+      // Optionally, reset attempts after a longer delay to allow periodic retries without spamming.
+      // For now, it stops until a manual connect() or new attempt after MAX_RECONNECT_ATTEMPTS_DELAY
+      this.setConnectionState('disconnected'); 
+      return;
+    }
+
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+    }
+
+    const delay = Math.min(
+      RECONNECT_DELAY_BASE * Math.pow(1.5, this.reconnectAttempts), // Slower backoff
+      RECONNECT_DELAY_MAX
+    );
+
+    this.reconnectAttempts++;
+    console.log(`[WS] Attempting reconnect ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay / 1000}s...`);
+    
+    this.setConnectionState('connecting'); // Show intent to connect
+    this.reconnectTimeoutId = setTimeout(() => {
+      if (this.connectionState !== 'connected') {
+         this.connect(); 
+      }
+    }, delay);
+  }
+
+  private setConnectionState(newState: 'disconnected' | 'connecting' | 'connected'): void {
+    if (this.connectionState !== newState) {
+      this.connectionState = newState;
+      this.notifyConnectionChange();
+    }
+  }
+
+  public disconnect(): void {
+    if (this.socket) {
+      console.log('[WS] Disconnecting manually.');
+      this.socket.disconnect(); // This will trigger the 'disconnect' event with reason 'io client disconnect'
+    }
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    // The 'disconnect' event handler will call setConnectionState.
+  }
+
+  public send(event: string, data: any): boolean {
+    if (this.socket && this.connectionState === 'connected') {
+      this.socket.emit(event, data);
+      return true;
+    } else {
+      console.warn(`[WS] Cannot send event '${event}'. State: ${this.connectionState}.`);
+      return false;
+    }
+  }
+
+  public on(event: string, callback: (...args: any[]) => void): void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set());
+    }
+    this.eventListeners.get(event)!.add(callback);
+    this.socket?.on(event, callback); // Add to current socket if exists
+  }
+
+  public off(event: string, callback: (...args: any[]) => void): void {
+    this.eventListeners.get(event)?.delete(callback);
+    this.socket?.off(event, callback);
+    if (this.eventListeners.get(event)?.size === 0) {
+        this.eventListeners.delete(event);
+    }
+  }
+
+  public onConnectionChange(callback: (isConnected: boolean, state: 'disconnected' | 'connecting' | 'connected') => void): void {
+    this.connectionChangeListeners.add(callback);
+    // Immediately notify with current state upon registration
+    callback(this.connectionState === 'connected', this.connectionState);
+  }
+
+  public offConnectionChange(callback: (isConnected: boolean, state: 'disconnected' | 'connecting' | 'connected') => void): void {
+    this.connectionChangeListeners.delete(callback);
+  }
+
+  private notifyConnectionChange(): void {
+    const isConnected = this.connectionState === 'connected';
+    this.connectionChangeListeners.forEach(cb => {
       try {
-        handler(connected);
+        cb(isConnected, this.connectionState);
       } catch (error) {
-        console.error("Error in connection handler:", error);
+        console.error('[WS] Error in connectionChange listener:', error);
       }
     });
   }
-  
-  private scheduleReconnect() {
-    if (this.reconnectInterval) return;
-    
-    if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-      console.log(`Scheduling reconnect attempt ${this.reconnectAttempts + 1}/${this.MAX_RECONNECT_ATTEMPTS}`);
-      this.reconnectInterval = setInterval(() => {
-        this.reconnectAttempts++;
-        
-        console.log(`Reconnection attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`);
-        this.connect();
-        
-        if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-          console.log("Maximum reconnection attempts reached");
-          if (this.reconnectInterval) {
-            clearInterval(this.reconnectInterval);
-            this.reconnectInterval = null;
-          }
-        }
-      }, this.RECONNECT_INTERVAL_MS);
-    }
-  }
-  
-  isConnectedToServer() {
-    return this.isConnected;
-  }
-  
-  disconnect() {
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
-    }
-    
-    if (this.reconnectInterval) {
-      clearInterval(this.reconnectInterval);
-      this.reconnectInterval = null;
-    }
-    
-    this.isConnected = false;
-    this.notifyConnectionChange(false);
+
+  public getConnectionState(): 'disconnected' | 'connecting' | 'connected' {
+    return this.connectionState;
   }
 }
 

@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
+// const WebSocket = require('ws'); // Remove ws
+const { Server } = require("socket.io"); // Add socket.io
 const cors = require('cors');
 const admin = require('firebase-admin');
 
@@ -22,171 +23,170 @@ if (process.env.FIREBASE_ADMIN_CREDENTIALS) {
 // Create Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+// const wss = new WebSocket.Server({ server }); // Remove ws server initialization
 
-// Enable CORS
+// Initialize Socket.IO
+const io = new Server(server, {
+  cors: {
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    methods: ["GET", "POST"]
+  }
+});
+
+// Enable CORS for Express (if you have HTTP routes)
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || '*'
 }));
 
 // Client tracking
-const clients = new Map();
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const clients = new Map(); // Store client data by socket.id
+// const HEARTBEAT_INTERVAL = 30000; // Socket.IO handles heartbeats
 
-// Set up WebSocket connection
-wss.on('connection', (ws, req) => {
-  const clientId = req.headers['sec-websocket-key'] || Math.random().toString(36).substring(2, 15);
+// Set up WebSocket connection (now Socket.IO connection)
+io.on('connection', (socket) => {
+  const clientId = socket.id; // Use socket.id as the unique client identifier
   console.log(`Client connected: ${clientId}`);
-  
+
   // Store client connection
   clients.set(clientId, {
-    ws,
-    isAlive: true,
-    registeredId: null,
+    socket: socket, // Store the socket object itself
+    registeredId: null, // For application-level client ID
     lastActivity: Date.now()
   });
-  
-  // Setup ping to keep connection alive
-  ws.on('pong', () => {
-    if (clients.has(clientId)) {
-      clients.get(clientId).isAlive = true;
-    }
-  });
-  
+
   // Handle messages from client
-  ws.on('message', async (message) => {
+  socket.on('message', async (data) => { // Generic message handler if needed, or specific events
     try {
-      const data = JSON.parse(message);
-      const client = clients.get(clientId);
-      
-      if (!client) {
+      // Assuming data is { type: string, payload: any }
+      // It's more common with Socket.IO to use named events instead of a single 'message' event
+      console.log(`Message from client ${clientId}: type=${data.type}, payload=${JSON.stringify(data.payload)}`);
+      const clientData = clients.get(clientId);
+      if (!clientData) {
         console.warn(`Received message from unknown client: ${clientId}`);
         return;
       }
-      
-      // Update last activity time
-      client.lastActivity = Date.now();
-      
+      clientData.lastActivity = Date.now();
+
+      // Handle specific events if you migrate from the single 'message' type
+      // For now, this switch remains, but ideally, these become direct socket.on('event_name', ...)
       switch (data.type) {
+        case 'ping':
+          socket.emit('pong', { timestamp: Date.now() });
+          break;
         case 'client_register':
-          // Record the client's application-level ID for potential authentication later
           if (data.payload && data.payload.clientId) {
-            client.registeredId = data.payload.clientId;
-            console.log(`Client ${clientId} registered as ${data.payload.clientId}`);
+            clientData.registeredId = data.payload.clientId;
+            console.log(`Client ${clientId} (socket.id) registered as ${data.payload.clientId} (appId)`);
           }
           break;
-          
         case 'pixel_update':
-          // Broadcast pixel updates to all other clients
           if (data.payload) {
-            broadcastToAll({
-              type: 'pixel_update',
-              payload: data.payload
-            }, clientId);
-            
-            // Optionally, for larger deployments, implement rate limiting here
+            // Broadcast to all other clients
+            socket.broadcast.emit('pixel_update', data.payload);
           }
           break;
-          
         case 'canvas_reset':
-          // Broadcast canvas reset to all clients
-          broadcastToAll({
-            type: 'canvas_reset',
-            payload: data.payload
-          }, clientId);
+          // Broadcast canvas reset to all other clients
+          socket.broadcast.emit('canvas_reset', data.payload);
           break;
-          
         case 'sync_request':
-          // Tell clients to sync with Firebase (useful after server restart)
-          broadcastToAll({
-            type: 'sync_needed',
-            payload: { timestamp: Date.now() }
-          });
+          // Tell all clients to sync
+          io.emit('sync_needed', { timestamp: Date.now() });
           break;
-          
         default:
-          console.log(`Unknown message type: ${data.type}`);
+          console.log(`Unknown message type from client ${clientId}: ${data.type}`);
       }
     } catch (error) {
-      console.error('Error handling message:', error);
+      console.error(`Error handling message from ${clientId}:`, error);
     }
   });
-  
+
+  // It's more idiomatic in Socket.IO to listen for specific events:
+  // Example: socket.on('pixel_update', (payload) => { ... });
+  // Example: socket.on('client_register', (payload) => { ... });
+
   // Handle client disconnect
-  ws.on('close', () => {
-    console.log(`Client disconnected: ${clientId}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`Client disconnected: ${clientId}, reason: ${reason}`);
     clients.delete(clientId);
   });
-  
-  // Handle errors
-  ws.on('error', (error) => {
-    console.error(`WebSocket error for client ${clientId}:`, error);
-    clients.delete(clientId);
+
+  // Handle errors (less common to have a generic error handler like this for a socket in Socket.IO)
+  // Specific operational errors are usually handled within event handlers or via try-catch
+  socket.on('error', (error) => {
+    console.error(`Socket error for client ${clientId}:`, error);
+    // Consider if client needs to be removed here, disconnect should handle it
   });
-  
+
   // Send initial connection success message
-  ws.send(JSON.stringify({
-    type: 'connection_established',
-    payload: { 
-      message: 'Connected to DotVerse server',
-      timestamp: Date.now()
-    }
-  }));
+  socket.emit('connection_established', {
+    message: 'Connected to DotVerse server (Socket.IO)',
+    timestamp: Date.now(),
+    socketId: clientId // Send the socket.id to the client if useful
+  });
 });
 
-// Heartbeat to check for dead connections
-const interval = setInterval(() => {
-  wss.clients.forEach((ws) => {
-    let clientId = null;
-    
-    // Find the client ID for this WebSocket
-    for (const [id, client] of clients.entries()) {
-      if (client.ws === ws) {
-        clientId = id;
-        break;
-      }
-    }
-    
-    if (!clientId) return;
-    
-    const client = clients.get(clientId);
-    
-    if (client.isAlive === false) {
-      console.log(`Terminating inactive client: ${clientId}`);
-      clients.delete(clientId);
-      return ws.terminate();
-    }
-    
-    client.isAlive = false;
-    ws.ping();
-    
-    // Also check for timeout (no activity for 5 minutes)
-    const TIMEOUT = 5 * 60 * 1000; // 5 minutes
-    if (Date.now() - client.lastActivity > TIMEOUT) {
-      console.log(`Client timed out: ${clientId}`);
-      clients.delete(clientId);
-      ws.terminate();
-    }
-  });
-}, HEARTBEAT_INTERVAL);
+// Heartbeat to check for dead connections - Socket.IO handles this with its own ping/pong.
+// The custom interval for `isAlive` can be removed.
+// The `lastActivity` check for application-level timeout can remain if needed.
+// clearInterval(interval); // If you had an 'interval' variable for the old heartbeat
 
-// Broadcast message to all connected clients
-function broadcastToAll(message, excludeClientId = null) {
-  const messageString = JSON.stringify(message);
-  let count = 0;
-  
-  clients.forEach((client, id) => {
-    if (id !== excludeClientId && client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(messageString);
-      count++;
+const APP_LEVEL_TIMEOUT = 5 * 60 * 1000; // 5 minutes for application-level inactivity
+setInterval(() => {
+  const now = Date.now();
+  clients.forEach((clientData, clientId) => {
+    if (now - clientData.lastActivity > APP_LEVEL_TIMEOUT) {
+      console.log(`Client ${clientId} timed out due to inactivity. Disconnecting.`);
+      clientData.socket.disconnect(true); // Force disconnect
+      clients.delete(clientId);
     }
   });
-  
-  console.log(`Broadcasted ${message.type} to ${count} clients`);
+}, 60000); // Check every minute
+
+
+// Broadcast message to all connected clients (or specific groups)
+// This function can be adapted or replaced by Socket.IO's built-in methods.
+function broadcastToAll(messageType, payload, excludeSocketId = null) {
+  if (excludeSocketId) {
+    const sender = clients.get(excludeSocketId);
+    if (sender) {
+      sender.socket.broadcast.emit(messageType, payload);
+      console.log(`Broadcasted ${messageType} to all except ${excludeSocketId}`);
+    } else {
+      io.emit(messageType, payload); // Fallback if sender not found
+      console.log(`Broadcasted ${messageType} to all (sender ${excludeSocketId} not found)`);
+    }
+  } else {
+    io.emit(messageType, payload);
+    console.log(`Broadcasted ${messageType} to all clients`);
+  }
 }
+
+app.get('/api/websocket-diagnostics', (req, res) => {
+  res.json({
+    status: 'running (Socket.IO)',
+    activeClients: clients.size,
+    // wsServerStatus and wsClientsCount are less relevant or need new metrics for Socket.IO
+  });
+});
+
+// Test echo endpoint for WebSockets
+app.get('/api/echo/:message', (req, res) => {
+  const message = req.params.message || 'Test message';
+  broadcastToAll('echo', { // Use the new broadcast function or direct io.emit
+    message,
+    timestamp: Date.now()
+  });
+  res.json({
+    status: 'ok',
+    message: `Echo sent: ${message}`,
+    recipients: clients.size
+  });
+});
 
 // Basic REST API endpoints
 app.get('/api/status', (req, res) => {
+// ...existing code...
   res.json({
     status: 'ok',
     clients: clients.size,
@@ -196,24 +196,18 @@ app.get('/api/status', (req, res) => {
 
 app.get('/api/clients', (req, res) => {
   const clientInfo = [];
-  
-  clients.forEach((client, id) => {
+  clients.forEach((clientData, id) => {
     clientInfo.push({
-      id: id.substring(0, 8) + '...',  // Don't expose full IDs
-      registeredId: client.registeredId ? client.registeredId.substring(0, 8) + '...' : null,
-      lastActivity: client.lastActivity
+      id: id.substring(0, 8) + '...', // socket.id
+      registeredId: clientData.registeredId ? clientData.registeredId.substring(0, 8) + '...' : null,
+      lastActivity: clientData.lastActivity
     });
   });
-  
   res.json(clientInfo);
 });
 
 app.get('/api/sync', (req, res) => {
-  broadcastToAll({
-    type: 'sync_needed',
-    payload: { timestamp: Date.now() }
-  });
-  
+  broadcastToAll('sync_needed', { timestamp: Date.now() }); // Use new broadcast
   res.json({
     status: 'ok',
     message: 'Sync request broadcasted to all clients'
@@ -222,22 +216,20 @@ app.get('/api/sync', (req, res) => {
 
 // Handle server shutdown
 process.on('SIGINT', () => {
-  clearInterval(interval);
-  
-  // Close all WebSocket connections
-  wss.clients.forEach((ws) => {
-    ws.close();
-  });
-  
-  // Close HTTP server
-  server.close(() => {
-    console.log('Server closed. Exiting process.');
-    process.exit(0);
+  // clearInterval(interval); // Clear the new interval if you have one
+  console.log('Shutting down server...');
+  io.close(() => { // Close all Socket.IO connections
+    console.log('All Socket.IO connections closed.');
+    server.close(() => {
+      console.log('HTTP server closed. Exiting process.');
+      process.exit(0);
+    });
   });
 });
 
 // Start server
 const PORT = process.env.PORT || 8080;
+// ...existing code...
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} with Socket.IO`);
 });
