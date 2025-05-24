@@ -540,8 +540,26 @@ export default function Canvas() {
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
     
-    const worldX = Math.floor(viewportOffset.x + mouseXOnCanvas / effectiveCellSize);
-    const worldY = Math.floor(viewportOffset.y + mouseYOnCanvas / effectiveCellSize);
+    // FIXED: Correct coordinate calculation
+    // The key is to properly handle the fractional viewport offset
+    const startWorldX = Math.floor(viewportOffset.x);
+    const startWorldY = Math.floor(viewportOffset.y);
+    
+    // Calculate which screen cell the mouse is in
+    const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
+    const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
+    
+    // Convert to world coordinates
+    const worldX = startWorldX + screenCellX;
+    const worldY = startWorldY + screenCellY;
+    
+    console.log('Drawing at:', {
+      mouse: { x: mouseXOnCanvas, y: mouseYOnCanvas },
+      screen: { x: screenCellX, y: screenCellY },
+      world: { x: worldX, y: worldY },
+      viewport: viewportOffset,
+      startWorld: { x: startWorldX, y: startWorldY }
+    });
     
     const now = Date.now();
     
@@ -580,7 +598,7 @@ export default function Canvas() {
             timestamp: now,
             color
           });
-          
+
           gridUpdates.set(pixelKey, color);
           
           pixelsToUpdate.push({
@@ -621,7 +639,7 @@ export default function Canvas() {
         newGrid.set(pixelKey, color);
         return newGrid;
       });
-      
+
       const pixel: Pixel = {
         x: worldX,
         y: worldY,
@@ -637,6 +655,7 @@ export default function Canvas() {
     setLastPlaced(now);
     
   }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown]);
+
 
   const clearCanvas = useCallback(async () => {
     if (!currentUser || !userProfile?.landInfo) {
@@ -1072,8 +1091,9 @@ export default function Canvas() {
           borderBottom = gridBorder;
           borderLeft = gridBorder;
           borderRight = gridBorder;
-        }
-
+          }
+        
+        // Then, add land borders (these will override grid lines on land boundaries)
         const landMapEntry = cellLandMap.get(pixelKey);
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
@@ -1110,12 +1130,13 @@ export default function Canvas() {
             color;
           cellStyle.opacity = 0.7;
         }
-
         cells.push(
           <div
             key={pixelKey}
             style={cellStyle}
             className={isPanning ? 'cursor-move' : (isDrawableHere ? 'cursor-crosshair' : 'cursor-not-allowed')}
+            // Add this data attribute to help with debugging
+            data-world-coords={`${worldX},${worldY}`}
           />
         );
       }
@@ -1303,6 +1324,7 @@ if (!initialDataLoaded) {
       <div 
         className="absolute inset-0"
         style={{
+          // FIXED: Ensure proper pixel alignment
           transform: `translate(${-(viewportOffset.x % 1) * effectiveCellSize}px, ${-(viewportOffset.y % 1) * effectiveCellSize}px)`,
           willChange: 'transform'
         }}
