@@ -201,6 +201,7 @@ export default function Canvas() {
   const latestZoomLevelTargetRef = useRef(zoomLevel);
   const animationFrameRequestRef = useRef<number | null>(null);
   const [mousePosition, setMousePosition] = useState<{x: number, y: number}>({x: 0, y: 0});
+  const [brushSize, setBrushSize] = useState<number>(1);
 
 
   const toggleDebugMode = useCallback(() => {
@@ -522,6 +523,12 @@ export default function Canvas() {
     console.log(`Eraser size changed to: ${newSize}x${newSize}`);
   }, []);
 
+  const handleBrushSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const newSize = Math.max(1, Math.min(20, parseInt(event.target.value) || 1));
+    setBrushSize(newSize);
+    console.log(`Brush size changed to: ${newSize}x${newSize}`);
+  }, []);
+
   const handleDrawing = useCallback((event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current || !currentUser || !userProfile) {
       setShowAuthWarning(true);
@@ -582,6 +589,53 @@ export default function Canvas() {
       const halfSize = Math.floor(eraserSize / 2);
       const pixelsToUpdate: Pixel[] = [];
       const gridUpdates = new Map<string, string>();
+      for (let dy = -halfSize; dy <= halfSize; dy++) {
+        for (let dx = -halfSize; dx <= halfSize; dx++) {
+          const targetX = worldX + dx;
+          const targetY = worldY + dy;
+          if (canDrawAtPoint(targetX, targetY)) {
+            const pixelKey = getPixelKey(targetX, targetY);
+            
+            masterGridDataRef.current.set(pixelKey, color);
+            optimisticUpdatesMapRef.current.set(pixelKey, {
+              timestamp: now,
+              color
+            });
+            
+            gridUpdates.set(pixelKey, color);
+            
+            pixelsToUpdate.push({
+              x: targetX,
+              y: targetY,
+              color,
+              timestamp: now,
+              clientId: clientIdRef.current
+            });
+          }
+        }
+      }
+      if (gridUpdates.size > 0) {
+        setGrid(prev => {
+          const newGrid = new Map(prev);
+          gridUpdates.forEach((color, key) => {
+            newGrid.set(key, color);
+          });
+          return newGrid;
+        });
+      }
+      
+      if (pixelsToUpdate.length > 0) {
+        websocketService.send('pixel_update', pixelsToUpdate);
+      }
+      
+      lastDrawnPositionRef.current = { x: worldX, y: worldY };
+      setLastPlaced(now);
+      return;
+    }  else if (!isEraserActive && brushSize > 1) {
+      const halfSize = Math.floor(brushSize / 2);
+      const pixelsToUpdate: Pixel[] = [];
+      const gridUpdates = new Map<string, string>();
+      
       for (let dy = -halfSize; dy <= halfSize; dy++) {
         for (let dx = -halfSize; dx <= halfSize; dx++) {
           const targetX = worldX + dx;
@@ -825,15 +879,15 @@ export default function Canvas() {
   }, [isMouseDown, isPanning, handleDrawing, effectiveCellSize, requestViewportUpdateRAF]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-  if (isEraserActive && eraserSize > 0) {
-    setMousePosition({
-      x: event.clientX,
-      y: event.clientY
-    });
-  }
-  
-  handleCanvasMouseMove(event);
-}, [isEraserActive, eraserSize, handleCanvasMouseMove]);
+    if ((isEraserActive && eraserSize > 1) || (!isEraserActive && brushSize > 1)) {
+      setMousePosition({
+        x: event.clientX,
+        y: event.clientY
+      });
+    }
+    
+    handleCanvasMouseMove(event);
+  }, [isEraserActive, eraserSize, brushSize, handleCanvasMouseMove]);
 
   const handleCanvasMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1287,6 +1341,41 @@ if (!initialDataLoaded) {
           onChange={handleColorChange}
           className="h-8 w-14 mr-4"
         />
+
+        {!isEraserActive && (
+          <div className="flex items-center ml-2 bg-blue-50 p-2 rounded-md border border-blue-200">
+            <label htmlFor="brushSize" className="mr-2 text-xs font-medium text-blue-700">
+              Brush:
+            </label>
+            <input
+              type="range"
+              id="brushSize"
+              name="brushSize"
+              value={brushSize}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value, 10);
+                console.log('Brush slider onChange triggered:', newSize);
+                setBrushSize(newSize);
+              }}
+              onInput={(e) => {
+                const newSize = parseInt((e.target as HTMLInputElement).value, 10);
+                console.log('Brush slider onInput triggered:', newSize);
+                setBrushSize(newSize);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              min="1"
+              max="20"
+              step="1"
+              className="brush-range-slider"
+              title={`Brush size: ${brushSize}x${brushSize} pixels`}
+            />
+            <span className="ml-2 text-xs w-8 text-center font-mono text-blue-700">
+              {brushSize}
+            </span>
+          </div>
+        )}
         <button 
           onClick={toggleEraser}
           className={`px-3 py-1 rounded text-white ${
@@ -1390,6 +1479,40 @@ if (!initialDataLoaded) {
             </div>
           </div>
         )}
+
+        {!isEraserActive && brushSize > 1 && mousePosition.x > 0 && mousePosition.y > 0 && (
+          <div
+            className="fixed pointer-events-none z-50"
+            style={{
+              left: `${mousePosition.x - (brushSize * effectiveCellSize) / 2}px`,
+              top: `${mousePosition.y - (brushSize * effectiveCellSize) / 2}px`,
+              width: `${brushSize * effectiveCellSize}px`,
+              height: `${brushSize * effectiveCellSize}px`,
+              border: `2px solid ${selectedColor}`,
+              backgroundColor: `${selectedColor}33`, // 20% opacity
+              borderRadius: '4px',
+              boxSizing: 'border-box'
+            }}
+          >
+            <div 
+              style={{
+                position: 'absolute',
+                top: '2px',
+                left: '2px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                color: selectedColor === '#000000' ? '#fff' : '#000',
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                padding: '1px 3px',
+                borderRadius: '2px',
+                lineHeight: '1'
+              }}
+            >
+              {brushSize}×{brushSize}
+            </div>
+          </div>
+        )}
+
         <button 
           onClick={clearCanvas}
           disabled={isClearing}
