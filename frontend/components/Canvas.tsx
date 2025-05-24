@@ -76,6 +76,15 @@ interface LandInfo {
   isEmpty?: boolean;
 }
 
+interface DrawAction {
+  id: string;
+  type: 'draw' | 'erase' | 'fill' | 'clear';
+  pixels: { x: number; y: number; oldColor: string; newColor: string }[];
+  timestamp: number;
+}
+
+const MAX_UNDO_HISTORY = 50;
+
 const CLIENT_ID = `client_${Math.random().toString(36).substring(2, 15)}`;
 
 const plotLine = (x0: number, y0: number, x1: number, y1: number): {x: number, y: number}[] => {
@@ -203,6 +212,12 @@ export default function Canvas() {
   const [mousePosition, setMousePosition] = useState<{x: number, y: number}>({x: 0, y: 0});
   const [brushSize, setBrushSize] = useState<number>(1);
   const [isFillActive, setIsFillActive] = useState<boolean>(false);
+  const [undoHistory, setUndoHistory] = useState<DrawAction[]>([]);
+  const [redoHistory, setRedoHistory] = useState<DrawAction[]>([]);
+  const [isUndoRedoOperation, setIsUndoRedoOperation] = useState<boolean>(false);
+  const [currentDrawingAction, setCurrentDrawingAction] = useState<DrawAction | null>(null);
+  const isDrawingSessionActiveRef = useRef<boolean>(false);
+  const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string }[]>([]);
 
 
   const toggleDebugMode = useCallback(() => {
@@ -509,6 +524,135 @@ export default function Canvas() {
     }
   }, []);
 
+  const addToHistory = useCallback((action: DrawAction) => {
+    if (isUndoRedoOperation) return;
+    
+    setUndoHistory(prev => {
+      const newHistory = [...prev, action];
+      if (newHistory.length > MAX_UNDO_HISTORY) {
+        return newHistory.slice(-MAX_UNDO_HISTORY);
+      }
+      return newHistory;
+    });
+    
+    setRedoHistory([]);
+  }, [isUndoRedoOperation]);
+
+  const undo = useCallback(() => {
+    if (undoHistory.length === 0) return;
+    
+    const actionToUndo = undoHistory[undoHistory.length - 1];
+    setIsUndoRedoOperation(true);
+    
+    try {
+      const pixelsToUpdate: Pixel[] = [];
+      const gridUpdates = new Map<string, string>();
+      
+      actionToUndo.pixels.forEach(({ x, y, oldColor }) => {
+        const pixelKey = getPixelKey(x, y);
+        
+        masterGridDataRef.current.set(pixelKey, oldColor);
+        optimisticUpdatesMapRef.current.set(pixelKey, {
+          timestamp: Date.now(),
+          color: oldColor
+        });
+        
+        gridUpdates.set(pixelKey, oldColor);
+        
+        pixelsToUpdate.push({
+          x,
+          y,
+          color: oldColor,
+          timestamp: Date.now(),
+          clientId: clientIdRef.current
+        });
+      });
+      
+      if (gridUpdates.size > 0) {
+        setGrid(prev => {
+          const newGrid = new Map(prev);
+          gridUpdates.forEach((color, key) => {
+            newGrid.set(key, color);
+          });
+          return newGrid;
+        });
+      }
+      if (pixelsToUpdate.length > 0) {
+        const batchSize = 500;
+        for (let i = 0; i < pixelsToUpdate.length; i += batchSize) {
+          const batch = pixelsToUpdate.slice(i, i + batchSize);
+          websocketService.send('pixel_update', batch);
+        }
+      }
+      
+      setUndoHistory(prev => prev.slice(0, -1));
+      setRedoHistory(prev => [...prev, actionToUndo]);
+      
+    } finally {
+      setIsUndoRedoOperation(false);
+    }
+  }, [undoHistory, getPixelKey]);
+
+  const redo = useCallback(() => {
+    if (redoHistory.length === 0) return;
+    
+    const actionToRedo = redoHistory[redoHistory.length - 1];
+    setIsUndoRedoOperation(true);
+    
+    try {
+      const pixelsToUpdate: Pixel[] = [];
+      const gridUpdates = new Map<string, string>();
+      
+      actionToRedo.pixels.forEach(({ x, y, newColor }) => {
+        const pixelKey = getPixelKey(x, y);
+        
+        masterGridDataRef.current.set(pixelKey, newColor);
+        optimisticUpdatesMapRef.current.set(pixelKey, {
+          timestamp: Date.now(),
+          color: newColor
+        });
+        
+        gridUpdates.set(pixelKey, newColor);
+        pixelsToUpdate.push({
+          x,
+          y,
+          color: newColor,
+          timestamp: Date.now(),
+          clientId: clientIdRef.current
+        });
+      });
+      
+      if (gridUpdates.size > 0) {
+        setGrid(prev => {
+          const newGrid = new Map(prev);
+          gridUpdates.forEach((color, key) => {
+            newGrid.set(key, color);
+          });
+          return newGrid;
+        });
+      }
+      
+      if (pixelsToUpdate.length > 0) {
+        const batchSize = 500;
+        for (let i = 0; i < pixelsToUpdate.length; i += batchSize) {
+          const batch = pixelsToUpdate.slice(i, i + batchSize);
+          websocketService.send('pixel_update', batch);
+        }
+      }
+      
+      setRedoHistory(prev => prev.slice(0, -1));
+      setUndoHistory(prev => [...prev, actionToRedo]);
+      
+    } finally {
+      setIsUndoRedoOperation(false);
+    }
+  }, [redoHistory, getPixelKey]);
+
+  const clearHistory = useCallback(() => {
+    setUndoHistory([]);
+    setRedoHistory([]);
+  }, []);
+
   const floodFill = useCallback((startX: number, startY: number, newColor: string) => {
     const targetColor = masterGridDataRef.current.get(getPixelKey(startX, startY)) || "#ffffff";
     
@@ -519,6 +663,7 @@ export default function Canvas() {
 
     const pixelsToUpdate: Pixel[] = [];
     const gridUpdates = new Map<string, string>();
+    const actionPixels: { x: number; y: number; oldColor: string; newColor: string }[] = [];
     const visited = new Set<string>();
     const queue: { x: number, y: number }[] = [{ x: startX, y: startY }];
     
@@ -548,6 +693,7 @@ export default function Canvas() {
       });
       
       gridUpdates.set(pixelKey, newColor);
+      actionPixels.push({ x, y, oldColor: currentColor, newColor });
       
       pixelsToUpdate.push({
         x,
@@ -598,9 +744,19 @@ export default function Canvas() {
       }
     }
     
+    if (actionPixels.length > 0) {
+      addToHistory({
+        id: `fill_${Date.now()}_${Math.random()}`,
+        type: 'fill',
+        pixels: actionPixels,
+        timestamp: Date.now()
+      });
+    }
+    
     setLastPlaced(Date.now());
     
-  }, [canDrawAtPoint, getPixelKey, selectedColor]);
+  }, [canDrawAtPoint, getPixelKey, selectedColor, addToHistory]);
+
 
   const handleColorChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedColor(event.target.value);
@@ -635,6 +791,8 @@ export default function Canvas() {
     console.log(`Brush size changed to: ${newSize}x${newSize}`);
   }, []);
 
+  
+
   const handleDrawing = useCallback((event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current || !currentUser || !userProfile) {
       setShowAuthWarning(true);
@@ -657,36 +815,31 @@ export default function Canvas() {
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
     
-    
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
-    
     
     const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
     const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
     
-    
     const worldX = startWorldX + screenCellX;
     const worldY = startWorldY + screenCellY;
-    
-    console.log('Drawing at:', {
-      mouse: { x: mouseXOnCanvas, y: mouseYOnCanvas },
-      screen: { x: screenCellX, y: screenCellY },
-      world: { x: worldX, y: worldY },
-      viewport: viewportOffset,
-      startWorld: { x: startWorldX, y: startWorldY }
-    });
     
     const now = Date.now();
     
     if (now - lastPlaced < COOLDOWN_SECONDS * 1000) {
       return;
     }
-    
+
     if (!canDrawAtPoint(worldX, worldY)) {
       setShowAuthWarning(true);
       setTimeout(() => setShowAuthWarning(false), 3000);
       return;
+    }
+
+    if (!isDrawingSessionActiveRef.current) {
+      isDrawingSessionActiveRef.current = true;
+      drawingSessionPixelsRef.current = [];
+      console.log('Started new drawing session');
     }
 
     if (isFillActive) {
@@ -701,19 +854,24 @@ export default function Canvas() {
       const halfSize = Math.floor(eraserSize / 2);
       const pixelsToUpdate: Pixel[] = [];
       const gridUpdates = new Map<string, string>();
+      
       for (let dy = -halfSize; dy <= halfSize; dy++) {
         for (let dx = -halfSize; dx <= halfSize; dx++) {
           const targetX = worldX + dx;
           const targetY = worldY + dy;
           if (canDrawAtPoint(targetX, targetY)) {
             const pixelKey = getPixelKey(targetX, targetY);
+            const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+            
+            if (oldColor !== color) {
+              drawingSessionPixelsRef.current.push({ x: targetX, y: targetY, oldColor, newColor: color });
+            }
             
             masterGridDataRef.current.set(pixelKey, color);
             optimisticUpdatesMapRef.current.set(pixelKey, {
               timestamp: now,
               color
             });
-            
             gridUpdates.set(pixelKey, color);
             
             pixelsToUpdate.push({
@@ -726,6 +884,7 @@ export default function Canvas() {
           }
         }
       }
+      
       if (gridUpdates.size > 0) {
         setGrid(prev => {
           const newGrid = new Map(prev);
@@ -743,7 +902,7 @@ export default function Canvas() {
       lastDrawnPositionRef.current = { x: worldX, y: worldY };
       setLastPlaced(now);
       return;
-    }  else if (!isEraserActive && brushSize > 1) {
+    } else if (!isEraserActive && brushSize > 1) {
       const halfSize = Math.floor(brushSize / 2);
       const pixelsToUpdate: Pixel[] = [];
       const gridUpdates = new Map<string, string>();
@@ -754,6 +913,11 @@ export default function Canvas() {
           const targetY = worldY + dy;
           if (canDrawAtPoint(targetX, targetY)) {
             const pixelKey = getPixelKey(targetX, targetY);
+            const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+            
+            if (oldColor !== color) {
+              drawingSessionPixelsRef.current.push({ x: targetX, y: targetY, oldColor, newColor: color });
+            }
             
             masterGridDataRef.current.set(pixelKey, color);
             optimisticUpdatesMapRef.current.set(pixelKey, {
@@ -773,6 +937,7 @@ export default function Canvas() {
           }
         }
       }
+      
       if (gridUpdates.size > 0) {
         setGrid(prev => {
           const newGrid = new Map(prev);
@@ -809,6 +974,11 @@ export default function Canvas() {
       linePixels.forEach(pixel => {
         if (canDrawAtPoint(pixel.x, pixel.y)) {
           const pixelKey = getPixelKey(pixel.x, pixel.y);
+          const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+          
+          if (oldColor !== color) {
+            drawingSessionPixelsRef.current.push({ x: pixel.x, y: pixel.y, oldColor, newColor: color });
+          }
           
           masterGridDataRef.current.set(pixelKey, color);
           optimisticUpdatesMapRef.current.set(pixelKey, {
@@ -842,15 +1012,23 @@ export default function Canvas() {
         websocketService.send('pixel_update', pixelsToUpdate);
       }
       
-    } else {
-      const pixelKey = getPixelKey(worldX, worldY);
+      lastDrawnPositionRef.current = { x: worldX, y: worldY };
+      setLastPlaced(now);
+      return;
+    }
+    
+    const pixelKey = getPixelKey(worldX, worldY);
+    const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+    
+    if (oldColor !== color) {
+      drawingSessionPixelsRef.current.push({ x: worldX, y: worldY, oldColor, newColor: color });
       
       masterGridDataRef.current.set(pixelKey, color);
       optimisticUpdatesMapRef.current.set(pixelKey, {
         timestamp: now,
         color
       });
-      
+
       setGrid(prev => {
         const newGrid = new Map(prev);
         newGrid.set(pixelKey, color);
@@ -870,9 +1048,7 @@ export default function Canvas() {
     
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
-    
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown,eraserSize]);
-
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive]);
 
   const clearCanvas = useCallback(async () => {
     if (!currentUser || !userProfile?.landInfo) {
@@ -885,6 +1061,19 @@ export default function Canvas() {
     try {
       const { centerX, centerY, ownedSize } = userProfile.landInfo;
       const halfSize = Math.floor(ownedSize / 2);
+      
+      const actionPixels: { x: number; y: number; oldColor: string; newColor: string }[] = [];
+      
+      for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
+        for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
+          const pixelKey = getPixelKey(x, y);
+          const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+          
+          if (oldColor !== "#ffffff") {
+            actionPixels.push({ x, y, oldColor, newColor: "#ffffff" });
+          }
+        }
+      }
       
       const resetData = {
         type: 'land_clear',
@@ -915,6 +1104,15 @@ export default function Canvas() {
       }
       setGrid(updatedGrid);
       
+      if (actionPixels.length > 0) {
+        addToHistory({
+          id: `clear_${Date.now()}_${Math.random()}`,
+          type: 'clear',
+          pixels: actionPixels,
+          timestamp: Date.now()
+        });
+      }
+      
       console.log(`[Canvas] Sent canvas reset for land area ${ownedSize}x${ownedSize} at (${centerX}, ${centerY})`);
       
     } catch (error) {
@@ -922,7 +1120,7 @@ export default function Canvas() {
     } finally {
       setIsClearing(false);
     }
-  }, [currentUser, userProfile, getPixelKey, grid]);
+  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);
 
   const navigateToUserLand = useCallback(() => {
     if (!userProfile?.landInfo) return;
@@ -1005,12 +1203,48 @@ export default function Canvas() {
     event.preventDefault();
     event.stopPropagation();
     
+    if (isDrawingSessionActiveRef.current && drawingSessionPixelsRef.current.length > 0) {
+      const sessionPixels = [...drawingSessionPixelsRef.current];
+      
+      addToHistory({
+        id: `draw_session_${Date.now()}_${Math.random()}`,
+        type: isEraserActive ? 'erase' : 'draw',
+        pixels: sessionPixels,
+        timestamp: Date.now()
+      });
+      
+      console.log(`Finalized drawing session with ${sessionPixels.length} pixels`);
+      
+      isDrawingSessionActiveRef.current = false;
+      drawingSessionPixelsRef.current = [];
+    }
+    
     setIsMouseDown(false);
     setIsPanning(false);
     panStartMousePositionRef.current = null;
     panStartViewportOffsetRef.current = null;
     lastDrawnPositionRef.current = null;
-  }, []);
+  }, [addToHistory, isEraserActive]);
+
+  useEffect(() => {
+    return () => {
+      if (isDrawingSessionActiveRef.current && drawingSessionPixelsRef.current.length > 0) {
+        const sessionPixels = [...drawingSessionPixelsRef.current];
+        
+        addToHistory({
+          id: `draw_session_cleanup_${Date.now()}_${Math.random()}`,
+          type: isEraserActive ? 'erase' : 'draw',
+          pixels: sessionPixels,
+          timestamp: Date.now()
+        });
+        
+        console.log(`Cleanup: Finalized drawing session with ${sessionPixels.length} pixels`);
+      }
+      
+      isDrawingSessionActiveRef.current = false;
+      drawingSessionPixelsRef.current = [];
+    };
+  }, [currentUser, addToHistory, isEraserActive]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1037,10 +1271,60 @@ export default function Canvas() {
     event.preventDefault();
     event.stopPropagation();
     
+    if (isDrawingSessionActiveRef.current && drawingSessionPixelsRef.current.length > 0) {
+      const sessionPixels = [...drawingSessionPixelsRef.current];
+      
+      addToHistory({
+        id: `draw_session_${Date.now()}_${Math.random()}`,
+        type: isEraserActive ? 'erase' : 'draw',
+        pixels: sessionPixels,
+        timestamp: Date.now()
+      });
+      
+      console.log(`Finalized touch drawing session with ${sessionPixels.length} pixels`);
+      
+      isDrawingSessionActiveRef.current = false;
+      drawingSessionPixelsRef.current = [];
+    }
+    
     setIsMouseDown(false);
     setIsPanning(false);
     lastDrawnPositionRef.current = null;
-  }, []);
+  }, [addToHistory, isEraserActive]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.contentEditable === 'true'
+      );
+      
+      if (isInputFocused) return;
+      
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      }
+      
+      if (((event.ctrlKey || event.metaKey) && event.key === 'y') || 
+          ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Z')) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [undo, redo]);
+
+  
+
+
 
   useEffect(() => {
     getAllLands();
@@ -1218,8 +1502,9 @@ export default function Canvas() {
   useEffect(() => {
     if (initialDataLoaded) {
       updateGridFromVisibleChunks();
+      clearHistory();
     }
-  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks]);
+  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks,clearHistory]);
 
   useEffect(() => {
     const loadingTimeout = setTimeout(() => {
@@ -1732,6 +2017,51 @@ if (!initialDataLoaded) {
          <div className="text-xs">
             Last sync: {new Date(lastSyncTime).toLocaleTimeString()}
         </div>
+
+        <div className="flex items-center gap-1 ml-2">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              undo();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            disabled={undoHistory.length === 0}
+            className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
+              undoHistory.length === 0 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-purple-500 hover:bg-purple-600'
+            }`}
+            title="Undo (Ctrl+Z)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z"/>
+            </svg>
+            Undo
+          </button>
+          
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              redo();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            disabled={redoHistory.length === 0}
+            className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
+              redoHistory.length === 0 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-purple-500 hover:bg-purple-600'
+            }`}
+            title="Redo (Ctrl+Y)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.4,10.6C16.55,9 14.15,8 11.5,8C6.85,8 2.92,11.03 1.53,15.22L3.9,16C4.95,12.81 7.96,10.5 11.5,10.5C13.46,10.5 15.23,11.22 16.62,12.38L13,16H22V7L18.4,10.6Z"/>
+            </svg>
+            Redo
+          </button>
+        </div>
+
         <button
           onClick={(e) => {
             e.stopPropagation();
