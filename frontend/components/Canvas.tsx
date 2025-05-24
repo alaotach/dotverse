@@ -1064,6 +1064,16 @@ export default function Canvas() {
         let borderBottom = '';
         let borderLeft = '';
         let borderRight = '';
+        
+        // First, add grid lines if enabled
+        if (showGridLines) {
+          const gridBorder = `1px solid ${GRID_LINE_COLOR}`;
+          borderTop = gridBorder;
+          borderBottom = gridBorder;
+          borderLeft = gridBorder;
+          borderRight = gridBorder;
+        }
+
         const landMapEntry = cellLandMap.get(pixelKey);
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
@@ -1072,6 +1082,8 @@ export default function Canvas() {
           
           const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
           const borderWidth = "3px";
+          
+          // Only add land borders on the actual land boundary edges
           if (worldX === centerX - halfSize) {
             borderLeft = `${borderWidth} solid ${borderColor}`;
           }
@@ -1086,14 +1098,7 @@ export default function Canvas() {
           }
         }
         
-        if (showGridLines && !landMapEntry) {
-          const gridBorder = `1px solid ${GRID_LINE_COLOR}`;
-          if (!borderTop) borderTop = gridBorder;
-          if (!borderBottom) borderBottom = gridBorder;
-          if (!borderLeft) borderLeft = gridBorder;
-          if (!borderRight) borderRight = gridBorder;
-        }
-        
+        // Apply all borders
         if (borderTop) cellStyle.borderTop = borderTop;
         if (borderBottom) cellStyle.borderBottom = borderBottom;
         if (borderLeft) cellStyle.borderLeft = borderLeft;
@@ -1105,7 +1110,7 @@ export default function Canvas() {
             color;
           cellStyle.opacity = 0.7;
         }
-        
+
         cells.push(
           <div
             key={pixelKey}
