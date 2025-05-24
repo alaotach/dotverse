@@ -202,6 +202,7 @@ export default function Canvas() {
   const animationFrameRequestRef = useRef<number | null>(null);
   const [mousePosition, setMousePosition] = useState<{x: number, y: number}>({x: 0, y: 0});
   const [brushSize, setBrushSize] = useState<number>(1);
+  const [isFillActive, setIsFillActive] = useState<boolean>(false);
 
 
   const toggleDebugMode = useCallback(() => {
@@ -508,14 +509,119 @@ export default function Canvas() {
     }
   }, []);
 
+  const floodFill = useCallback((startX: number, startY: number, newColor: string) => {
+    const targetColor = masterGridDataRef.current.get(getPixelKey(startX, startY)) || "#ffffff";
+    
+    if (targetColor === newColor) {
+      console.log('Fill cancelled: target color same as new color');
+      return;
+    }
+
+    const pixelsToUpdate: Pixel[] = [];
+    const gridUpdates = new Map<string, string>();
+    const visited = new Set<string>();
+    const queue: { x: number, y: number }[] = [{ x: startX, y: startY }];
+    
+    const maxFillSize = 10000;
+    let fillCount = 0;
+    
+    console.log(`Starting flood fill at (${startX}, ${startY}) from ${targetColor} to ${newColor}`);
+    
+    while (queue.length > 0 && fillCount < maxFillSize) {
+      const { x, y } = queue.shift()!;
+      const pixelKey = getPixelKey(x, y);
+      
+      if (visited.has(pixelKey)) continue;
+      visited.add(pixelKey);
+      
+      if (!canDrawAtPoint(x, y)) continue;
+      
+      const currentColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+      
+      if (currentColor !== targetColor) continue;
+      
+      const now = Date.now();
+      masterGridDataRef.current.set(pixelKey, newColor);
+      optimisticUpdatesMapRef.current.set(pixelKey, {
+        timestamp: now,
+        color: newColor
+      });
+      
+      gridUpdates.set(pixelKey, newColor);
+      
+      pixelsToUpdate.push({
+        x,
+        y,
+        color: newColor,
+        timestamp: now,
+        clientId: clientIdRef.current
+      });
+      
+      fillCount++;
+      
+      const neighbors = [
+        { x: x + 1, y: y },     
+        { x: x - 1, y: y },     
+        { x: x, y: y + 1 },     
+        { x: x, y: y - 1 }      
+      ];
+      
+      neighbors.forEach(neighbor => {
+        const neighborKey = getPixelKey(neighbor.x, neighbor.y);
+        if (!visited.has(neighborKey)) {
+          queue.push(neighbor);
+        }
+      });
+    }
+    
+    if (fillCount >= maxFillSize) {
+      console.warn(`Fill operation reached maximum size limit of ${maxFillSize} pixels`);
+    }
+    
+    console.log(`Flood fill completed: ${fillCount} pixels filled`);
+    
+    if (gridUpdates.size > 0) {
+      setGrid(prev => {
+        const newGrid = new Map(prev);
+        gridUpdates.forEach((color, key) => {
+          newGrid.set(key, color);
+        });
+        return newGrid;
+      });
+    }
+    
+    if (pixelsToUpdate.length > 0) {
+      const batchSize = 500;
+      for (let i = 0; i < pixelsToUpdate.length; i += batchSize) {
+        const batch = pixelsToUpdate.slice(i, i + batchSize);
+        websocketService.send('pixel_update', batch);
+      }
+    }
+    
+    setLastPlaced(Date.now());
+    
+  }, [canDrawAtPoint, getPixelKey, selectedColor]);
+
   const handleColorChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedColor(event.target.value);
     setIsEraserActive(false);
+    setIsFillActive(false);
   }, []);
 
   const toggleEraser = useCallback(() => {
     setIsEraserActive(prev => !prev);
-  }, []);
+    if (!isEraserActive) {
+      setIsFillActive(false);
+    }
+  }, [isEraserActive]);
+
+  const toggleFill = useCallback(() => {
+    setIsFillActive(prev => !prev);
+    if (!isFillActive) {
+      setIsEraserActive(false);
+    }
+    console.log('Fill tool toggled:', !isFillActive);
+  }, [isFillActive]);
 
   const handleEraserSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = Math.max(1, Math.min(20, parseInt(event.target.value) || 1));
@@ -580,6 +686,12 @@ export default function Canvas() {
     if (!canDrawAtPoint(worldX, worldY)) {
       setShowAuthWarning(true);
       setTimeout(() => setShowAuthWarning(false), 3000);
+      return;
+    }
+
+    if (isFillActive) {
+      const fillColor = selectedColor;
+      floodFill(worldX, worldY, fillColor);
       return;
     }
     
@@ -1332,18 +1444,27 @@ if (!initialDataLoaded) {
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
       >
-      <div className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2">
+      <div className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      >
         <label htmlFor="colorPicker" className="mr-1">Color:</label>
         <input
           type="color"
           id="colorPicker"
           value={selectedColor}
           onChange={handleColorChange}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           className="h-8 w-14 mr-4"
         />
 
         {!isEraserActive && (
-          <div className="flex items-center ml-2 bg-blue-50 p-2 rounded-md border border-blue-200">
+          <div className="flex items-center ml-2 bg-blue-50 p-2 rounded-md border border-blue-200"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}>
             <label htmlFor="brushSize" className="mr-2 text-xs font-medium text-blue-700">
               Brush:
             </label>
@@ -1376,8 +1497,32 @@ if (!initialDataLoaded) {
             </span>
           </div>
         )}
+
         <button 
-          onClick={toggleEraser}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleFill();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
+            isFillActive ? 'bg-green-700' : 'bg-green-500 hover:bg-green-600'
+          }`}
+          title="Flood fill tool - click to fill connected areas of the same color"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19,11H22V13H19V16H17V13H14V11H17V8H19M9,11H15A1,1 0 0,1 16,12V21A1,1 0 0,1 15,22H3A1,1 0 0,1 2,21V12A1,1 0 0,1 3,11H5V7A5,5 0 0,1 10,2A5,5 0 0,1 15,7V8H13V7A3,3 0 0,0 10,4A3,3 0 0,0 7,7V11H9M4,13V20H14V13H4Z"/>
+          </svg>
+          {isFillActive ? "Fill ON" : "Fill"}
+        </button>
+
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleEraser();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
           className={`px-3 py-1 rounded text-white ${
             isEraserActive ? 'bg-gray-700' : 'bg-gray-400 hover:bg-gray-500'
           }`}
@@ -1387,7 +1532,11 @@ if (!initialDataLoaded) {
         </button>
 
         {isEraserActive && (
-          <div className="flex items-center ml-2 bg-gray-100 p-2 rounded-md border">
+          <div 
+            className="flex items-center ml-2 bg-gray-100 p-2 rounded-md border"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <label htmlFor="eraserSize" className="mr-2 text-xs font-medium text-gray-700">
               Size:
             </label>
@@ -1514,14 +1663,24 @@ if (!initialDataLoaded) {
         )}
 
         <button 
-          onClick={clearCanvas}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            clearCanvas();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
           disabled={isClearing}
           className="bg-red-500 hover:bg-red-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50"
         >
           {isClearing ? "Clearing..." : "Clear"}
         </button>
         <button
-          onClick={toggleBrowserFullScreen}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleBrowserFullScreen();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
           className="bg-purple-500 hover:bg-purple-600 text-white font-xs py-1 px-2 rounded text-xs"
           title={isBrowserFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
         >
@@ -1538,8 +1697,13 @@ if (!initialDataLoaded) {
             {wsConnected ? 'Real-time connected' : 'Real-time disconnected'}
           </div>
         </div>
-        <button 
-          onClick={requestFullSync}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            requestFullSync();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
           className="bg-blue-500 hover:bg-blue-600 text-white font-xs py-1 px-2 rounded text-xs"
           title="Force synchronization with server"
         >
@@ -1547,7 +1711,12 @@ if (!initialDataLoaded) {
         </button>
         {currentUser && userProfile?.landInfo && (
           <button
-            onClick={navigateToUserLand}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              navigateToUserLand();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="bg-green-500 hover:bg-green-600 text-white font-xs py-1 px-2 rounded text-xs"
             title="Go to your land"
           >
@@ -1564,20 +1733,15 @@ if (!initialDataLoaded) {
             Last sync: {new Date(lastSyncTime).toLocaleTimeString()}
         </div>
         <button
-          onClick={toggleDebugMode}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleDebugMode();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
           className={`px-3 py-1 rounded text-white ${debugMode ? 'bg-yellow-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}
         >
           {debugMode ? "Debug: ON" : "Debug"}
-        </button>
-        
-        <button
-          onClick={() => {
-            console.log("Grid lines visibility:", SHOW_GRID_LINES, "Zoom level:", zoomLevel, "Threshold:", GRID_LINE_THRESHOLD);
-          }}
-          className="px-3 py-1 rounded text-white bg-gray-500 hover:bg-gray-600 text-xs"
-          title={`Grid lines: ${showGridLines ? 'ON' : 'OFF'} (zoom ${GRID_LINE_THRESHOLD}+ required)`}
-        >
-          Grid: {SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD ? 'ON' : 'OFF'}
         </button>
         
         {debugMode && currentUser && userProfile?.landInfo && (

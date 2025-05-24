@@ -166,3 +166,19 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
   -moz-appearance: none !important;
 }
+
+.toolbar-container {
+  pointer-events: auto;
+}
+
+.toolbar-container * {
+  pointer-events: auto;
+}
+
+/* Ensure toolbar buttons don't trigger canvas events */
+.toolbar-container button,
+.toolbar-container input,
+.toolbar-container label,
+.toolbar-container div {
+  pointer-events: auto !important;
+}
