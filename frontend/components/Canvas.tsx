@@ -200,6 +200,8 @@ export default function Canvas() {
   const latestViewportOffsetTargetRef = useRef(viewportOffset);
   const latestZoomLevelTargetRef = useRef(zoomLevel);
   const animationFrameRequestRef = useRef<number | null>(null);
+  const [mousePosition, setMousePosition] = useState<{x: number, y: number}>({x: 0, y: 0});
+
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -515,7 +517,9 @@ export default function Canvas() {
   }, []);
 
   const handleEraserSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    setEraserSize(Math.max(1, Math.min(25, parseInt(event.target.value) || 1)));
+    const newSize = Math.max(1, Math.min(20, parseInt(event.target.value) || 1));
+    setEraserSize(newSize);
+    console.log(`Eraser size changed to: ${newSize}x${newSize}`);
   }, []);
 
   const handleDrawing = useCallback((event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
@@ -540,16 +544,15 @@ export default function Canvas() {
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
     
-    // FIXED: Correct coordinate calculation
-    // The key is to properly handle the fractional viewport offset
+    
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
     
-    // Calculate which screen cell the mouse is in
+    
     const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
     const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
     
-    // Convert to world coordinates
+    
     const worldX = startWorldX + screenCellX;
     const worldY = startWorldY + screenCellY;
     
@@ -574,6 +577,54 @@ export default function Canvas() {
     }
     
     const color = isEraserActive ? "#ffffff" : selectedColor;
+
+    if (isEraserActive && eraserSize > 0) {
+      const halfSize = Math.floor(eraserSize / 2);
+      const pixelsToUpdate: Pixel[] = [];
+      const gridUpdates = new Map<string, string>();
+      for (let dy = -halfSize; dy <= halfSize; dy++) {
+        for (let dx = -halfSize; dx <= halfSize; dx++) {
+          const targetX = worldX + dx;
+          const targetY = worldY + dy;
+          if (canDrawAtPoint(targetX, targetY)) {
+            const pixelKey = getPixelKey(targetX, targetY);
+            
+            masterGridDataRef.current.set(pixelKey, color);
+            optimisticUpdatesMapRef.current.set(pixelKey, {
+              timestamp: now,
+              color
+            });
+            
+            gridUpdates.set(pixelKey, color);
+            
+            pixelsToUpdate.push({
+              x: targetX,
+              y: targetY,
+              color,
+              timestamp: now,
+              clientId: clientIdRef.current
+            });
+          }
+        }
+      }
+      if (gridUpdates.size > 0) {
+        setGrid(prev => {
+          const newGrid = new Map(prev);
+          gridUpdates.forEach((color, key) => {
+            newGrid.set(key, color);
+          });
+          return newGrid;
+        });
+      }
+      
+      if (pixelsToUpdate.length > 0) {
+        websocketService.send('pixel_update', pixelsToUpdate);
+      }
+      
+      lastDrawnPositionRef.current = { x: worldX, y: worldY };
+      setLastPlaced(now);
+      return;
+    }
     
     if (lastDrawnPositionRef.current && isMouseDown && 
         (Math.abs(worldX - lastDrawnPositionRef.current.x) > 1 || 
@@ -598,7 +649,7 @@ export default function Canvas() {
             timestamp: now,
             color
           });
-
+          
           gridUpdates.set(pixelKey, color);
           
           pixelsToUpdate.push({
@@ -654,7 +705,7 @@ export default function Canvas() {
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
     
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown]);
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown,eraserSize]);
 
 
   const clearCanvas = useCallback(async () => {
@@ -772,6 +823,17 @@ export default function Canvas() {
       requestViewportUpdateRAF();
     }
   }, [isMouseDown, isPanning, handleDrawing, effectiveCellSize, requestViewportUpdateRAF]);
+
+  const handleMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+  if (isEraserActive && eraserSize > 0) {
+    setMousePosition({
+      x: event.clientX,
+      y: event.clientY
+    });
+  }
+  
+  handleCanvasMouseMove(event);
+}, [isEraserActive, eraserSize, handleCanvasMouseMove]);
 
   const handleCanvasMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1208,7 +1270,7 @@ if (!initialDataLoaded) {
           overscrollBehavior: "none",
         }} 
         onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleCanvasMouseMove}
+        onMouseMove={handleMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={handleCanvasMouseUp}
         onTouchStart={handleTouchStart}
@@ -1227,23 +1289,105 @@ if (!initialDataLoaded) {
         />
         <button 
           onClick={toggleEraser}
-          className={`px-3 py-1 rounded text-white ${isEraserActive ? 'bg-gray-700' : 'bg-gray-400 hover:bg-gray-500'}`}
-          title="Toggle eraser tool"
+          className={`px-3 py-1 rounded text-white ${
+            isEraserActive ? 'bg-gray-700' : 'bg-gray-400 hover:bg-gray-500'
+          }`}
+          title={`Toggle eraser tool${isEraserActive ? ` (Size: ${eraserSize}x${eraserSize})` : ''}`}
         >
-          {isEraserActive ? "Eraser On" : "Eraser"}
+          {isEraserActive ? `Eraser ${eraserSize}x${eraserSize}` : "Eraser"}
         </button>
+
         {isEraserActive && (
-          <div className="flex items-center">
-            <label htmlFor="eraserSize" className="mr-1 text-xs">Size:</label>
+          <div className="flex items-center ml-2 bg-gray-100 p-2 rounded-md border">
+            <label htmlFor="eraserSize" className="mr-2 text-xs font-medium text-gray-700">
+              Size:
+            </label>
             <input
-              type="number"
+              type="range"
               id="eraserSize"
+              name="eraserSize"
               value={eraserSize}
-              onChange={handleEraserSizeChange}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value, 10);
+                console.log('Slider onChange triggered:', newSize);
+                setEraserSize(newSize);
+              }}
+              onInput={(e) => {
+                const newSize = parseInt((e.target as HTMLInputElement).value, 10);
+                console.log('Slider onInput triggered:', newSize);
+                setEraserSize(newSize);
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                console.log('Slider mouseDown');
+              }}
+              onMouseUp={(e) => {
+                e.stopPropagation();
+                console.log('Slider mouseUp');
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('Slider clicked');
+              }}
               min="1"
-              max="25"
-              className="h-6 w-12 text-xs p-1 border rounded"
+              max="20"
+              step="1"
+              className="eraser-range-slider"
+              title={`Eraser size: ${eraserSize}x${eraserSize} pixels`}
             />
+            <span className="ml-2 text-xs w-8 text-center font-mono text-gray-700">
+              {eraserSize}
+            </span>
+          </div>
+        )}
+
+        {isEraserActive && (
+          <div className="ml-4 text-xs bg-yellow-100 p-2 rounded flex items-center gap-2">
+            <span>Debug: Size = {eraserSize}</span>
+            <button 
+              onClick={() => {
+                console.log('Setting eraser size to 5');
+                setEraserSize(5);
+              }}
+              className="px-2 py-1 bg-blue-500 text-white rounded text-xs"
+            >
+              Set to 5
+            </button>
+            <button 
+              onClick={() => {
+                console.log('Setting eraser size to 10');
+                setEraserSize(10);
+              }}
+              className="px-2 py-1 bg-green-500 text-white rounded text-xs"
+            >
+              Set to 10
+            </button>
+          </div>
+        )}
+
+        {isEraserActive && eraserSize > 0 && mousePosition.x > 0 && mousePosition.y > 0 && (
+          <div
+            className="fixed pointer-events-none z-50"
+            style={{
+              left: `${mousePosition.x - (eraserSize * effectiveCellSize) / 2}px`,
+              top: `${mousePosition.y - (eraserSize * effectiveCellSize) / 2}px`,
+              width: `${eraserSize * effectiveCellSize}px`,
+              height: `${eraserSize * effectiveCellSize}px`,
+              border: '2px solid rgba(255, 0, 0, 0.8)',
+              backgroundColor: 'rgba(255, 0, 0, 0.2)', // Fixed: Use inline style instead of class
+              borderRadius: '4px',
+              display: mousePosition.x === 0 && mousePosition.y === 0 ? 'none' : 'block'
+            }}
+          >
+            <div 
+              className="absolute top-0 left-0 text-xs text-black font-bold px-1"
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                borderRadius: '2px'
+              }}
+            >
+              {eraserSize}×{eraserSize}
+            </div>
           </div>
         )}
         <button 
@@ -1324,7 +1468,6 @@ if (!initialDataLoaded) {
       <div 
         className="absolute inset-0"
         style={{
-          // FIXED: Ensure proper pixel alignment
           transform: `translate(${-(viewportOffset.x % 1) * effectiveCellSize}px, ${-(viewportOffset.y % 1) * effectiveCellSize}px)`,
           willChange: 'transform'
         }}
