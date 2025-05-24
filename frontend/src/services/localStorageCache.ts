@@ -1,21 +1,12 @@
-/**
- * Local Storage Cache Service
- * Provides caching functionality for pixel data to reduce Firebase queries
- */
 
 import { openDB } from 'idb';
 
-// Define cache structure
 interface CacheItem {
   key: string;
   value: any;
   timestamp: number;
 }
-
-// The database will be initialized in this variable
 let db: Promise<IDBDatabase> | null = null;
-
-// Initialize the IndexedDB database
 const initDB = async (): Promise<IDBDatabase> => {
   if (!db) {
     db = new Promise((resolve, reject) => {
@@ -44,7 +35,6 @@ const initDB = async (): Promise<IDBDatabase> => {
   return db;
 };
 
-// Get a single item from cache
 export const getLocalCacheItem = async (key: string): Promise<any | null> => {
   try {
     const database = await initDB();
@@ -73,7 +63,6 @@ export const getLocalCacheItem = async (key: string): Promise<any | null> => {
   }
 };
 
-// Get entire cache as a Map
 export const getLocalCache = async (): Promise<Map<string, any> | null> => {
   try {
     const database = await initDB();
@@ -106,7 +95,6 @@ export const getLocalCache = async (): Promise<Map<string, any> | null> => {
   }
 };
 
-// Update items in the cache
 export const updateLocalCache = async (items: CacheItem[]): Promise<void> => {
   if (!items.length) return;
   
@@ -157,8 +145,6 @@ export const updateLocalCache = async (items: CacheItem[]): Promise<void> => {
     throw error;
   }
 };
-
-// Clear the cache
 export const clearLocalCache = async (): Promise<void> => {
   try {
     const database = await initDB();

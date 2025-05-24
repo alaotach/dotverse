@@ -141,7 +141,6 @@ const UserProfile: React.FC = () => {
           </div>
         </div>
         
-        {/* Placeholder for future actions like "Edit Profile" or "Expand Land" */}
         <div className="mt-8 border-t pt-6 flex justify-end">
           <button 
             className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded"

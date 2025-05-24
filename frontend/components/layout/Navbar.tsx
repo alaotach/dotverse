@@ -1,11 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../src/context/AuthContext';
+import websocketService from "../../src/services/websocketService";
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const [pixelCount, setPixelCount] = useState(0);
+
+  useEffect(() => {
+  const handlePixelStats = (stats: { pixelCount: number }) => {
+    setPixelCount(stats.pixelCount);
+  };
+  
+  websocketService.on('pixel_stats', handlePixelStats);
+  
+  return () => {
+    websocketService.off('pixel_stats', handlePixelStats);
+  };
+}, []);
   
   const handleLogout = async () => {
     try {
@@ -60,6 +74,11 @@ const Navbar: React.FC = () => {
                   >
                     Logout
                   </button>
+                  {pixelCount > 0 && (
+                    <span className="hidden md:inline-block text-gray-300 px-3 py-2 text-sm">
+                      {pixelCount.toLocaleString()} pixels
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -69,7 +88,6 @@ const Navbar: React.FC = () => {
               )}
             </div>
           </div>
-          {/* Mobile menu button (optional, can be added later) */}
         </div>
       </div>
     </nav>

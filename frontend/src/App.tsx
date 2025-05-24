@@ -9,7 +9,6 @@ import Navbar from '../components/layout/Navbar';
 import Home from '../components/Home';
 import { useAuth } from './context/AuthContext';
 
-// Protected route component
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
 }> = ({ element }) => {

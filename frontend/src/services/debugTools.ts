@@ -1,6 +1,3 @@
-/**
- * Debug tools for monitoring and diagnosing Firebase/Firestore issues
- */
 
 type ErrorLogEntry = {
   timestamp: number;
@@ -19,7 +16,6 @@ class FirestoreDebugger {
   private listeners: ((state: string, errors: ErrorLogEntry[]) => void)[] = [];
 
   private constructor() {
-    // Monitor navigator online/offline events
     window.addEventListener('online', () => {
       this.setConnectionState('online');
     });
@@ -37,7 +33,6 @@ class FirestoreDebugger {
   }
 
   public logError(error: any, path?: string, operation?: string) {
-    // Extract relevant error information
     const entry: ErrorLogEntry = {
       timestamp: Date.now(),
       message: error?.message || String(error),
@@ -47,13 +42,11 @@ class FirestoreDebugger {
       stack: error?.stack
     };
 
-    // Add to log with limit
     this.errorLog.unshift(entry);
     if (this.errorLog.length > this.MAX_LOG_ENTRIES) {
       this.errorLog = this.errorLog.slice(0, this.MAX_LOG_ENTRIES);
     }
 
-    // Log to console for developers
     console.error(`Firestore error: ${entry.message}`, {
       code: entry.code,
       path: entry.path,
@@ -61,10 +54,8 @@ class FirestoreDebugger {
       timestamp: new Date(entry.timestamp).toISOString()
     });
 
-    // Mark connection as having error
     this.setConnectionState('error');
 
-    // Notify listeners
     this.notifyListeners();
 
     return entry;
@@ -106,13 +97,10 @@ class FirestoreDebugger {
     });
   }
 
-  /**
-   * Checks if the error is related to a missing document
-   */
+
   public static isMissingDocError(error: any): boolean {
     if (!error) return false;
     
-    // Check for specific error codes/messages related to missing documents
     return (
       error?.code === 'not-found' || 
       error?.message?.includes('No document to update') ||
@@ -122,9 +110,7 @@ class FirestoreDebugger {
     );
   }
   
-  /**
-   * Checks if the error is related to network issues
-   */
+
   public static isNetworkError(error: any): boolean {
     if (!error) return false;
     
@@ -140,17 +126,10 @@ class FirestoreDebugger {
   }
 }
 
-// export const firestoreDebugger = FirestoreDebugger.getInstance();
-// export const isMissingDocError = FirestoreDebugger.isMissingDocError;
-// export const isNetworkError = FirestoreDebugger.isNetworkError;
-
-
-// Debugging tools for specific error handling
 export const firestoreDebugger = {
   logError: (error: any, path: string, operation: string) => {
     console.error(`Firestore error in ${operation} at path ${path}:`, error);
     
-    // Check for common error types
     if (error && error.code) {
       if (error.code === 'not-found') {
         console.warn('Document not found error - this might be expected for new chunks');

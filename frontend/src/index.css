@@ -7,7 +7,6 @@ html:fullscreen, body:fullscreen {
   overflow: hidden;
 }
 
-/* Stronger prevention of pinch-zoom on trackpads/touchscreens */
 html, body {
   touch-action: none;
   -ms-touch-action: none;
@@ -17,35 +16,54 @@ html, body {
   overscroll-behavior: none;
 }
 
-/* Additional CSS to override browser zoom behavior */
 @media (pointer: fine) {
-  /* For devices with precise pointer (mouse/trackpad) */
   html {
     overscroll-behavior: none;
   }
 }
 
-/* Additional rule to prevent any text selection that might trigger gestures */
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Performance optimization for Canvas grid rendering */
 .canvas-cell {
   will-change: transform;
   contain: strict;
 }
 
-/* Add contain: paint to improve rendering performance */
 .canvas-grid-container {
   contain: layout paint;
   will-change: transform;
 }
 
-/* Use GPU acceleration for certain animations */
 .gpu-accelerated {
   transform: translateZ(0);
   backface-visibility: hidden;
   perspective: 1000px;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.pixel-cell {
+  box-sizing: border-box !important;
+}
+
+div[class*="cursor-"] {
+  box-sizing: border-box;
+}
+
+.grid-cell {
+  border: 1px solid rgba(200, 200, 200, 0.3) !important;
+  box-sizing: border-box !important;
+}
+
+.land-border {
+  box-sizing: border-box !important;
+}
+
+.debug-cell {
+  outline: 1px solid red !important;
 }
 

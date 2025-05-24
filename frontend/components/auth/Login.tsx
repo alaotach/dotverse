@@ -16,7 +16,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate('/profile'); // Or to canvas, or home
+      navigate('/profile');
     } catch (err: any) {
       setError(err.message || 'Failed to log in. Please check your credentials.');
       console.error("Login error:", err);

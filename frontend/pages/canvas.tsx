@@ -2,23 +2,19 @@ import { useEffect } from 'react';
 import Canvas from '../components/Canvas';
 import Head from 'next/head';
 import { useAuth } from '../src/context/AuthContext';
-import '../src/services/debugTools'; // Import debug tools
+import '../src/services/debugTools';
 
 export default function CanvasPage() {
   const { currentUser } = useAuth();
   
-  // Add safety mechanism to detect and recover from canvas hang
   useEffect(() => {
     const checkCanvasLoading = () => {
-      // Get canvas loading start time
       const loadingStartTime = parseInt(sessionStorage.getItem('canvas_loading_start') || '0', 10);
       const now = Date.now();
       
-      // If canvas has been loading for over 10 seconds, offer recovery
       if (loadingStartTime > 0 && now - loadingStartTime > 10000) {
         console.warn("Canvas loading timeout detected");
         
-        // Show recovery UI
         const recoveryDiv = document.createElement('div');
         recoveryDiv.style.position = 'fixed';
         recoveryDiv.style.bottom = '20px';
@@ -59,17 +55,14 @@ export default function CanvasPage() {
       }
     };
     
-    // Set loading start time if not already set
     if (!sessionStorage.getItem('canvas_loading_start')) {
       sessionStorage.setItem('canvas_loading_start', Date.now().toString());
     }
     
-    // Check after 10 seconds
     const timer = setTimeout(checkCanvasLoading, 10000);
     
     return () => {
       clearTimeout(timer);
-      // Clear loading marker when component unmounts
       sessionStorage.removeItem('canvas_loading_start');
     };
   }, []);

@@ -22,7 +22,7 @@ export default function Register() {
     }
     try {
       await register(email, password, displayName);
-      navigate('/profile'); // Or to canvas, or home
+      navigate('/profile');
     } catch (err: any) {
       setError(err.message || 'Failed to register. Please try again.');
       console.error("Registration error:", err);

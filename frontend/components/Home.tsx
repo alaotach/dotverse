@@ -7,7 +7,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
       <div className="relative bg-blue-600 overflow-hidden">
         <div className="max-w-7xl mx-auto">
           <div className="relative z-10 pb-8 bg-blue-600 sm:pb-16 md:pb-20 lg:max-w-2xl lg:w-full lg:pb-28 xl:pb-32">
@@ -40,7 +39,6 @@ export default function Home() {
         </div>
         <div className="lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2 bg-blue-500">
           <div className="h-56 w-full sm:h-72 md:h-96 lg:w-full lg:h-full">
-            {/* Pattern background */}
             <div className="w-full h-full opacity-30 flex">
               {Array.from({ length: 20 }).map((_, i) => (
                 <div key={i} className="flex-1 flex flex-col">
@@ -62,7 +60,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Features Section */}
       <div className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="lg:text-center">
@@ -129,7 +126,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CTA Section */}
       <div className="bg-blue-500">
         <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 lg:py-16 flex flex-col md:flex-row items-center justify-between">
           <div className="md:w-2/3 md:pr-8">

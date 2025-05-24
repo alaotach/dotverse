@@ -1,7 +1,7 @@
 import { set, ref as dbRef, update } from 'firebase/database';
 import { 
   doc, 
-  updateDoc, // Ensure updateDoc is imported
+  updateDoc,
   setDoc, 
   writeBatch, 
   collection, 
@@ -13,12 +13,12 @@ import { openDB, IDBPDatabase } from 'idb';
 
 const OFFLINE_QUEUE_KEY = 'dotverse_offline_queue';
 const QUOTA_INFO_KEY = 'dotverse_quota_info';
-const DEFAULT_DAILY_QUOTA = 20000; // Example: Firestore free tier daily write limit
-const QUOTA_RESET_HOUR_UTC = 0; // Midnight UTC
+const DEFAULT_DAILY_QUOTA = 20000;
+const QUOTA_RESET_HOUR_UTC = 0;
 
 const LOCAL_STORAGE_KEY = 'dotverse_operations_quota';
-const QUOTA_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const MAX_OPERATIONS_PER_HOUR = 10000; // Adjust based on your Firebase plan
+const QUOTA_RESET_INTERVAL_MS = 60 * 60 * 1000;
+const MAX_OPERATIONS_PER_HOUR = 10000;
 const OFFLINE_QUEUE_SIZE_LIMIT = 1000;
 const MAX_BATCH_SIZE = 500;
 
@@ -36,7 +36,6 @@ interface QuotaState {
   lastReset: number;
 }
 
-// Initialize IndexedDB for offline operations
 let offlineDB: IDBPDatabase | null = null;
 
 const initOfflineDB = async (): Promise<void> => {
@@ -55,19 +54,13 @@ const initOfflineDB = async (): Promise<void> => {
   }
 };
 
-// Initialize offline DB
 initOfflineDB();
 
-/**
- * QuotaManager service
- * Handles Firestore/RTDB write quotas to prevent overuse
- * Monitors operations and throttles them when approaching limits
- */
 
 interface WriteOperation {
-  path: string;  // Path to write to (e.g., "firestore/collection/doc" or "rtdb/path")
-  type: 'set' | 'update' | 'delete'; // Operation type
-  data?: any; // Data to write (for set/update)
+  path: string;  
+  type: 'set' | 'update' | 'delete';
+  data?: any;
 }
 
 interface QuotaInfo {
@@ -77,7 +70,7 @@ interface QuotaInfo {
 }
 
 class QuotaManager {
-  private dailyQuotaLimit = 20000; // Default Firestore daily write operations limit (Spark plan)
+  private dailyQuotaLimit = 20000;
   private usedQuota = 0;
   private quotaResetTime: Date | null = null;
 
@@ -97,7 +90,6 @@ class QuotaManager {
   }
 
   private initQuotaTracking() {
-    // Initialize quota tracking
     const storedQuota = localStorage.getItem('quota_used');
     const storedResetTime = localStorage.getItem('quota_reset_time');
     
@@ -105,7 +97,6 @@ class QuotaManager {
       const resetTime = new Date(storedResetTime);
       const now = new Date();
       
-      // If current date is after the reset time, reset quota
       if (now > resetTime) {
         this.resetQuota();
       } else {
@@ -116,8 +107,7 @@ class QuotaManager {
       this.resetQuota();
     }
     
-    // Check daily to reset quota if needed
-    setInterval(() => this.checkQuotaReset(), 1000 * 60 * 60); // Check hourly
+    setInterval(() => this.checkQuotaReset(), 1000 * 60 * 60);
   }
 
   private checkQuotaReset() {
@@ -129,7 +119,6 @@ class QuotaManager {
   private resetQuota() {
     this.usedQuota = 0;
     
-    // Set reset time to next day at midnight UTC
     const now = new Date();
     this.quotaResetTime = new Date(
       Date.UTC(
@@ -146,12 +135,10 @@ class QuotaManager {
     console.log(`Quota reset. Next reset at: ${this.quotaResetTime}`);
   }
 
-  // Set custom quota limits (e.g. for different Firebase plans)
   public setDailyQuotaLimit(limit: number) {
     this.dailyQuotaLimit = limit;
   }
 
-  // Get current quota status
   public getQuotaStatus() {
     return {
       used: this.usedQuota,
@@ -161,35 +148,23 @@ class QuotaManager {
     };
   }
 
-  // Record quota usage
   private recordUsage(operationCount: number) {
     this.usedQuota += operationCount;
     localStorage.setItem('quota_used', this.usedQuota.toString());
   }
 
-  // Safe write with quota management
   public async safeWrite(operation: WriteOperation): Promise<void> {
-    // Check if we're near quota limit (90%)
     if (this.usedQuota > this.dailyQuotaLimit * 0.9) {
       console.warn(`Approaching Firestore quota limit: ${this.usedQuota}/${this.dailyQuotaLimit}`);
       
-      // If we've hit the limit, throw error
       if (this.usedQuota >= this.dailyQuotaLimit) {
         throw new Error('Daily Firestore write quota exceeded. Try again after reset.');
       }
     }
-    
-    // Estimate operation cost 
-    // Simple estimate: 1 write = 1 operation
-    // For real app, would need to consider document size, batch operations, etc.
     const estimatedOperations = 1;
     
-    // Record usage before we attempt the operation
-    // In a real app, you might record after success, but this is safer
     this.recordUsage(estimatedOperations);
     
-    // Operation is allowed but would be actually performed by the caller
-    // in a real app, you could actually perform the operation here
     return Promise.resolve();
   }
 
@@ -223,7 +198,6 @@ class QuotaManager {
       const storedInfo = localStorage.getItem(QUOTA_INFO_KEY);
       if (storedInfo) {
         const parsedInfo = JSON.parse(storedInfo);
-        // Ensure dailyQuota is present, otherwise use default
         return {
           ...parsedInfo,
           dailyQuota: parsedInfo.dailyQuota || DEFAULT_DAILY_QUOTA
@@ -251,14 +225,11 @@ class QuotaManager {
     const now = new Date();
     const lastReset = new Date(this.quotaInfo.lastResetTimestamp);
 
-    // Check if the current day is different from the last reset day (UTC)
-    // or if it's past the reset hour on the same day but quota hasn't reset.
     if (
       now.getUTCDate() !== lastReset.getUTCDate() ||
       now.getUTCMonth() !== lastReset.getUTCMonth() ||
       now.getUTCFullYear() !== lastReset.getUTCFullYear()
     ) {
-       // If it's a new day (UTC), reset the quota
       if (now.getUTCHours() >= QUOTA_RESET_HOUR_UTC) {
         console.log("Daily quota reset.");
         this.quotaInfo.writesToday = 0;
@@ -269,7 +240,7 @@ class QuotaManager {
   }
 
   private hasQuota(numWrites: number = 1): boolean {
-    this.checkAndResetQuota(); // Ensure quota is up-to-date
+    this.checkAndResetQuota();
     return this.quotaInfo.writesToday + numWrites <= this.quotaInfo.dailyQuota;
   }
 
@@ -327,9 +298,7 @@ class QuotaManager {
         
         const docRef = doc(fs, actualPath);
 
-        // Important change: Always use setDoc with merge:true for 'update' operations
         if (type === 'set') await setDoc(docRef, data, { merge: true });
-        // MODIFICATION: Change updateDoc to setDoc with merge: true for robustness
         else if (type === 'update') await setDoc(docRef, data, { merge: true }); 
         else if (type === 'delete') await deleteDoc(docRef);
         else if (type === 'batch' && operation.operations) {
@@ -337,7 +306,7 @@ class QuotaManager {
           operation.operations.forEach(op => {
             const batchDocRef = doc(fs, op.path);
             if (op.type === 'set') batch.set(batchDocRef, op.data, { merge: true }); 
-            else if (op.type === 'update') batch.set(batchDocRef, op.data, { merge: true }); // Use set with merge here too
+            else if (op.type === 'update') batch.set(batchDocRef, op.data, { merge: true });
             else if (op.type === 'delete') batch.delete(batchDocRef);
           });
           await batch.commit();
@@ -345,7 +314,6 @@ class QuotaManager {
         else throw new Error(`Unsupported Firestore operation type: ${type}`);
         console.log(`[QuotaManager] executeOperation: Firestore ${type} on ${path} successful.`);
       } else {
-        // Realtime Database operation
         const dbRef = ref(db, actualPath);
         
         if (type === 'set') await set(dbRef, data);
@@ -355,10 +323,8 @@ class QuotaManager {
         console.log(`[QuotaManager] executeOperation: RTDB ${type} on ${path} successful.`);
       }
     } catch (error: any) {
-      // Handle specific errors
       console.error(`[QuotaManager] executeOperation: Error during ${type} on ${path}:`, error);
       if (error?.code === 'not-found' && type === 'update') {
-        // Document doesn't exist, try with set+merge instead
         console.warn(`[QuotaManager] Document at ${actualPath} not found for update, trying set with merge instead`);
         try {
           if (isFirestorePath) {
@@ -372,10 +338,9 @@ class QuotaManager {
           }
         } catch (fallbackError) {
           console.error(`[QuotaManager] Fallback operation also failed:`, fallbackError);
-          throw fallbackError; // Re-throw to handle in syncOfflineQueue
+          throw fallbackError; 
         }
       } else {
-        // For other errors, re-throw
         throw error;
       }
     }
@@ -411,15 +376,14 @@ class QuotaManager {
         }
       } else {
         console.log(`Quota insufficient to sync operation ${operation.id}. Re-queueing.`);
-        this.offlineQueue.push(operation); // Re-add to front
+        this.offlineQueue.push(operation);
       }
     }
-    this.offlineQueue.sort((a,b) => a.timestamp - b.timestamp); // Ensure order
+    this.offlineQueue.sort((a,b) => a.timestamp - b.timestamp);
     this.saveOfflineQueue();
 
     if (this.offlineQueue.length > 0) {
       console.log(`${this.offlineQueue.length} operations remain in queue after sync attempt.`);
-      // Optionally schedule another sync attempt if some operations failed due to transient issues
       if (this.syncTimeout) clearTimeout(this.syncTimeout);
       this.syncTimeout = setTimeout(() => this.syncOfflineQueue(), this.RETRY_DELAY_MS);
     } else {
@@ -449,18 +413,10 @@ class QuotaManager {
   }
 }
 
-// Create and export a singleton instance
 export const quotaManager = new QuotaManager();
 
-// Optional: Handle page visibility changes to trigger sync
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     quotaManager.syncOfflineQueue();
   }
 });
-
-// Example of how initializeEventListeners might have been called (line 214 in your error)
-// This is now handled in the constructor.
-// if (typeof window !== 'undefined') {
-//   quotaManager.initializeEventListeners(); // This would be line 214 or similar
-// }

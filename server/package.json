@@ -6,8 +6,6 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "ws": "node websocket-server.js",
-    "dev:ws": "nodemon websocket-server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
