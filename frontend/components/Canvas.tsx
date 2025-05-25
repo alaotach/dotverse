@@ -297,6 +297,37 @@ export default function Canvas() {
     }
   }, [effectiveCellSize, canvasWidth, canvasHeight]);
 
+  useEffect(() => {
+  const updateCanvasDimensions = () => {
+      if (canvasContainerRef.current) {
+        const containerWidth = canvasContainerRef.current.clientWidth;
+        const containerHeight = canvasContainerRef.current.clientHeight;
+        
+        setCanvasWidth(containerWidth);
+        setCanvasHeight(containerHeight);
+        
+        if (effectiveCellSize > 0) {
+          const newWidth = Math.ceil(containerWidth / effectiveCellSize) + 2;
+          const newHeight = Math.ceil(containerHeight / effectiveCellSize) + 2;
+          
+          setViewportCellWidth(newWidth);
+          setViewportCellHeight(newHeight);
+        }
+      }
+    };
+
+    updateCanvasDimensions();
+    
+    const resizeObserver = new ResizeObserver(updateCanvasDimensions);
+    if (canvasContainerRef.current) {
+      resizeObserver.observe(canvasContainerRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [effectiveCellSize]);
+
   const processViewportUpdatesRAF = useCallback(() => {
     setViewportOffset(latestViewportOffsetTargetRef.current);
     setZoomLevel(latestZoomLevelTargetRef.current);
@@ -811,18 +842,34 @@ export default function Canvas() {
       clientX = event.clientX;
       clientY = event.clientY;
     }
+
+    // if (rect.width === 0 || rect.height === 0) {
+    //   console.warn('Canvas rect has invalid dimensions:', rect);
+    //   return;
+    // }
     
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
+    // const clampedMouseX = Math.max(0, Math.min(mouseXOnCanvas));
+    // const clampedMouseY = Math.max(0, Math.min(mouseYOnCanvas));
     
-    const startWorldX = Math.floor(viewportOffset.x);
-    const startWorldY = Math.floor(viewportOffset.y);
+    // const startWorldX = Math.floor(viewportOffset.x);
+    // const startWorldY = Math.floor(viewportOffset.y);
     
-    const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
-    const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
+    // const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
+    // const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
     
-    const worldX = startWorldX + screenCellX;
-    const worldY = startWorldY + screenCellY;
+  const worldX = Math.floor(viewportOffset.x + (mouseXOnCanvas / effectiveCellSize));
+  const worldY = Math.floor(viewportOffset.y + (mouseYOnCanvas / effectiveCellSize));
+
+    console.log('Coordinate Debug:', {
+      mouse: { clientX, clientY },
+      rect: { left: rect.left, top: rect.top },
+      canvas: { x: mouseXOnCanvas, y: mouseYOnCanvas },
+      viewport: viewportOffset,
+      effectiveCellSize,
+      calculated: { worldX, worldY }
+    });
     
     const now = Date.now();
     
@@ -1572,6 +1619,10 @@ export default function Canvas() {
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
     
+    // Calculate the offset within the first cell for smooth scrolling
+    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
+    
     for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
       for (let screenX = 0; screenX < viewportCellWidth; screenX++) {
         const worldX = screenX + startWorldX;
@@ -1584,8 +1635,8 @@ export default function Canvas() {
         
         const cellStyle: React.CSSProperties = {
           position: 'absolute',
-          left: `${screenX * effectiveCellSize}px`,
-          top: `${screenY * effectiveCellSize}px`,
+          left: `${(screenX * effectiveCellSize) - offsetX}px`,
+          top: `${(screenY * effectiveCellSize) - offsetY}px`,
           width: `${effectiveCellSize}px`,
           height: `${effectiveCellSize}px`,
           backgroundColor: color,
@@ -1604,7 +1655,7 @@ export default function Canvas() {
           borderBottom = gridBorder;
           borderLeft = gridBorder;
           borderRight = gridBorder;
-          }
+        }
         
         // Then, add land borders (these will override grid lines on land boundaries)
         const landMapEntry = cellLandMap.get(pixelKey);
@@ -1643,12 +1694,15 @@ export default function Canvas() {
             color;
           cellStyle.opacity = 0.7;
         }
+        if (debugMode) {
+          cellStyle.border = '1px solid rgba(255, 0, 0, 0.3)';
+        }
+        
         cells.push(
           <div
             key={pixelKey}
             style={cellStyle}
             className={isPanning ? 'cursor-move' : (isDrawableHere ? 'cursor-crosshair' : 'cursor-not-allowed')}
-            // Add this data attribute to help with debugging
             data-world-coords={`${worldX},${worldY}`}
           />
         );
@@ -1719,6 +1773,15 @@ if (!initialDataLoaded) {
           touchAction: "none",
           WebkitOverflowScrolling: "touch",
           overscrollBehavior: "none",
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: 0,
+          border: 'none',
+          zIndex: 0
         }} 
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
@@ -2085,8 +2148,10 @@ if (!initialDataLoaded) {
       <div 
         className="absolute inset-0"
         style={{
-          transform: `translate(${-(viewportOffset.x % 1) * effectiveCellSize}px, ${-(viewportOffset.y % 1) * effectiveCellSize}px)`,
-          willChange: 'transform'
+          transform: 'translate3d(0, 0, 0)',
+          willChange: 'transform',
+          width: '100%',
+          height: '100%'
         }}
       >
         {gridCells}

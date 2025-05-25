@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import { AuthProvider } from './context/AuthContext';
 import Canvas from '../components/Canvas';
@@ -22,6 +22,16 @@ const ProtectedRoute: React.FC<{
 };
 
 function AppContent() {
+  const location = useLocation();
+  const isCanvasPage = location.pathname === '/canvas';
+
+  if (isCanvasPage) {
+    return (
+      <Routes>
+        <Route path="/canvas" element={<Canvas />} />
+      </Routes>
+    );
+  }
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -30,7 +40,6 @@ function AppContent() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/canvas" element={<Canvas />} /> 
           <Route 
             path="/profile" 
             element={<ProtectedRoute element={<UserProfile />} />} 

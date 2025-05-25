@@ -3,22 +3,48 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-:root {
-  --dynamic-cell-size: 10px; 
-}
 
-html:fullscreen, body:fullscreen {
-  overflow: hidden;
+
+* {
+  box-sizing: border-box;
 }
 
 html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
   touch-action: none;
   -ms-touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
   overscroll-behavior: none;
+  position: relative;
 }
+
+#root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.canvas-container {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  z-index: 0 !important;
+}
+
+
 
 @media (pointer: fine) {
   html {
