@@ -3,7 +3,15 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../src/context/AuthContext';
 
 export default function Home() {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Failed to log out', error);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -27,16 +35,60 @@ export default function Home() {
                   </div>
                   {!currentUser && (
                     <div className="mt-3 sm:mt-0 sm:ml-3">
-                      <Link to="/register" className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-500 hover:bg-blue-400 md:py-4 md:text-lg md:px-10">
-                        Sign Up
+                      <Link to="/register" className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-blue-100 bg-blue-500 hover:bg-blue-400 md:py-4 md:text-lg md:px-10">
+                        Get Started
                       </Link>
                     </div>
                   )}
                 </div>
+
+                {/* User Profile Section - Only shown when logged in */}
+                {currentUser && userProfile && (
+                  <div className="mt-8 bg-blue-500 rounded-lg p-4 max-w-md">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-shrink-0">
+                        {userProfile.photoURL ? (
+                          <img className="h-10 w-10 rounded-full" src={userProfile.photoURL} alt="Profile" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-blue-300 flex items-center justify-center">
+                            <span className="text-blue-800 font-semibold">
+                              {(userProfile.displayName || userProfile.email || 'U').charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          Welcome, {userProfile.displayName || userProfile.email}
+                        </p>
+                        {userProfile.landInfo && (
+                          <p className="text-xs text-blue-100">
+                            Land: ({userProfile.landInfo.centerX}, {userProfile.landInfo.centerY})
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <Link 
+                          to="/profile"
+                          className="inline-flex items-center px-3 py-1 border border-blue-400 text-xs font-medium rounded text-blue-100 hover:bg-blue-400 hover:text-white"
+                        >
+                          Profile
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          className="inline-flex items-center px-3 py-1 border border-blue-400 text-xs font-medium rounded text-blue-100 hover:bg-blue-400 hover:text-white"
+                        >
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
+        
         <div className="lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2 bg-blue-500">
           <div className="h-56 w-full sm:h-72 md:h-96 lg:w-full lg:h-full">
             <div className="w-full h-full opacity-30 flex">
@@ -78,13 +130,13 @@ export default function Home() {
                 <div className="flow-root bg-gray-50 rounded-lg px-6 pb-8">
                   <div className="-mt-6">
                     <div className="inline-flex items-center justify-center p-3 bg-blue-500 rounded-md shadow-lg">
-                      <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14v6m-3-3h6M6 10h2a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2zm10 0h2a2 2 0 002-2V6a2 2 0 00-2-2h-2a2 2 0 00-2 2v2a2 2 0 002 2zM6 20h2a2 2 0 002-2v-2a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2z" />
+                      <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zM21 5a2 2 0 00-2-2h-4a2 2 0 00-2 2v12a4 4 0 004 4h4a4 4 0 004-4V5z" />
                       </svg>
                     </div>
-                    <h3 className="mt-8 text-lg font-medium text-gray-900">Claim Your Land</h3>
+                    <h3 className="mt-8 text-lg font-medium text-gray-900 tracking-tight">Claim Your Land</h3>
                     <p className="mt-5 text-base text-gray-500">
-                      Every user gets their own plot of land to customize and expand in the growing universe.
+                      Get your own piece of the canvas when you sign up. Build, create, and express yourself in your personal space.
                     </p>
                   </div>
                 </div>
@@ -93,14 +145,14 @@ export default function Home() {
               <div className="pt-6">
                 <div className="flow-root bg-gray-50 rounded-lg px-6 pb-8">
                   <div className="-mt-6">
-                    <div className="inline-flex items-center justify-center p-3 bg-blue-500 rounded-md shadow-lg">
-                      <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                    <div className="inline-flex items-center justify-center p-3 bg-green-500 rounded-md shadow-lg">
+                      <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                       </svg>
                     </div>
-                    <h3 className="mt-8 text-lg font-medium text-gray-900">Create Pixel Art</h3>
+                    <h3 className="mt-8 text-lg font-medium text-gray-900 tracking-tight">Real-time Collaboration</h3>
                     <p className="mt-5 text-base text-gray-500">
-                      Express yourself with a simple yet powerful pixel painting tool to create your masterpiece.
+                      See changes from other users instantly. Work together to create amazing pixel art in a shared universe.
                     </p>
                   </div>
                 </div>
@@ -109,14 +161,14 @@ export default function Home() {
               <div className="pt-6">
                 <div className="flow-root bg-gray-50 rounded-lg px-6 pb-8">
                   <div className="-mt-6">
-                    <div className="inline-flex items-center justify-center p-3 bg-blue-500 rounded-md shadow-lg">
-                      <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    <div className="inline-flex items-center justify-center p-3 bg-purple-500 rounded-md shadow-lg">
+                      <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                       </svg>
                     </div>
-                    <h3 className="mt-8 text-lg font-medium text-gray-900">Real-time Collaboration</h3>
+                    <h3 className="mt-8 text-lg font-medium text-gray-900 tracking-tight">Express Yourself</h3>
                     <p className="mt-5 text-base text-gray-500">
-                      See changes from other players in real-time as the world evolves around you.
+                      Use our advanced drawing tools including brushes, erasers, and fill tools to bring your imagination to life.
                     </p>
                   </div>
                 </div>
@@ -131,7 +183,10 @@ export default function Home() {
           <div className="md:w-2/3 md:pr-8">
             <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl mb-4">Ready to join?</h2>
             <p className="text-lg text-blue-100">
-              Create an account to claim your land and start contributing to our collaborative pixel world.
+              {currentUser 
+                ? "Jump back into the canvas and continue creating your masterpiece."
+                : "Create an account to claim your land and start contributing to our collaborative pixel world."
+              }
             </p>
           </div>
           <div className="mt-8 md:mt-0">
