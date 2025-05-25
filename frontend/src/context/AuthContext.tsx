@@ -1,13 +1,30 @@
-import React, { createContext, useContext, useState, useEffect, FC, ReactNode } from 'react';
-import { fs } from '../firebaseClient';
-import { doc, getDoc } from 'firebase/firestore';
+import React, { createContext, useContext, useState, useEffect, ReactNode, FC } from 'react';
 import { 
-    UserProfile as AppUserProfile, 
-    registerUser as appRegisterUser, 
-    signInUser as appSignInUser, 
-    signOutUser as appSignOutUser,
-    getUserProfile as appGetUserProfile
-} from '../services/authService'; 
+  signInUser as appSignInUser, 
+  registerUser as appRegisterUser, 
+  signOutUser as appSignOutUser,
+  getUserProfile,
+  UserProfile
+} from '../services/authService';
+import { analyticsService } from '../services/analyticsService';
+
+export interface AppUserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  landInfo?: {
+    centerX: number;
+    centerY: number;
+    ownedSize: number;
+  };
+  role?: 'user' | 'admin';
+  pixelsPlaced?: number;
+  totalSessionTime?: number;
+  lastActive?: any;
+  createdAt?: number;
+  lastLogin?: number;
+}
 
 export interface AuthContextType {
   currentUser: AppUserProfile | null; 
@@ -41,15 +58,28 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       try {
         const storedUserUID = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
         if (storedUserUID) {
-          console.log("Found stored UID:", storedUserUID);
-          const profile = await appGetUserProfile(storedUserUID);
+          console.log("Found stored user UID:", storedUserUID);
+          const profile = await getUserProfile(storedUserUID);
           if (profile) {
-            setCurrentUser(profile);
-            setUserProfile(profile);
-            console.log("User restored from local session:", profile);
-            console.log("Restored user landInfo:", profile.landInfo);
+            const appProfile: AppUserProfile = {
+              uid: profile.uid,
+              email: profile.email,
+              displayName: profile.displayName,
+              photoURL: profile.photoURL,
+              landInfo: profile.landInfo,
+              role: 'user', 
+              pixelsPlaced: 0,
+              totalSessionTime: 0,
+              createdAt: typeof profile.createdAt === 'number' ? profile.createdAt : profile.createdAt?.seconds * 1000,
+              lastLogin: typeof profile.lastLogin === 'number' ? profile.lastLogin : profile.lastLogin?.seconds * 1000
+            };
+            setCurrentUser(appProfile);
+            setUserProfile(appProfile);
+            console.log("Restored user session:", appProfile);
+            
+            analyticsService.startSession(profile.uid);
           } else {
-            console.warn("Stored UID found, but profile not found in Firestore. Clearing session.");
+            console.log("No user profile found for stored UID, clearing storage");
             localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
           }
         }
@@ -63,16 +93,36 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     initializeAuth();
   }, []);
 
-
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
       const profile = await appSignInUser(email, password);
-      setCurrentUser(profile);
-      setUserProfile(profile);
+      const appProfile: AppUserProfile = {
+        uid: profile.uid,
+        email: profile.email,
+        displayName: profile.displayName,
+        photoURL: profile.photoURL,
+        landInfo: profile.landInfo,
+        role: 'user', 
+        pixelsPlaced: 0, 
+        totalSessionTime: 0, 
+        createdAt: typeof profile.createdAt === 'number' ? profile.createdAt : profile.createdAt?.seconds * 1000,
+        lastLogin: typeof profile.lastLogin === 'number' ? profile.lastLogin : profile.lastLogin?.seconds * 1000
+      };
+      
+      setCurrentUser(appProfile);
+      setUserProfile(appProfile);
       localStorage.setItem(LOCAL_STORAGE_USER_KEY, profile.uid);
-      console.log("Custom login successful:", profile);
-      console.log("Logged in user landInfo:", profile.landInfo);
+      
+      await analyticsService.trackUserLogin(
+        profile.uid,
+        profile.displayName || profile.email || 'Unknown'
+      );
+      
+      analyticsService.startSession(profile.uid);
+      
+      console.log("Custom login successful:", appProfile);
+      console.log("Logged in user landInfo:", appProfile.landInfo);
     } catch (error) {
       console.error("Custom login error:", error);
       setCurrentUser(null);
@@ -88,11 +138,41 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setIsLoading(true);
     try {
       const profile = await appRegisterUser(email, password, displayName);
-      setCurrentUser(profile);
-      setUserProfile(profile);
+      const appProfile: AppUserProfile = {
+        uid: profile.uid,
+        email: profile.email,
+        displayName: profile.displayName,
+        photoURL: profile.photoURL,
+        landInfo: profile.landInfo,
+        role: 'user',
+        pixelsPlaced: 0, 
+        totalSessionTime: 0, 
+        createdAt: typeof profile.createdAt === 'number' ? profile.createdAt : profile.createdAt?.seconds * 1000,
+        lastLogin: typeof profile.lastLogin === 'number' ? profile.lastLogin : profile.lastLogin?.seconds * 1000
+      };
+      
+      setCurrentUser(appProfile);
+      setUserProfile(appProfile);
       localStorage.setItem(LOCAL_STORAGE_USER_KEY, profile.uid);
-      console.log("Custom registration successful:", profile);
-      console.log("Registered user landInfo:", profile.landInfo);
+      
+      if (profile.landInfo) {
+        await analyticsService.trackLandClaim(
+          profile.uid,
+          profile.displayName || profile.email || 'Unknown',
+          profile.landInfo.centerX,
+          profile.landInfo.centerY
+        );
+      }
+      
+      await analyticsService.trackUserLogin(
+        profile.uid,
+        profile.displayName || profile.email || 'Unknown'
+      );
+      
+      analyticsService.startSession(profile.uid);
+      
+      console.log("Custom registration successful:", appProfile);
+      console.log("Registered user landInfo:", appProfile.landInfo);
     } catch (error) {
       console.error("Custom registration error:", error);
       setCurrentUser(null);
@@ -106,6 +186,11 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const logout = async () => {
     setIsLoading(true);
+    
+    if (currentUser) {
+      await analyticsService.endSession(currentUser.uid);
+    }
+    
     await appSignOutUser();
     setCurrentUser(null);
     setUserProfile(null);
@@ -124,4 +209,4 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
+};

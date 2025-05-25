@@ -8,6 +8,7 @@ const Navbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const [pixelCount, setPixelCount] = useState(0);
+  const isAdmin = userProfile?.role === 'admin' || userProfile?.email === 'admin@dotverse.com';
 
   useEffect(() => {
   const handlePixelStats = (stats: { pixelCount: number }) => {
@@ -51,7 +52,9 @@ const Navbar: React.FC = () => {
               <div className="ml-10 flex items-baseline space-x-4">
                 <Link to="/" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Home</Link>
                 <Link to="/canvas" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Canvas</Link>
-              </div>
+                {isAdmin && (
+                  <Link to="/admin/analytics" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Admin</Link>
+                )}
             </div>
           </div>
           <div className="hidden md:block">
@@ -89,6 +92,7 @@ const Navbar: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </nav>
   );

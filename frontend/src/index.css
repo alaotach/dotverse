@@ -12,22 +12,28 @@
 html, body {
   margin: 0 !important;
   padding: 0 !important;
-  overflow: hidden;
-  touch-action: none;
-  -ms-touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
-  overscroll-behavior: none;
   position: relative;
 }
 
 #root {
   position: relative;
-  width: 100vw;
-  height: 100vh;
   margin: 0;
   padding: 0;
+}
+
+body.canvas-page {
+  overflow: hidden;
+  touch-action: none;
+  -ms-touch-action: none;
+  overscroll-behavior: none;
+}
+
+body.canvas-page #root {
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -47,7 +53,7 @@ html, body {
 
 
 @media (pointer: fine) {
-  html {
+  body.canvas-page {
     overscroll-behavior: none;
   }
 }

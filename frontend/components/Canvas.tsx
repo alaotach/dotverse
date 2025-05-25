@@ -9,6 +9,7 @@ import { doc, getDoc, collection, getDocs, query, writeBatch, setDoc } from "fir
 import { fs } from "../src/firebaseClient";
 import { firestoreDebugger, isMissingDocError, isNetworkError } from "../src/services/debugTools";
 import { PixelBatchManager } from '../src/services/pixelBatchManager';
+import { useAnalytics } from '../src/services/analyticsService';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -164,6 +165,7 @@ export default function Canvas() {
   const [canvasHeight, setCanvasHeight] = useState<number>(0);
   const lastDrawnPositionRef = useRef<{ x: number, y: number } | null>(null);
   const pixelBatchManagerRef = useRef<PixelBatchManager | null>(null);
+  const { trackPixel } = useAnalytics();
 
   const debouncedSaveViewport = useCallback(
     debounce((vpOffset: { x: number; y: number }, zmLevel: number) => {
@@ -824,7 +826,7 @@ export default function Canvas() {
 
   
 
-  const handleDrawing = useCallback((event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const handleDrawing = useCallback( (event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current || !currentUser || !userProfile) {
       setShowAuthWarning(true);
       setTimeout(() => setShowAuthWarning(false), 3000);
@@ -892,6 +894,7 @@ export default function Canvas() {
     if (isFillActive) {
       const fillColor = selectedColor;
       floodFill(worldX, worldY, fillColor);
+      trackPixel(worldX, worldY, fillColor);
       return;
     }
     
@@ -944,6 +947,7 @@ export default function Canvas() {
       
       if (pixelsToUpdate.length > 0) {
         websocketService.send('pixel_update', pixelsToUpdate);
+        trackPixel(worldX, worldY, color);
       }
       
       lastDrawnPositionRef.current = { x: worldX, y: worldY };
@@ -997,6 +1001,7 @@ export default function Canvas() {
       
       if (pixelsToUpdate.length > 0) {
         websocketService.send('pixel_update', pixelsToUpdate);
+        trackPixel(worldX, worldY, color);
       }
       
       lastDrawnPositionRef.current = { x: worldX, y: worldY };
@@ -1059,6 +1064,7 @@ export default function Canvas() {
         websocketService.send('pixel_update', pixelsToUpdate);
       }
       
+      
       lastDrawnPositionRef.current = { x: worldX, y: worldY };
       setLastPlaced(now);
       return;
@@ -1091,11 +1097,12 @@ export default function Canvas() {
       };
       
       websocketService.send('pixel_update', [pixel]);
+      trackPixel(worldX, worldY, color);
     }
     
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive]);
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel]);
 
   const clearCanvas = useCallback(async () => {
     if (!currentUser || !userProfile?.landInfo) {
@@ -1619,7 +1626,6 @@ export default function Canvas() {
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
     
-    // Calculate the offset within the first cell for smooth scrolling
     const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
     const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
     
@@ -1648,7 +1654,6 @@ export default function Canvas() {
         let borderLeft = '';
         let borderRight = '';
         
-        // First, add grid lines if enabled
         if (showGridLines) {
           const gridBorder = `1px solid ${GRID_LINE_COLOR}`;
           borderTop = gridBorder;
@@ -1657,7 +1662,6 @@ export default function Canvas() {
           borderRight = gridBorder;
         }
         
-        // Then, add land borders (these will override grid lines on land boundaries)
         const landMapEntry = cellLandMap.get(pixelKey);
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
@@ -1667,7 +1671,6 @@ export default function Canvas() {
           const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
           const borderWidth = "3px";
           
-          // Only add land borders on the actual land boundary edges
           if (worldX === centerX - halfSize) {
             borderLeft = `${borderWidth} solid ${borderColor}`;
           }
@@ -1682,7 +1685,6 @@ export default function Canvas() {
           }
         }
         
-        // Apply all borders
         if (borderTop) cellStyle.borderTop = borderTop;
         if (borderBottom) cellStyle.borderBottom = borderBottom;
         if (borderLeft) cellStyle.borderLeft = borderLeft;
@@ -1960,7 +1962,7 @@ if (!initialDataLoaded) {
               width: `${eraserSize * effectiveCellSize}px`,
               height: `${eraserSize * effectiveCellSize}px`,
               border: '2px solid rgba(255, 0, 0, 0.8)',
-              backgroundColor: 'rgba(255, 0, 0, 0.2)', // Fixed: Use inline style instead of class
+              backgroundColor: 'rgba(255, 0, 0, 0.2)', 
               borderRadius: '4px',
               display: mousePosition.x === 0 && mousePosition.y === 0 ? 'none' : 'block'
             }}
