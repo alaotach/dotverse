@@ -6,7 +6,7 @@ import {
   getUserProfile,
   UserProfile
 } from '../services/authService';
-import { analyticsService } from '../services/analyticsService';
+import { analyticsService } from '../services/AnalyticsService';
 
 export interface AppUserProfile {
   uid: string;

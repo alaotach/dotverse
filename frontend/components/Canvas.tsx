@@ -9,7 +9,7 @@ import { doc, getDoc, collection, getDocs, query, writeBatch, setDoc } from "fir
 import { fs } from "../src/firebaseClient";
 import { firestoreDebugger, isMissingDocError, isNetworkError } from "../src/services/debugTools";
 import { PixelBatchManager } from '../src/services/pixelBatchManager';
-import { useAnalytics } from '../src/services/analyticsService';
+import { useAnalytics } from '../src/services/AnalyticsService';
 
 const CELL_SCROLL_STEP = 5;
 
