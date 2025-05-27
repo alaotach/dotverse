@@ -1798,6 +1798,7 @@ if (!initialDataLoaded) {
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
       >
         <label htmlFor="colorPicker" className="mr-1">Color:</label>
         <input
@@ -1807,6 +1808,8 @@ if (!initialDataLoaded) {
           onChange={handleColorChange}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className="h-8 w-14 mr-4"
         />
 
@@ -1814,7 +1817,8 @@ if (!initialDataLoaded) {
           <div className="flex items-center ml-2 bg-blue-50 p-2 rounded-md border border-blue-200"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}>
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}>
             <label htmlFor="brushSize" className="mr-2 text-xs font-medium text-blue-700">
               Brush:
             </label>
@@ -1836,6 +1840,9 @@ if (!initialDataLoaded) {
               onMouseDown={(e) => e.stopPropagation()}
               onMouseUp={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
               min="1"
               max="20"
               step="1"
@@ -1855,6 +1862,8 @@ if (!initialDataLoaded) {
             toggleFill();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
             isFillActive ? 'bg-green-700' : 'bg-green-500 hover:bg-green-600'
           }`}
@@ -1873,6 +1882,8 @@ if (!initialDataLoaded) {
             toggleEraser();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className={`px-3 py-1 rounded text-white ${
             isEraserActive ? 'bg-gray-700' : 'bg-gray-400 hover:bg-gray-500'
           }`}
@@ -1886,6 +1897,8 @@ if (!initialDataLoaded) {
             className="flex items-center ml-2 bg-gray-100 p-2 rounded-md border"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
           >
             <label htmlFor="eraserSize" className="mr-2 text-xs font-medium text-gray-700">
               Size:
@@ -1917,6 +1930,18 @@ if (!initialDataLoaded) {
                 e.stopPropagation();
                 console.log('Slider clicked');
               }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                console.log('Slider touchStart');
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                console.log('Slider touchEnd');
+              }}
+              onTouchMove={(e) => {
+                e.stopPropagation();
+                console.log('Slider touchMove');
+              }}
               min="1"
               max="20"
               step="1"
@@ -1937,6 +1962,8 @@ if (!initialDataLoaded) {
                 console.log('Setting eraser size to 5');
                 setEraserSize(5);
               }}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
               className="px-2 py-1 bg-blue-500 text-white rounded text-xs"
             >
               Set to 5
@@ -1946,6 +1973,8 @@ if (!initialDataLoaded) {
                 console.log('Setting eraser size to 10');
                 setEraserSize(10);
               }}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
               className="px-2 py-1 bg-green-500 text-white rounded text-xs"
             >
               Set to 10
@@ -2019,6 +2048,8 @@ if (!initialDataLoaded) {
             clearCanvas();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           disabled={isClearing}
           className="bg-red-500 hover:bg-red-600 text-white font-medium py-1 px-3 rounded disabled:opacity-50"
         >
@@ -2031,6 +2062,8 @@ if (!initialDataLoaded) {
             toggleBrowserFullScreen();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className="bg-purple-500 hover:bg-purple-600 text-white font-xs py-1 px-2 rounded text-xs"
           title={isBrowserFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
         >
@@ -2054,6 +2087,8 @@ if (!initialDataLoaded) {
             requestFullSync();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className="bg-blue-500 hover:bg-blue-600 text-white font-xs py-1 px-2 rounded text-xs"
           title="Force synchronization with server"
         >
@@ -2067,6 +2102,8 @@ if (!initialDataLoaded) {
               navigateToUserLand();
             }}
             onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             className="bg-green-500 hover:bg-green-600 text-white font-xs py-1 px-2 rounded text-xs"
             title="Go to your land"
           >
@@ -2091,6 +2128,8 @@ if (!initialDataLoaded) {
               undo();
             }}
             onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             disabled={undoHistory.length === 0}
             className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
               undoHistory.length === 0 
@@ -2112,6 +2151,8 @@ if (!initialDataLoaded) {
               redo();
             }}
             onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             disabled={redoHistory.length === 0}
             className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
               redoHistory.length === 0 
@@ -2134,6 +2175,8 @@ if (!initialDataLoaded) {
             toggleDebugMode();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
           className={`px-3 py-1 rounded text-white ${debugMode ? 'bg-yellow-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}
         >
           {debugMode ? "Debug: ON" : "Debug"}
