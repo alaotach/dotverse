@@ -8,7 +8,7 @@ interface WebSocketMessage {
 type ConnectionChangeHandler = (connected: boolean) => void;
 type MessageHandler = (data: any) => void;
 
-const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'http://34.57.183.112:3001';
+const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'https://backenddot.krypkey.tech';
 const RECONNECT_DELAY_BASE = 1000;
 const RECONNECT_DELAY_MAX = 10000;
 const MAX_RECONNECT_ATTEMPTS = 15;
