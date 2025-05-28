@@ -9,6 +9,7 @@ import Navbar from '../components/layout/Navbar';
 import Home from '../components/Home';
 import { useAuth } from './context/AuthContext';
 import AdminAnalytics from '../components/admin/AdminAnalytics';
+import Gallery from '../components/Gallery';
 import { useEffect } from 'react';
 
 const ProtectedRoute: React.FC<{
@@ -57,6 +58,7 @@ function AppContent() {
             path="/profile" 
             element={<ProtectedRoute element={<UserProfile />} />} 
           />
+          <Route path="/gallery" element={<ProtectedRoute element={<Gallery />} />} />
           <Route 
             path="/admin/analytics" 
             element={<ProtectedRoute element={<AdminAnalytics />} />}

@@ -12,6 +12,7 @@ import { PixelBatchManager } from '../src/services/pixelBatchManager';
 import { useAnalytics } from '../src/services/AnalyticsService';
 import { useGesture } from '@use-gesture/react';
 import { FaPlus, FaMinus, FaHandPaper, FaPaintBrush } from 'react-icons/fa';
+import { toPng } from 'html-to-image';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -223,6 +224,7 @@ const Canvas = () => {
   const isDrawingSessionActiveRef = useRef<boolean>(false);
   const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string }[]>([]);
   const [isPanMode, setIsPanMode] = useState<boolean>(false); 
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -378,6 +380,47 @@ const Canvas = () => {
     }
     return keys;
   }, [viewportOffset, viewportCellWidth, viewportCellHeight, effectiveCellSize]);
+
+  const captureScreenshot = useCallback(async () => {
+    if (!canvasContainerRef.current || isCapturing) return;
+
+    setIsCapturing(true);
+    try{
+      const toolbar = document.querySelector('[data-toolbar]') as HTMLElement;
+      const toggleButton = document.querySelector('[toggle-toolbar]') as HTMLElement;
+      if (toolbar) {
+        toolbar.style.display = 'none';
+      }
+      if (toggleButton) {
+        toggleButton.style.display = 'none';
+      }
+
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const dataUrl = await toPng(canvasContainerRef.current, {
+        quality: 0.95,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff'
+      });
+
+      if (toolbar) {
+        toolbar.style.display = '';
+      }
+      if (toggleButton) {
+        toggleButton.style.display = '';
+      }
+      const link = document.createElement('a');
+      link.download = `dotverse_screenshot_${new Date().toISOString()}.png`;
+      link.href = dataUrl;
+      link.click();
+      window.location.href = '/gallery';
+    } catch (error) {
+      console.error("Error capturing screenshot:", error);
+      alert("Failed to capture screenshot. Please try again.");
+    }
+    finally {
+      setIsCapturing(false);
+    }
+    }, [isCapturing]);
 
   const updateGridFromVisibleChunks = useCallback(() => {
     if (!initialDataLoaded) return;
@@ -1216,10 +1259,12 @@ const Canvas = () => {
     } finally {
       setIsClearing(false);
     }
-  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);  const bind = useGesture(
+  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);  
+  
+  const bind = useGesture(
     {
       onDrag: ({ active, movement: [dx, dy], event, first, last, touches, memo }) => {
-        if (isPanMode && (touches === 1 || touches === 2)) { // Pan mode with 1 or 2 fingers
+        if (isPanMode && (touches === 1 || touches === 2)) { 
           if (event?.target === canvasContainerRef.current || canvasContainerRef.current?.contains(event?.target as Node)) {
             if (event?.cancelable) event.preventDefault();
           }
@@ -1894,10 +1939,11 @@ const Canvas = () => {
           e.preventDefault();
           toggleToolbar();
         }}
+        id = 'toggle-toolbar'
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
-        className="absolute top-4 right-4 z-40 bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-colors"
+        className="toggle-toolbar absolute top-4 right-4 z-40 bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-colors"
         title={isToolbarVisible ? "Hide Toolbar" : "Show Toolbar"}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -1912,11 +1958,12 @@ const Canvas = () => {
       </button>
 
       {isToolbarVisible && (
-      <div className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2"
+      <div data-toolbar className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchEnd={(e) => e.stopPropagation()}
+      id = "data-toolbar"
       >
         <label htmlFor="colorPicker" className="mr-1">Color:</label>
         <input
@@ -2364,6 +2411,19 @@ const Canvas = () => {
           className={`px-3 py-1 rounded text-white ${debugMode ? 'bg-yellow-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}
         >
           {debugMode ? "Debug: ON" : "Debug"}
+        </button>
+
+        <button
+          onClick={captureScreenshot}
+          disabled={isCapturing}
+          className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+            isCapturing
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              : 'bg-purple-600 hover:bg-purple-700 text-white'
+          }`}
+          title="Take Screenshot"
+        >
+          {isCapturing ? 'Capturing...' : '📸 Screenshot'}
         </button>
         
         {debugMode && currentUser && userProfile?.landInfo && (

@@ -61,6 +61,9 @@ const Navbar: React.FC = () => {
             <div className="ml-4 flex items-center md:ml-6">
               {currentUser ? (
                 <>
+                  <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
+                    Gallery
+                  </Link>
                   <Link to="/profile" className="flex items-center text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                     {userProfile?.photoURL ? (
                       <img src={userProfile.photoURL} alt="Profile" className="w-6 h-6 rounded-full mr-2" />
