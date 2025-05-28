@@ -207,7 +207,6 @@ input[type="range"]::-moz-range-thumb {
   pointer-events: auto;
 }
 
-/* Ensure toolbar buttons don't trigger canvas events */
 .toolbar-container button,
 .toolbar-container input,
 .toolbar-container label,

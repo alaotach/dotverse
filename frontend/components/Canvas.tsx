@@ -5,11 +5,13 @@ import websocketService from "../src/services/websocketService";
 import { useAuth } from "../src/context/AuthContext";
 import { openDB } from 'idb';
 import { getLocalCache, updateLocalCache } from "../src/services/localStorageCache";
-import { doc, getDoc, collection, getDocs, query, writeBatch, setDoc } from "firebase/firestore"; // Added setDoc import here
+import { doc, getDoc, collection, getDocs, query, writeBatch, setDoc } from "firebase/firestore";
 import { fs } from "../src/firebaseClient";
 import { firestoreDebugger, isMissingDocError, isNetworkError } from "../src/services/debugTools";
 import { PixelBatchManager } from '../src/services/pixelBatchManager';
 import { useAnalytics } from '../src/services/AnalyticsService';
+import { useGesture } from '@use-gesture/react';
+import { FaPlus, FaMinus, FaHandPaper, FaPaintBrush } from 'react-icons/fa';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -135,7 +137,7 @@ const toggleBrowserFullScreen = () => {
   }
 };
 
-export default function Canvas() {
+const Canvas = () => {
   const [grid, setGrid] = useState<Map<string, string>>(new Map());
   const [viewportOffset, setViewportOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [lastPlaced, setLastPlaced] = useState<number>(0);
@@ -147,10 +149,10 @@ export default function Canvas() {
   const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
   const [isBrowserFullScreen, setIsBrowserFullScreen] = useState<boolean>(false);
   const [isEraserActive, setIsEraserActive] = useState<boolean>(false); 
-  const [eraserSize, setEraserSize] = useState<number>(1); 
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [eraserSize, setEraserSize] = useState<number>(1);   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [showAuthWarning, setShowAuthWarning] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);
+  const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
   const [quotaStatus, setQuotaStatus] = useState<{used: number, total: number, percentUsed: number}>({
     used: 0, 
     total: 100,
@@ -220,12 +222,17 @@ export default function Canvas() {
   const [currentDrawingAction, setCurrentDrawingAction] = useState<DrawAction | null>(null);
   const isDrawingSessionActiveRef = useRef<boolean>(false);
   const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string }[]>([]);
-
+  const [isPanMode, setIsPanMode] = useState<boolean>(false); 
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
     console.log("Debug mode toggled:", !debugMode);
   }, [debugMode]);
+
+  const togglePanMode = useCallback(() => {
+    setIsPanMode(prev => !prev);
+    console.log('Pan mode toggled:', !isPanMode);
+  }, [isPanMode]);
 
   useEffect(() => {
     latestViewportOffsetTargetRef.current = viewportOffset;
@@ -803,7 +810,6 @@ export default function Canvas() {
       setIsFillActive(false);
     }
   }, [isEraserActive]);
-
   const toggleFill = useCallback(() => {
     setIsFillActive(prev => !prev);
     if (!isFillActive) {
@@ -811,6 +817,55 @@ export default function Canvas() {
     }
     console.log('Fill tool toggled:', !isFillActive);
   }, [isFillActive]);
+
+  const zoomIn = useCallback(() => {
+    const zoomFactor = 1.2;
+    const newZoom = Math.min(MAX_ZOOM, zoomLevel * zoomFactor);
+    
+    if (newZoom !== zoomLevel && canvasContainerRef.current) {
+      const rect = canvasContainerRef.current.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      // Zoom around center of screen
+      const worldXBeforeZoom = latestViewportOffsetTargetRef.current.x + centerX / (CELL_SIZE * latestZoomLevelTargetRef.current);
+      const worldYBeforeZoom = latestViewportOffsetTargetRef.current.y + centerY / (CELL_SIZE * latestZoomLevelTargetRef.current);
+      
+      const newEffectiveCellSize = CELL_SIZE * newZoom;
+      const newViewportX = worldXBeforeZoom - centerX / newEffectiveCellSize;
+      const newViewportY = worldYBeforeZoom - centerY / newEffectiveCellSize;
+
+      latestZoomLevelTargetRef.current = newZoom;
+      latestViewportOffsetTargetRef.current = { x: newViewportX, y: newViewportY };
+      requestViewportUpdateRAF();
+    }
+  }, [zoomLevel]);
+  const zoomOut = useCallback(() => {
+    const zoomFactor = 1.2;
+    const newZoom = Math.max(MIN_ZOOM, zoomLevel / zoomFactor);
+    
+    if (newZoom !== zoomLevel && canvasContainerRef.current) {
+      const rect = canvasContainerRef.current.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      // Zoom around center of screen
+      const worldXBeforeZoom = latestViewportOffsetTargetRef.current.x + centerX / (CELL_SIZE * latestZoomLevelTargetRef.current);
+      const worldYBeforeZoom = latestViewportOffsetTargetRef.current.y + centerY / (CELL_SIZE * latestZoomLevelTargetRef.current);
+      
+      const newEffectiveCellSize = CELL_SIZE * newZoom;
+      const newViewportX = worldXBeforeZoom - centerX / newEffectiveCellSize;
+      const newViewportY = worldYBeforeZoom - centerY / newEffectiveCellSize;
+
+      latestZoomLevelTargetRef.current = newZoom;
+      latestViewportOffsetTargetRef.current = { x: newViewportX, y: newViewportY };
+      requestViewportUpdateRAF();
+    }
+  }, [zoomLevel]);
+
+  const toggleToolbar = useCallback(() => {
+    setIsToolbarVisible(prev => !prev);
+  }, []);
 
   const handleEraserSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = Math.max(1, Math.min(20, parseInt(event.target.value) || 1));
@@ -844,22 +899,9 @@ export default function Canvas() {
       clientX = event.clientX;
       clientY = event.clientY;
     }
-
-    // if (rect.width === 0 || rect.height === 0) {
-    //   console.warn('Canvas rect has invalid dimensions:', rect);
-    //   return;
-    // }
     
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
-    // const clampedMouseX = Math.max(0, Math.min(mouseXOnCanvas));
-    // const clampedMouseY = Math.max(0, Math.min(mouseYOnCanvas));
-    
-    // const startWorldX = Math.floor(viewportOffset.x);
-    // const startWorldY = Math.floor(viewportOffset.y);
-    
-    // const screenCellX = Math.floor(mouseXOnCanvas / effectiveCellSize);
-    // const screenCellY = Math.floor(mouseYOnCanvas / effectiveCellSize);
     
   const worldX = Math.floor(viewportOffset.x + (mouseXOnCanvas / effectiveCellSize));
   const worldY = Math.floor(viewportOffset.y + (mouseYOnCanvas / effectiveCellSize));
@@ -1174,7 +1216,47 @@ export default function Canvas() {
     } finally {
       setIsClearing(false);
     }
-  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);
+  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);  const bind = useGesture(
+    {
+      onDrag: ({ active, movement: [dx, dy], event, first, last, touches, memo }) => {
+        if (isPanMode && (touches === 1 || touches === 2)) { // Pan mode with 1 or 2 fingers
+          if (event?.target === canvasContainerRef.current || canvasContainerRef.current?.contains(event?.target as Node)) {
+            if (event?.cancelable) event.preventDefault();
+          }
+
+          if (first) {
+            memo = { x: latestViewportOffsetTargetRef.current.x, y: latestViewportOffsetTargetRef.current.y };
+            setIsPanning(true);
+          }
+
+          if (active && memo) {
+            const panSensitivity = touches === 1 ? 1.5 : 2; 
+            latestViewportOffsetTargetRef.current = {
+              x: memo.x - (dx / panSensitivity) / effectiveCellSize,
+              y: memo.y - (dy / panSensitivity) / effectiveCellSize,
+            };
+            requestViewportUpdateRAF();
+          }
+
+          if (last) { 
+            setIsPanning(false);
+          }
+          return memo;
+        } else {
+          if (isPanning && !active) setIsPanning(false);
+        }
+        return memo;
+      },
+    },
+    {
+      drag: {
+        filterTaps: true,
+        threshold: 10, 
+      },
+      eventOptions: { passive: false },
+    }
+  );
+
 
   const navigateToUserLand = useCallback(() => {
     if (!userProfile?.landInfo) return;
@@ -1231,8 +1313,10 @@ export default function Canvas() {
       const currentMouseX = event.clientX - rect.left;
       const currentMouseY = event.clientY - rect.top;
       
-      const deltaX = (currentMouseX - panStartMousePositionRef.current.x) / effectiveCellSize;
-      const deltaY = (currentMouseY - panStartMousePositionRef.current.y) / effectiveCellSize;
+      const mousePanSensitivity = 2; 
+      
+      const deltaX = (currentMouseX - panStartMousePositionRef.current.x) / (effectiveCellSize * mousePanSensitivity);
+      const deltaY = (currentMouseY - panStartMousePositionRef.current.y) / (effectiveCellSize * mousePanSensitivity);
       
       latestViewportOffsetTargetRef.current = {
         x: panStartViewportOffsetRef.current.x - deltaX,
@@ -1301,25 +1385,35 @@ export default function Canvas() {
   }, [currentUser, addToHistory, isEraserActive]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
+
+    if (isPanMode) {
+      setIsMouseDown(true);
+      return;
+    }
+
     if (event.touches.length === 1) {
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+      
       setIsMouseDown(true);
       setIsPanning(false);
       lastDrawnPositionRef.current = null;
       handleDrawing(event);
     }
-  }, [handleDrawing]);
+  }, [handleDrawing, isPanMode, setIsMouseDown, setIsPanning]);
 
   const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
+
+    if (isPanMode) {
+      return;
+    }
     if (event.touches.length === 1 && isMouseDown && !isPanning) {
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+      
       handleDrawing(event);
     }
-  }, [handleDrawing, isMouseDown, isPanning]);
+  }, [handleDrawing, isMouseDown, isPanMode, isPanning]);
 
   const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1729,71 +1823,95 @@ export default function Canvas() {
     showGridLines
   ]);
 
-
-if (!initialDataLoaded) {
-  console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
   
-  return (
-    <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
-      <div className="flex flex-col items-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-        <div className="text-lg mb-2">Loading Canvas...</div>
-        <div className="text-sm text-gray-600 mb-4">
-          {wsConnected ? 
-            "Connected to server, loading data..." : 
-            "Connecting to server..."}
-        </div>
-        <div className="flex space-x-4">
-          <button 
-            onClick={() => {
-              setInitialDataLoaded(true);
-              setGrid(new Map());
-            }}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Skip Loading
-          </button>
-          <button
-            onClick={() => {
-              requestFullSync();
-            }}
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-          >
-            Retry Sync
-          </button>
+  if (!initialDataLoaded) {
+    console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
+    
+    return (
+      <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+          <div className="text-lg mb-2">Loading Canvas...</div>
+          <div className="text-sm text-gray-600 mb-4">
+            {wsConnected ? 
+              "Connected to server, loading data..." : 
+              "Connecting to server..."}
+          </div>
+          <div className="flex space-x-4">
+            <button 
+              onClick={() => {
+                setInitialDataLoaded(true);
+                setGrid(new Map());
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Skip Loading
+            </button>
+            <button
+              onClick={() => {
+                requestFullSync();
+              }}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Retry Sync
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
-      <div 
-        ref={canvasContainerRef}
-        className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default"
-        style={{ 
-          touchAction: "none",
-          WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "none",
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          width: '100vw',
-          height: '100vh',
-          margin: 0,
-          padding: 0,
-          border: 'none',
-          zIndex: 0
-        }} 
-        onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={handleCanvasMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onWheel={handleWheel}
+    <div 
+      ref={canvasContainerRef}
+      {...bind()}
+      className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default"
+      style={{ 
+        touchAction: "none",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehavior: "none",
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        width: '100vw',
+        height: '100vh',
+        margin: 0,
+        padding: 0,
+        border: 'none',
+        zIndex: 0
+      }} 
+      onMouseDown={handleCanvasMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleCanvasMouseUp}
+      onMouseLeave={handleCanvasMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onWheel={handleWheel}    >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          toggleToolbar();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        className="absolute top-4 right-4 z-40 bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-colors"
+        title={isToolbarVisible ? "Hide Toolbar" : "Show Toolbar"}
       >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          {isToolbarVisible ? (
+            // Hide/Eye Slash icon
+            <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.76,7.13 11.37,7 12,7Z"/>
+          ) : (
+            // Show/Eye icon
+            <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
+          )}
+        </svg>
+      </button>
+
+      {isToolbarVisible && (
       <div className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -1879,6 +1997,71 @@ if (!initialDataLoaded) {
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
+            togglePanMode();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
+            isPanMode ? 'bg-orange-700' : 'bg-orange-500 hover:bg-orange-600'
+          }`}
+          title="Toggle pan mode - drag to move around the canvas"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            {isPanMode ? (
+              <path d="M13,6V8H9V6H13M15,4H7A2,2 0 0,0 5,6V8A2,2 0 0,0 7,10H8V13A2,2 0 0,0 10,15H14A2,2 0 0,0 16,13V10H17A2,2 0 0,0 19,8V6A2,2 0 0,0 17,4H15M14,13H10V10H14V13Z"/>
+            ) : (
+              <path d="M15.5,14H20.5L23,16.5L20.5,19H15.5L13,16.5L15.5,14M9.5,15.5A6.5,6.5 0 0,1 3,9A6.5,6.5 0 0,1 9.5,2.5A6.5,6.5 0 0,1 16,9A6.5,6.5 0 0,1 9.5,15.5M9.5,4A5,5 0 0,0 4.5,9A5,5 0 0,0 9.5,14A5,5 0 0,0 14.5,9A5,5 0 0,0 9.5,4Z"/>
+            )}
+          </svg>          {isPanMode ? "Pan" : "Zoom"}
+        </button>
+
+        <div className="flex gap-1">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              zoomOut();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="px-3 py-1 rounded text-white bg-blue-500 hover:bg-blue-600 flex items-center justify-center"
+            title="Zoom out"
+            disabled={zoomLevel <= MIN_ZOOM}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19,13H5V11H19V13Z"/>
+            </svg>
+          </button>
+          
+          <span className="px-2 py-1 bg-gray-100 rounded text-xs font-mono text-gray-700 flex items-center">
+            {Math.round(zoomLevel * 100)}%
+          </span>
+          
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              zoomIn();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="px-3 py-1 rounded text-white bg-blue-500 hover:bg-blue-600 flex items-center justify-center"
+            title="Zoom in"
+            disabled={zoomLevel >= MAX_ZOOM}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
+            </svg>
+          </button>
+        </div>
+
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
             toggleEraser();
           }}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1888,6 +2071,7 @@ if (!initialDataLoaded) {
             isEraserActive ? 'bg-gray-700' : 'bg-gray-400 hover:bg-gray-500'
           }`}
           title={`Toggle eraser tool${isEraserActive ? ` (Size: ${eraserSize}x${eraserSize})` : ''}`}
+
         >
           {isEraserActive ? `Eraser ${eraserSize}x${eraserSize}` : "Eraser"}
         </button>
@@ -2069,7 +2253,7 @@ if (!initialDataLoaded) {
         >
           {isBrowserFullScreen ? "Exit FS" : "Full Screen"}
         </button>
-        {showAuthWarning && !currentUser && ( // Only show if not logged in
+        {showAuthWarning && !currentUser && ( 
             <span className="text-red-500 text-xs font-semibold ml-2">
                 Please log in to draw or interact with the canvas.
             </span>
@@ -2186,9 +2370,9 @@ if (!initialDataLoaded) {
           <div className="text-xs bg-gray-100 p-1 rounded">
             Center: ({userProfile.landInfo.centerX}, {userProfile.landInfo.centerY}), 
             Size: {userProfile.landInfo.ownedSize}x{userProfile.landInfo.ownedSize}
-          </div>
-        )}
+          </div>        )}
       </div>
+      )}
       
       <div 
         className="absolute inset-0"
@@ -2211,8 +2395,12 @@ if (!initialDataLoaded) {
         Grid Lines: {SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD ? 'Visible' : 'Hidden'}
         <br />
         Lands Loaded: {allLands.length}
+        <br />
+        Two-finger mode: {isPanMode ? 'Pan' : 'Zoom'}
       </div>
       
     </div>
   );
-}
+};
+
+export default Canvas;
