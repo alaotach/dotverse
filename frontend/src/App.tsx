@@ -13,6 +13,7 @@ import Gallery from '../components/Gallery';
 import { useEffect } from 'react';
 import { EconomyProvider } from './context/EconomyContext';
 import EconomyDashboard from '../components/economy/EconomyDashboard';
+import AuctionDashboard from '../components/auction/AuctionDashboard';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -25,6 +26,7 @@ const ProtectedRoute: React.FC<{
   
   return currentUser ? <>{element}</> : <Navigate to="/login" replace />;
 };
+
 
 function AppContent() {
   const location = useLocation();
@@ -67,6 +69,7 @@ function AppContent() {
           />
           <Route path="/gallery" element={<ProtectedRoute element={<Gallery />} />} />
           <Route path="/economy" element={<ProtectedRoute element={<EconomyDashboard />} />} />
+          <Route path="/auction" element={<ProtectedRoute element={<AuctionDashboard />} />} />
           <Route 
             path="/admin/analytics" 
             element={<ProtectedRoute element={<AdminAnalytics />} />}

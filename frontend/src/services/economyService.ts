@@ -68,6 +68,77 @@ class EconomyService {
     }
     }
 
+  async addCoins(userId: string, amount: number, description: string): Promise<void> {
+    const userEconomyRef = doc(fs, 'economy', userId);
+    const transactionRef = doc(collection(fs, 'economyTransactions'));
+
+    const transactionData: Omit<EconomyTransaction, 'id'> = {
+      userId,
+      type: 'reward',
+      amount,
+      timestamp: Date.now(),
+      description
+    };
+
+    try {
+      await this.initializeUserEconomy(userId);
+      
+      await setDoc(userEconomyRef, {
+        balance: increment(amount),
+        totalEarned: increment(amount),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      await setDoc(transactionRef, {
+        ...transactionData,
+        id: transactionRef.id
+      });
+
+      console.log(`Added ${amount} coins to ${userId}`);
+    } catch (error) {
+      console.error('Failed to add coins:', error);
+      throw error;
+    }
+  }
+
+  async removeCoins(userId: string, amount: number, description: string): Promise<void> {
+    const userEconomyRef = doc(fs, 'economy', userId);
+    const transactionRef = doc(collection(fs, 'economyTransactions'));
+
+    const transactionData: Omit<EconomyTransaction, 'id'> = {
+      userId,
+      type: 'purchase',
+      amount: -amount,
+      timestamp: Date.now(),
+      description
+    };
+
+    try {
+      await this.initializeUserEconomy(userId);
+      
+      const userEconomy = await this.getUserEconomy(userId);
+      if (!userEconomy || userEconomy.balance! < amount) {
+        throw new Error('Insufficient funds');
+      }
+
+      await setDoc(userEconomyRef, {
+        balance: increment(-amount),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      await setDoc(transactionRef, {
+        ...transactionData,
+        id: transactionRef.id
+      });
+
+      console.log(`Removed ${amount} coins from ${userId}`);
+    } catch (error) {
+      console.error('Failed to remove coins:', error);
+      throw error;
+    }
+  }
+
+
 
   async awardLike(userId: string, fromUserId: string, fromUsername: string, postId: string): Promise<void> {
     console.log(`Awarding like to ${userId} from ${fromUsername} for post ${postId}`);

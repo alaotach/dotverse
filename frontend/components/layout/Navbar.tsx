@@ -57,6 +57,9 @@ const Navbar: React.FC = () => {
                 {currentUser && (
                   <Link to="/economy" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Economy</Link>
                 )}
+                {currentUser && (
+                  <Link to="/auction" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Auction</Link>
+                )}
                 {isAdmin && (
                   <Link to="/admin/analytics" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Admin</Link>
                 )}
@@ -115,3 +118,4 @@ const Navbar: React.FC = () => {
 };
 
 export default Navbar;
+// This code defines a responsive navigation bar 
