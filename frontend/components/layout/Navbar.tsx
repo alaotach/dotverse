@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../src/context/AuthContext';
 import websocketService from "../../src/services/websocketService";
+import { useEconomy } from '../../src/context/EconomyContext';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -9,6 +10,7 @@ const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const [pixelCount, setPixelCount] = useState(0);
   const isAdmin = userProfile?.role === 'admin' || userProfile?.email === 'admin@dotverse.com';
+  const { userEconomy } = useEconomy();
 
   useEffect(() => {
   const handlePixelStats = (stats: { pixelCount: number }) => {
@@ -52,6 +54,9 @@ const Navbar: React.FC = () => {
               <div className="ml-10 flex items-baseline space-x-4">
                 <Link to="/" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Home</Link>
                 <Link to="/canvas" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Canvas</Link>
+                {currentUser && (
+                  <Link to="/economy" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Economy</Link>
+                )}
                 {isAdmin && (
                   <Link to="/admin/analytics" className="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Admin</Link>
                 )}
@@ -61,6 +66,14 @@ const Navbar: React.FC = () => {
             <div className="ml-4 flex items-center md:ml-6">
               {currentUser ? (
                 <>
+
+                  {userEconomy && (
+                    <div className="mr-4 bg-gradient-to-r from-yellow-600 to-orange-600 px-3 py-1 rounded-lg">
+                      <span className="text-sm font-semibold">
+                        {userEconomy.balance?.toLocaleString() || 0} 🪙
+                      </span>
+                    </div>
+                  )}
                   <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>

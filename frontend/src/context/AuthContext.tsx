@@ -113,6 +113,13 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setCurrentUser(appProfile);
       setUserProfile(appProfile);
       localStorage.setItem(LOCAL_STORAGE_USER_KEY, profile.uid);
+
+      try {
+      const { economyService } = await import('../services/economyService');
+      await economyService.initializeUserEconomy(profile.uid);
+    } catch (economyError) {
+      console.error('Failed to initialize economy:', economyError);
+    }
       
       await analyticsService.trackUserLogin(
         profile.uid,

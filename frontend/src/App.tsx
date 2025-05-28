@@ -11,6 +11,8 @@ import { useAuth } from './context/AuthContext';
 import AdminAnalytics from '../components/admin/AdminAnalytics';
 import Gallery from '../components/Gallery';
 import { useEffect } from 'react';
+import { EconomyProvider } from './context/EconomyContext';
+import EconomyDashboard from '../components/economy/EconomyDashboard';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -41,9 +43,14 @@ function AppContent() {
 
   if (isCanvasPage) {
     return (
-      <Routes>
-        <Route path="/canvas" element={<Canvas />} />
-      </Routes>
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        <main className="flex-1">
+          <Routes>
+            <Route path="/canvas" element={<Canvas />} />
+          </Routes>
+        </main>
+      </div>
     );
   }
   return (
@@ -59,6 +66,7 @@ function AppContent() {
             element={<ProtectedRoute element={<UserProfile />} />} 
           />
           <Route path="/gallery" element={<ProtectedRoute element={<Gallery />} />} />
+          <Route path="/economy" element={<ProtectedRoute element={<EconomyDashboard />} />} />
           <Route 
             path="/admin/analytics" 
             element={<ProtectedRoute element={<AdminAnalytics />} />}
@@ -74,7 +82,9 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppContent />
+        <EconomyProvider>
+          <AppContent />
+        </EconomyProvider>
       </AuthProvider>
     </Router>
   );

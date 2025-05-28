@@ -30,24 +30,40 @@ export const fs = getFirestore(app);
 
 const initFirestore = async () => {
   try {
-    await enableIndexedDbPersistence(fs, { cacheSizeBytes: CACHE_SIZE_UNLIMITED })
-      .then(() => {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await enableIndexedDbPersistence(fs, { 
+          cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+          forceOwnership: false 
+        });
         console.log("Firestore persistence enabled successfully");
-      })
-      .catch((err) => {
+        break;
+      } catch (err: any) {
+        retryCount++;
         if (err.code === 'failed-precondition') {
           console.warn("Multiple tabs open, persistence only enabled in one tab");
+          break;
         } else if (err.code === 'unimplemented') {
           console.warn("Persistence not supported in this browser");
+          break;
+        } else if (retryCount >= maxRetries) {
+          console.error("Firestore persistence error after retries:", err);
+          break;
         } else {
-          console.error("Firestore persistence error:", err);
+          console.warn(`Firestore persistence attempt ${retryCount} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
-      });
+      }
+    }
   } catch (error) {
     console.error("Error initializing Firestore with persistence:", error);
   }
 };
 
 initFirestore();
+
 
 console.log("Firebase initialized successfully");
