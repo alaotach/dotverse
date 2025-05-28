@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../src/context/AuthContext';
 import { ref, push, onValue, remove, update } from 'firebase/database';
 import { db } from '../src/firebaseClient';
@@ -23,17 +23,57 @@ interface Comment {
   timestamp: number;
 }
 
+type SortOption = 'recent' | 'likes' | 'comments' | 'oldest';
+
 const Gallery: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
   const [posts, setPosts] = useState<GalleryPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadData, setUploadData] = useState({
-    title: '',
-    description: '',
-    imageFile: null as File | null,
-  });
+      title: '',
+      description: '',
+      imageFile: null as File | null,
+    });
   const [uploading, setUploading] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('recent');
+
+  const sortedPosts = useMemo(() => {
+    const postsToSort = [...posts];
+    
+    switch (sortBy) {
+      case 'recent':
+        return postsToSort.sort((a, b) => b.timestamp - a.timestamp);
+      
+      case 'oldest':
+        return postsToSort.sort((a, b) => a.timestamp - b.timestamp);
+      
+      case 'likes':
+        return postsToSort.sort((a, b) => {
+          const aLikes = Object.keys(a.likes || {}).length;
+          const bLikes = Object.keys(b.likes || {}).length;
+          return bLikes - aLikes;
+        });
+      
+      case 'comments':
+        return postsToSort.sort((a, b) => {
+          const aComments = Object.keys(a.comments || {}).length;
+          const bComments = Object.keys(b.comments || {}).length;
+          return bComments - aComments;
+        });
+      
+      default:
+        return postsToSort;
+    }
+  }, [posts, sortBy]);
+
+  const getSortButtonClass = (option: SortOption) => {
+    return `px-3 py-1 rounded text-sm font-medium transition-colors ${
+      sortBy === option
+        ? 'bg-blue-600 text-white'
+        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+    }`;
+  };
 
   useEffect(() => {
     const postsRef = ref(db, 'gallery');
@@ -320,20 +360,53 @@ const Gallery: React.FC = () => {
           )}
         </div>
 
-        {posts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-400 text-lg">No posts yet. Be the first to share a screenshot!</p>
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <span className="text-gray-300 font-medium">Sort by:</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSortBy('recent')}
+                className={getSortButtonClass('recent')}
+              >
+                📅 Most Recent
+              </button>
+              <button
+                onClick={() => setSortBy('likes')}
+                className={getSortButtonClass('likes')}
+              >
+                ❤️ Most Likes
+              </button>
+              <button
+                onClick={() => setSortBy('comments')}
+                className={getSortButtonClass('comments')}
+              >
+                💬 Most Comments
+              </button>
+              <button
+                onClick={() => setSortBy('oldest')}
+                className={getSortButtonClass('oldest')}
+              >
+                🕐 Oldest First
+              </button>
+            </div>
+            <div className="text-sm text-gray-400">
+              {posts.length} post{posts.length !== 1 ? 's' : ''}
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {posts.map((post) => (
-              <PostCard key={post.id} post={post} />
-            ))}
-          </div>
-        )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sortedPosts.length > 0 ? (
+            sortedPosts.map((post) => <PostCard key={post.id} post={post} />)
+          ) : (
+            <div className="col-span-full text-center py-12">
+              <div className="text-gray-400 text-lg">No posts yet</div>
+              <p className="text-gray-500 mt-2">Be the first to share your creation!</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
