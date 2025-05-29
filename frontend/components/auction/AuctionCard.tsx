@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LandAuction, auctionService } from '../../src/services/auctionService';
+import { auctionService, type LandAuction } from '../../src/services/auctionService';
 import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 
@@ -156,16 +156,22 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ auction, isOwner, isHighestBi
         <p className="text-gray-400 text-sm">
           Size: {auction.landSize}x{auction.landSize} | Owner: {auction.ownerDisplayName}
         </p>
-      </div>
-
-      {/* Land Preview */}
+      </div>      {/* Land Image */}
       <div className="p-4">
-        <div className="w-full h-32 bg-gray-700 rounded-lg flex items-center justify-center mb-4">
-          <div className="text-center">
-            <div className="text-2xl mb-1">🏞️</div>
-            <div className="text-xs text-gray-400">Land Preview</div>
+        {auction.imageUrl ? (
+          <img 
+            src={auction.imageUrl} 
+            alt={`Land at (${auction.landCenterX}, ${auction.landCenterY})`}
+            className="w-full h-32 object-cover rounded-lg border border-gray-600 mb-4"
+          />
+        ) : (
+          <div className="w-full h-32 bg-gray-700 rounded-lg flex items-center justify-center mb-4 border border-gray-600">
+            <div className="text-center text-gray-400">
+              <div className="text-sm">No image uploaded</div>
+              <div className="text-xs mt-1">{auction.landSize}×{auction.landSize} land</div>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Bid Info */}
         <div className="space-y-2 mb-4">

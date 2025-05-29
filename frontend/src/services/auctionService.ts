@@ -44,6 +44,7 @@ export interface LandAuction {
   bidHistory: AuctionBid[];
   status: 'pending' | 'active' | 'ended' | 'cancelled';
   createdAt: Timestamp;
+  imageUrl?: string;
 }
 
 export interface CreateAuctionData {
@@ -53,6 +54,7 @@ export interface CreateAuctionData {
   startingPrice: number;
   duration: number;
   buyNowPrice?: number;
+  imageUrl?: string;
 }
 
 class AuctionService {
@@ -81,9 +83,7 @@ class AuctionService {
       
       if (!existingAuctions.empty) {
         throw new Error('This land is already being auctioned');
-      }
-
-      const auctionDoc: Omit<LandAuction, 'id'> = {
+      }      const auctionDoc: Omit<LandAuction, 'id'> = {
         landId,
         ownerId,
         ownerDisplayName,
@@ -99,8 +99,9 @@ class AuctionService {
         highestBidderName: null,
         bidHistory: [],
         status: 'active',
-        createdAt: serverTimestamp() as Timestamp
-      };      const docRef = await addDoc(collection(fs, 'auctions'), auctionDoc);
+        createdAt: serverTimestamp() as Timestamp,
+        imageUrl: auctionData.imageUrl
+      };const docRef = await addDoc(collection(fs, 'auctions'), auctionDoc);
       console.log('Auction created with ID:', docRef.id, 'for ownerId:', ownerId);
       
       await markLandAsAuctioned(landId, docRef.id);

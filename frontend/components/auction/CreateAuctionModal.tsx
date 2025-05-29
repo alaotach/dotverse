@@ -15,18 +15,18 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
   const [selectedLand, setSelectedLand] = useState<UserLandInfo | null>(null);
   const [loadingLands, setLoadingLands] = useState(true);
-  
-  const [formData, setFormData] = useState<CreateAuctionData>({
+    const [formData, setFormData] = useState<CreateAuctionData>({
     landCenterX: 0,
     landCenterY: 0,
     landSize: 50,
     startingPrice: 100,
     duration: 24,
-    buyNowPrice: undefined
+    buyNowPrice: undefined,
+    imageUrl: undefined
   });
-  const [enableBuyNow, setEnableBuyNow] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
+  const [enableBuyNow, setEnableBuyNow] = useState(false);  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string>('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   useEffect(() => {
     const loadUserLands = async () => {
@@ -71,8 +71,25 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
         landCenterY: selectedLand.centerY,
         landSize: selectedLand.ownedSize
       }));
+    }  }, [selectedLand]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size must be less than 5MB');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setImagePreview(result);
+        setFormData(prev => ({ ...prev, imageUrl: result }));
+      };
+      reader.readAsDataURL(file);
     }
-  }, [selectedLand]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -159,8 +176,7 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                   <p>No lands available for auction.</p>
                   <p className="text-sm mt-1">You need to own land that isn't already being auctioned.</p>
                 </div>
-              ) : (
-                <div className="space-y-2">
+              ) : (                <div className="space-y-2">
                   {userLands.map((land, index) => (
                     <div
                       key={`${land.centerX}-${land.centerY}`}
@@ -170,9 +186,16 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                           : 'border-gray-600 hover:border-gray-500 bg-gray-800'
                       }`}
                       onClick={() => setSelectedLand(land)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
+                    >                      <div className="flex items-center gap-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-16 h-16 rounded border border-gray-600 bg-gray-700 flex items-center justify-center">
+                            <div className="text-center text-xs text-gray-400">
+                              <div>{land.ownedSize}×{land.ownedSize}</div>
+                              <div>Land</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1">
                           <div className="text-white font-medium">
                             Land #{index + 1}
                           </div>
@@ -183,7 +206,7 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                             Size: {land.ownedSize}×{land.ownedSize} pixels
                           </div>
                         </div>
-                        <div className={`w-4 h-4 rounded-full border-2 ${
+                        <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
                           selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY
                             ? 'border-blue-500 bg-blue-500'
                             : 'border-gray-500'
@@ -196,7 +219,42 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                     </div>
                   ))}
                 </div>
-              )}
+              )}            </div>
+
+            {/* Image Upload */}
+            <div>
+              <label className="block text-white font-medium mb-2">
+                Land Screenshot (Optional)
+              </label>
+              <div className="space-y-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none file:mr-4 file:py-1 file:px-2 file:rounded file:border-0 file:text-sm file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                />
+                {imagePreview && (
+                  <div className="relative">
+                    <img 
+                      src={imagePreview} 
+                      alt="Land preview" 
+                      className="w-full h-32 object-cover rounded border border-gray-600"
+                    />
+                    <button
+                      type="button"                      onClick={() => {
+                        setImagePreview(null);
+                        setFormData(prev => ({ ...prev, imageUrl: undefined }));
+                      }}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                <div className="text-xs text-gray-400">
+                  Upload a screenshot of your land to help potential bidders see what they're buying.
+                </div>
+              </div>
             </div>
 
             {/* Starting Price */}
