@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../src/context/AuthContext';
 import websocketService from "../../src/services/websocketService";
 import { useEconomy } from '../../src/context/EconomyContext';
+import LandDropdown from './LandDropdown';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -76,10 +77,10 @@ const Navbar: React.FC = () => {
                         {userEconomy.balance?.toLocaleString() || 0} 🪙
                       </span>
                     </div>
-                  )}
-                  <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
+                  )}                  <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>
+                  <LandDropdown />
                   <Link to="/profile" className="flex items-center text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                     {userProfile?.photoURL ? (
                       <img src={userProfile.photoURL} alt="Profile" className="w-6 h-6 rounded-full mr-2" />
@@ -118,4 +119,3 @@ const Navbar: React.FC = () => {
 };
 
 export default Navbar;
-// This code defines a responsive navigation bar 

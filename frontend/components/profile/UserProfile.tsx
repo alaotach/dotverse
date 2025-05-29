@@ -1,153 +1,134 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../src/context/AuthContext';
-import { signOutUser, updateUserProfile } from '../../src/services/authService';
-import { getUserLands } from '../../src/services/landService';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { getUserLands, updateLandName, type UserLandInfo } from '../../src/services/landService';
+import { auctionService, type LandAuction } from '../../src/services/auctionService';
+import LandCard from '../lands/LandCard';
 
 const UserProfile: React.FC = () => {
-  const { currentUser, userProfile, logout, isLoading } = useAuth();
-  const navigate = useNavigate();
-  
-  const [displayName, setDisplayName] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [ownedLands, setOwnedLands] = useState<{x: number, y: number}[]>([]);
-  const [isLoadingLands, setIsLoadingLands] = useState(true);
-  
+  const { currentUser, userProfile } = useAuth();
+  const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
+  const [loadingLands, setLoadingLands] = useState(true);
+  const [auctionData, setAuctionData] = useState<Map<string, LandAuction>>(new Map());
+
   useEffect(() => {
-    if (userProfile) {
-      setDisplayName(userProfile.displayName || '');
-      
-      const loadUserLands = async () => {
-        try {
-          if (currentUser) {
-            const lands = await getUserLands(currentUser.uid);
-            setOwnedLands(lands);
+    const loadUserLands = async () => {
+      if (!currentUser) return;
+
+      setLoadingLands(true);
+      try {
+        const lands = await getUserLands(currentUser.uid);
+        setUserLands(lands);        
+        const auctionMap = new Map<string, LandAuction>();
+        for (const land of lands) {
+          if (land.isAuctioned && land.auctionId) {
+            try {
+              const auction = await auctionService.getAuction(land.auctionId);
+              if (auction) {
+                auctionMap.set(land.auctionId, auction);
+              }
+            } catch (error) {
+              console.error(`Error loading auction ${land.auctionId}:`, error);
+            }
           }
-        } catch (err) {
-          console.error('Error loading user lands:', err);
-        } finally {
-          setIsLoadingLands(false);
         }
-      };
+        setAuctionData(auctionMap);
+      } catch (error) {
+        console.error('Error loading user lands:', error);
+      } finally {
+        setLoadingLands(false);
+      }
+    };
+
+    loadUserLands();
+  }, [currentUser]);
+
+  const handleUpdateLandName = async (landId: string, newName: string) => {
+    try {
+      await updateLandName(landId, newName);
       
-      loadUserLands();
-    }
-  }, [userProfile, currentUser]);
-  
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!currentUser) return;
-    
-    setIsUpdating(true);
-    setUpdateError(null);
-    
-    try {
-      await updateUserProfile(currentUser.uid, { displayName });
-      setIsEditing(false);
-    } catch (err: any) {
-      console.error('Error updating profile:', err);
-      setUpdateError(err.message || 'Failed to update profile');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-  
-  const handleSignOut = async () => {
-    try {
-      await signOutUser();
-      navigate('/login');
-    } catch (err) {
-      console.error('Sign out error:', err);
-    }
-  };
-  
-  const handleViewLand = () => {
-    if (!userProfile) return;
-    
-    const { centerX, centerY } = userProfile.landInfo;
-    navigate(`/canvas?x=${centerX}&y=${centerY}`);
-  };
-  
-  if (isLoading) {
-    return <div className="flex justify-center items-center h-screen">Loading profile...</div>;
-  }
-
-  if (!currentUser || !userProfile) {
-    return <Navigate to="/login" replace />;
-  }
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
+      setUserLands(prev => prev.map(land => 
+        land.id === landId 
+          ? { ...land, displayName: newName }
+          : land
+      ));
     } catch (error) {
-      console.error('Failed to log out', error);
+      console.error('Error updating land name:', error);
+      throw error;
     }
   };
 
-  const goToUserLand = () => {
-    if (userProfile.landInfo) {
-      navigate(`/canvas?x=${userProfile.landInfo.centerX}&y=${userProfile.landInfo.centerY}`);
-    }
-  };
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please Log In</h2>
+          <p className="text-gray-600">You need to be logged in to view your profile.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <div className="bg-white shadow-xl rounded-lg p-6">
-        <div className="flex flex-col items-center sm:flex-row sm:items-start">
-          <img
-            className="w-32 h-32 rounded-full object-cover border-4 border-blue-500 mb-4 sm:mb-0 sm:mr-6"
-            src={userProfile.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'User')}&background=random&size=128`}
-            alt={userProfile.displayName || 'User Avatar'}
-          />
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 text-center sm:text-left">
-              {userProfile.displayName || 'Anonymous User'}
-            </h1>
-            <p className="text-gray-600 text-center sm:text-left">{userProfile.email}</p>
-          </div>
-        </div>
-
-        <div className="mt-8 border-t pt-6">
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4">Land Information</h2>
-          {userProfile.landInfo ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
-              <p><strong>Center X:</strong> {userProfile.landInfo.centerX}</p>
-              <p><strong>Center Y:</strong> {userProfile.landInfo.centerY}</p>
-              <p><strong>Land Size:</strong> {userProfile.landInfo.ownedSize} x {userProfile.landInfo.ownedSize} pixels</p>
-              <p className="md:col-span-2">
-                <button 
-                  onClick={handleViewLand}
-                  className="mt-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
-                >
-                  View My Land
-                </button>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* User Info Section */}
+        <div className="bg-white shadow rounded-lg p-6 mb-8">
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl font-bold">
+              {userProfile?.displayName?.charAt(0)?.toUpperCase() || currentUser.email?.charAt(0)?.toUpperCase() || 'U'}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {userProfile?.displayName || 'Anonymous User'}
+              </h1>
+              <p className="text-gray-600">{currentUser.email}</p>
+              <p className="text-sm text-gray-500">
+                User ID: {currentUser.uid}
               </p>
             </div>
-          ) : (
-            <p className="text-gray-500">No land information available.</p>
-          )}
-        </div>
-
-        <div className="mt-8 border-t pt-6">
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4">Account Details</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
-            <p><strong>User ID:</strong> {userProfile.uid}</p>
-            <p><strong>Joined:</strong> {new Date(userProfile.createdAt).toLocaleDateString()}</p>
-            <p><strong>Last Login:</strong> {new Date(userProfile.lastLogin).toLocaleString()}</p>
           </div>
         </div>
-        
-        <div className="mt-8 border-t pt-6 flex justify-end">
-          <button 
-            className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded"
-            onClick={() => alert("Edit profile functionality coming soon!")}
-          >
-            Edit Profile (Soon)
-          </button>
+
+        {/* User Lands Section */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900">My Lands</h2>
+            <span className="text-sm text-gray-500">
+              {userLands.length} {userLands.length === 1 ? 'land' : 'lands'} owned
+            </span>
+          </div>
+
+          {loadingLands ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              <span className="ml-3 text-gray-600">Loading your lands...</span>
+            </div>
+          ) : userLands.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-4">
+                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No lands owned</h3>
+              <p className="text-gray-600 mb-4">You don't own any land plots yet.</p>
+              <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition-colors">
+                Explore Available Lands
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {userLands.map((land) => (
+                <LandCard
+                  key={land.id}
+                  land={land}
+                  auction={land.auctionId ? auctionData.get(land.auctionId) : undefined}
+                  onNameUpdate={handleUpdateLandName}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

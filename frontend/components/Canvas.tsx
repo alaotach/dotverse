@@ -13,6 +13,8 @@ import { useAnalytics } from '../src/services/AnalyticsService';
 import { useGesture } from '@use-gesture/react';
 import { FaPlus, FaMinus, FaHandPaper, FaPaintBrush } from 'react-icons/fa';
 import { toPng } from 'html-to-image';
+import { getAllLandsWithAuctionStatus, getUserLands, type UserLandInfo } from '../src/services/landService';
+import { useNavigate } from 'react-router-dom';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -78,6 +80,8 @@ interface LandInfo {
   owner: string;
   displayName?: string;
   isEmpty?: boolean;
+  isAuctioned?: boolean;
+  auctionId?: string;
 }
 
 interface DrawAction {
@@ -159,8 +163,7 @@ const Canvas = () => {
     total: 100,
     percentUsed: 0
   });
-  
-  const [allLands, setAllLands] = useState<LandInfo[]>([]);
+    const [allLands, setAllLands] = useState<UserLandInfo[]>([]);
   const [loadingLands, setLoadingLands] = useState<boolean>(true);
   const [initialDataLoaded, setInitialDataLoaded] = useState<boolean>(false);
   const [initialViewportSet, setInitialViewportSet] = useState<boolean>(false);
@@ -169,6 +172,7 @@ const Canvas = () => {
   const lastDrawnPositionRef = useRef<{ x: number, y: number } | null>(null);
   const pixelBatchManagerRef = useRef<PixelBatchManager | null>(null);
   const { trackPixel } = useAnalytics();
+  const navigate = useNavigate();
 
   const debouncedSaveViewport = useCallback(
     debounce((vpOffset: { x: number; y: number }, zmLevel: number) => {
@@ -193,7 +197,7 @@ const Canvas = () => {
   
   const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
   
-  const { currentUser, userProfile } = useAuth(); 
+  const { currentUser, userProfile, refreshProfile } = useAuth(); 
   const previousGridRef = useRef<Map<string, string>>(new Map());
   
   const masterGridDataRef = useRef<Map<string, string>>(new Map()); 
@@ -225,6 +229,10 @@ const Canvas = () => {
   const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string }[]>([]);
   const [isPanMode, setIsPanMode] = useState<boolean>(false); 
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
+
+  const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
+  const [isLandsDropdownOpen, setIsLandsDropdownOpen] = useState<boolean>(false);
+  const [loadingUserLands, setLoadingUserLands] = useState<boolean>(false);
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -547,65 +555,227 @@ const Canvas = () => {
       
       setLastSyncTime(Date.now());
       setInitialDataLoaded(true);
-      console.log("requestFullSync: Called setInitialDataLoaded(true).");
       
     } catch (error) {
-      console.error("[Canvas] requestFullSync: Error during sync:", error);
       
       if (cachedPixels.length > 0) {
-        console.log("[Canvas] Using cached data due to sync error");
         setInitialDataLoaded(true);
         updateGridFromVisibleChunks();
       }
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [getPixelKey, updateGridFromVisibleChunks]);
-
-  const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
-    if (!currentUser || !userProfile?.landInfo) {
+  }, [getPixelKey, updateGridFromVisibleChunks]);  const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
+    if (!currentUser) {
       return false;
     }
     
-    const { centerX, centerY, ownedSize } = userProfile.landInfo;
-    const halfSize = Math.floor(ownedSize / 2);
+    for (const land of allLands) {
+      if (land.owner === currentUser.uid) {
+        const halfSize = Math.floor(land.ownedSize / 2);
+        const isWithinLand = (
+          worldX >= land.centerX - halfSize &&
+          worldX <= land.centerX + halfSize &&
+          worldY >= land.centerY - halfSize &&
+          worldY <= land.centerY + halfSize
+        );
+        
+        if (isWithinLand) {
+          
+          if (land.isAuctioned) {
+            return false;
+          }
+          return true;
+        }
+      }
+    }
+    if (userProfile?.landInfo) {
+      const { centerX, centerY, ownedSize } = userProfile.landInfo;
+      const halfSize = Math.floor(ownedSize / 2);
+      
+      const isWithinProfileLand = (
+        worldX >= centerX - halfSize &&
+        worldX <= centerX + halfSize &&
+        worldY >= centerY - halfSize &&
+        worldY <= centerY + halfSize
+      );
+      
+      if (isWithinProfileLand) {
+        
+        const landAtProfile = allLands.find(land => 
+          land.centerX === centerX && land.centerY === centerY
+        );
+        
+        
+        if (landAtProfile && landAtProfile.owner === currentUser.uid && !landAtProfile.isAuctioned) {
+          return true;
+        } else if (landAtProfile?.isAuctioned) {
+          return false;
+        }
+      }
+    }
     
-    return (
-      worldX >= centerX - halfSize &&
-      worldX <= centerX + halfSize &&
-      worldY >= centerY - halfSize &&
-      worldY <= centerY + halfSize
-    );
-  }, [currentUser, userProfile]);
-
+    console.log('[Canvas] Drawing blocked - not on owned land at point:', worldX, worldY);
+    return false;
+  }, [currentUser, userProfile, allLands]);
+  
   const getAllLands = useCallback(async () => {
     setLoadingLands(true);
     try {
-      const landsCollectionRef = collection(fs, 'users');
-      const querySnapshot = await getDocs(landsCollectionRef);
-      
-      const lands: LandInfo[] = [];
-      querySnapshot.forEach((doc) => {
-        const userData = doc.data();
-        if (userData.landInfo) {
-          lands.push({
-            centerX: userData.landInfo.centerX,
-            centerY: userData.landInfo.centerY,
-            ownedSize: userData.landInfo.ownedSize,
-            owner: doc.id,
-            displayName: userData.displayName || 'Anonymous'
-          });
-        }
-      });
-      
+      const lands = await getAllLandsWithAuctionStatus();
       setAllLands(lands);
-      console.log(`Loaded ${lands.length} land plots`);
+      
     } catch (error) {
       console.error("Error fetching all lands:", error);
     } finally {
       setLoadingLands(false);
     }
   }, []);
+  const handleLandClick = useCallback((land: UserLandInfo, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    if (land.isAuctioned && land.auctionId) {
+      navigate(`/auction/`);
+    }  }, [navigate]);
+
+  const loadUserLands = useCallback(async () => {
+    if (!currentUser) return;
+    
+    setLoadingUserLands(true);
+    try {
+      const lands = await getUserLands(currentUser.uid);
+      setUserLands(lands);
+    } catch (error) {
+      console.error("Error fetching user lands:", error);
+      setUserLands([]);
+    } finally {
+      setLoadingUserLands(false);
+    }
+  }, [currentUser]);
+
+  const toggleLandsDropdown = useCallback(() => {
+    if (!isLandsDropdownOpen && currentUser) {
+      loadUserLands();
+    }
+    setIsLandsDropdownOpen(!isLandsDropdownOpen);
+  }, [isLandsDropdownOpen, currentUser, loadUserLands]);
+
+  const navigateToLand = useCallback((land: UserLandInfo) => {
+    if (canvasContainerRef.current) {
+      const containerWidth = canvasContainerRef.current.clientWidth;
+      const containerHeight = canvasContainerRef.current.clientHeight;
+      
+      const cellsWide = containerWidth / effectiveCellSize;
+      const cellsHigh = containerHeight / effectiveCellSize;
+      
+      const newOffsetX = land.centerX - (cellsWide / 2);
+      const newOffsetY = land.centerY - (cellsHigh / 2);
+      
+      setViewportOffset({ x: newOffsetX, y: newOffsetY });
+    // setViewportOffset({ x: land.centerX, y: land.centerY });
+      setIsLandsDropdownOpen(false);
+    }
+  }, [effectiveCellSize, canvasContainerRef]);
+  const auctionOverlays = useMemo(() => {
+    if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
+      return [];
+    }
+
+    const overlays: React.ReactElement[] = [];
+    const startWorldX = Math.floor(viewportOffset.x);
+    const startWorldY = Math.floor(viewportOffset.y);
+    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
+
+    allLands.forEach(land => {
+      if (land.isAuctioned) {
+        console.log('[Canvas] Rendering auction overlay for land:', land.centerX, land.centerY, 'auctionId:', land.auctionId);
+        
+        const { centerX, centerY, ownedSize } = land;
+        const halfSize = Math.floor(ownedSize / 2);
+        const landStartX = centerX - halfSize;
+        const landEndX = centerX + halfSize;
+        const landStartY = centerY - halfSize;
+        const landEndY = centerY + halfSize;
+        
+        const viewportStartX = startWorldX;
+        const viewportEndX = startWorldX + viewportCellWidth;
+        const viewportStartY = startWorldY;
+        const viewportEndY = startWorldY + viewportCellHeight;
+        
+        if (landEndX >= viewportStartX && landStartX <= viewportEndX &&
+            landEndY >= viewportStartY && landStartY <= viewportEndY) {
+          const overlayStartX = Math.max(landStartX, viewportStartX);
+          const overlayEndX = Math.min(landEndX, viewportEndX);
+          const overlayStartY = Math.max(landStartY, viewportStartY);
+          const overlayEndY = Math.min(landEndY, viewportEndY);
+          
+          const screenX = overlayStartX - startWorldX;
+          const screenY = overlayStartY - startWorldY;
+          const width = overlayEndX - overlayStartX + 1;
+          const height = overlayEndY - overlayStartY + 1;
+          const overlayStyle: React.CSSProperties = {
+            position: 'absolute',
+            left: `${(screenX * effectiveCellSize) - offsetX}px`,
+            top: `${(screenY * effectiveCellSize) - offsetY}px`,
+            width: `${width * effectiveCellSize}px`,
+            height: `${height * effectiveCellSize}px`,
+            backgroundColor: 'rgba(255, 165, 0, 0.6)',
+            border: '4px solid rgba(255, 165, 0, 1)',
+            borderRadius: '6px',
+            pointerEvents: 'auto',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            boxShadow: '0 0 20px rgba(255, 165, 0, 0.9), inset 0 0 20px rgba(255, 165, 0, 0.4)',
+            backdropFilter: 'blur(1px)'
+          };
+          
+          overlays.push(
+            <div
+              key={`auction-${land.id || `${land.centerX}-${land.centerY}`}`}
+              style={overlayStyle}
+              onClick={(event) => handleLandClick(land, event)}
+              title={`Land auction: ${land.displayName || 'Unnamed Land'} - Click to view auction`}
+            >              <div
+                style={{
+                  backgroundColor: 'rgba(255, 165, 0, 0.98)',
+                  color: 'white',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                  border: '2px solid rgba(255, 255, 255, 0.8)',
+                  boxShadow: '0 0 8px rgba(255, 165, 0, 0.6)'
+                }}
+              >
+                🔨 AUCTION
+              </div>
+            </div>
+          );
+        }
+      }
+    });
+
+    console.log('[Canvas] Total auction overlays rendered:', overlays.length);
+    return overlays;
+  }, [
+    allLands,
+    viewportOffset,
+    viewportCellWidth,
+    viewportCellHeight,
+    effectiveCellSize,
+    initialDataLoaded,
+    handleLandClick
+  ]);
 
   const addToHistory = useCallback((action: DrawAction) => {
     if (isUndoRedoOperation) return;
@@ -1689,15 +1859,24 @@ const Canvas = () => {
   }, [getPixelKey]);
 
   websocketService.on('canvas_reset', handleCanvasReset);
+  const handleLandOwnershipChange = useCallback(async (data: any) => {
+    console.log('[Canvas] Land ownership changed, refreshing land data:', data);
+    getAllLands();
+    if (currentUser) {
+      await refreshProfile();
+    }
+  }, [getAllLands, currentUser, refreshProfile]);
+  websocketService.on('land_ownership_change', handleLandOwnershipChange);
+  websocketService.on('auction_completed', handleLandOwnershipChange);
+  websocketService.on('land_sold', handleLandOwnershipChange);
+  websocketService.on('auction_created', handleLandOwnershipChange);
 
   useEffect(() => {
     if (initialDataLoaded) {
       updateGridFromVisibleChunks();
       clearHistory();
     }
-  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks,clearHistory]);
-
-  useEffect(() => {
+  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks,clearHistory]);  useEffect(() => {
     const loadingTimeout = setTimeout(() => {
       if (!initialDataLoaded) {
         console.log("Loading timeout reached - forcing canvas to display");
@@ -1706,7 +1885,44 @@ const Canvas = () => {
     }, 15000);
     
     return () => clearTimeout(loadingTimeout);
-  }, []);
+  }, []);  
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      if (currentUser && allLands.length > 0) {
+        console.log('[Canvas] Periodic land data refresh');
+        getAllLands();
+      }
+    }, 30000); 
+
+    return () => clearInterval(refreshInterval);
+  }, [currentUser, allLands.length, getAllLands]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (currentUser) {
+        console.log('[Canvas] Window focused - refreshing land data');
+        getAllLands();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, [currentUser, getAllLands]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isLandsDropdownOpen && !target.closest('.lands-dropdown-container')) {
+        setIsLandsDropdownOpen(false);
+      }
+    };
+
+    if (isLandsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isLandsDropdownOpen]);
+
   const cellLandMap = useMemo(() => {
     const newCellLandMap = new Map<string, {landInfo: LandInfo, isCurrentUserLand: boolean}>();
     
@@ -1854,6 +2070,7 @@ const Canvas = () => {
     viewportCellWidth,
     viewportCellHeight,
     effectiveCellSize,
+
     cellLandMap,
     currentUser,
     userProfile,
@@ -2034,9 +2251,7 @@ const Canvas = () => {
             <path d="M19,11H22V13H19V16H17V13H14V11H17V8H19M9,11H15A1,1 0 0,1 16,12V21A1,1 0 0,1 15,22H3A1,1 0 0,1 2,21V12A1,1 0 0,1 3,11H5V7A5,5 0 0,1 10,2A5,5 0 0,1 15,7V8H13V7A3,3 0 0,0 10,4A3,3 0 0,0 7,7V11H9M4,13V20H14V13H4Z"/>
           </svg>
           {isFillActive ? "Fill ON" : "Fill"}
-        </button>
-
-        <button 
+        </button>        <button 
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -2057,6 +2272,25 @@ const Canvas = () => {
               <path d="M15.5,14H20.5L23,16.5L20.5,19H15.5L13,16.5L15.5,14M9.5,15.5A6.5,6.5 0 0,1 3,9A6.5,6.5 0 0,1 9.5,2.5A6.5,6.5 0 0,1 16,9A6.5,6.5 0 0,1 9.5,15.5M9.5,4A5,5 0 0,0 4.5,9A5,5 0 0,0 9.5,14A5,5 0 0,0 14.5,9A5,5 0 0,0 9.5,4Z"/>
             )}
           </svg>          {isPanMode ? "Pan" : "Zoom"}
+        </button>
+
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            console.log('[Canvas] Manual land data refresh triggered');
+            getAllLands();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          className="px-3 py-1 rounded text-white bg-green-500 hover:bg-green-600 flex items-center gap-1"
+          title="Refresh land data to check for auction status changes"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+          </svg>
+          Refresh
         </button>
 
         <div className="flex gap-1">
@@ -2320,8 +2554,7 @@ const Canvas = () => {
           title="Force synchronization with server"
         >
           Sync
-        </button>
-        {currentUser && userProfile?.landInfo && (
+        </button>        {currentUser && userProfile?.landInfo && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -2336,6 +2569,81 @@ const Canvas = () => {
           >
             My Land
           </button>
+        )}
+
+        {currentUser && (
+          <div className="relative lands-dropdown-container">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleLandsDropdown();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-xs py-1 px-2 rounded text-xs flex items-center gap-1"
+              title="View all your lands"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/>
+              </svg>
+              Lands
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className={`transition-transform ${isLandsDropdownOpen ? 'rotate-180' : ''}`}>
+                <path d="M7,10L12,15L17,10H7Z"/>
+              </svg>
+            </button>
+
+            {isLandsDropdownOpen && (
+              <div 
+                className="absolute top-full left-0 mt-1 min-w-48 bg-white border border-gray-300 rounded-md shadow-lg z-50"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="py-1 max-h-64 overflow-y-auto">
+                  {loadingUserLands ? (
+                    <div className="px-3 py-2 text-sm text-gray-500 flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-blue-500"></div>
+                      Loading lands...
+                    </div>
+                  ) : userLands.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-500">
+                      No lands found
+                    </div>
+                  ) : (
+                    userLands.map((land, index) => (
+                      <button
+                        key={`${land.centerX}-${land.centerY}-${index}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigateToLand(land);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between"
+                        title={`Navigate to land at (${land.centerX}, ${land.centerY})`}
+                      >
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            Land #{index + 1}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Center: ({land.centerX}, {land.centerY})
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Size: {land.ownedSize}×{land.ownedSize}
+                          </div>
+                        </div>
+                        {land.isAuctioned && (
+                          <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                            Auction
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})
@@ -2429,8 +2737,7 @@ const Canvas = () => {
           </div>        )}
       </div>
       )}
-      
-      <div 
+        <div 
         className="absolute inset-0"
         style={{
           transform: 'translate3d(0, 0, 0)',
@@ -2440,6 +2747,7 @@ const Canvas = () => {
         }}
       >
         {gridCells}
+        {auctionOverlays}
       </div>
       
       <div className="absolute bottom-4 right-4 bg-white px-3 py-1 rounded shadow-md text-xs">

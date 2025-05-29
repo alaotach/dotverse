@@ -77,12 +77,11 @@ export const registerUser = async (email: string, password: string, displayName:
   try {
     const landSizeHalf = Math.floor(landInfo.ownedSize / 2);
     const batch = writeBatch(fs);
-    
-    const landCenterRef = doc(fs, `lands/${landInfo.centerX},${landInfo.centerY}`);
+      const landCenterRef = doc(fs, `lands/${landInfo.centerX},${landInfo.centerY}`);
     batch.set(landCenterRef, {
       owner: newUserProfile.uid,
       claimedAt: now,
-      size: landInfo.ownedSize
+      ownedSize: landInfo.ownedSize
     });
     
     const corners = [

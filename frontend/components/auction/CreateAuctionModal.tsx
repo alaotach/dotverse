@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../src/context/AuthContext';
-import { auctionService, CreateAuctionData } from '../../src/services/auctionService';
+import { auctionService } from '../../src/services/auctionService';
+import type { CreateAuctionData } from '../../src/services/auctionService';
+import { getUserLands, type UserLandInfo } from '../../src/services/landService';
 
 interface CreateAuctionModalProps {
   onClose: () => void;
@@ -9,10 +11,15 @@ interface CreateAuctionModalProps {
 
 const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSuccess }) => {
   const { currentUser, userProfile } = useAuth();
+  
+  const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
+  const [selectedLand, setSelectedLand] = useState<UserLandInfo | null>(null);
+  const [loadingLands, setLoadingLands] = useState(true);
+  
   const [formData, setFormData] = useState<CreateAuctionData>({
-    landCenterX: userProfile?.landInfo?.centerX || 0,
-    landCenterY: userProfile?.landInfo?.centerY || 0,
-    landSize: userProfile?.landInfo?.ownedSize || 50,
+    landCenterX: 0,
+    landCenterY: 0,
+    landSize: 50,
     startingPrice: 100,
     duration: 24,
     buyNowPrice: undefined
@@ -21,11 +28,66 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string>('');
 
+  useEffect(() => {
+    const loadUserLands = async () => {
+      if (!currentUser) return;
+      
+      setLoadingLands(true);
+      try {
+        const lands = await getUserLands(currentUser.uid);
+        const availableLands = lands.filter(land => !land.isAuctioned);
+        setUserLands(availableLands);
+        
+        if (availableLands.length > 0) {
+          const primaryLand = availableLands.find(land => 
+            land.centerX === userProfile?.landInfo?.centerX && 
+            land.centerY === userProfile?.landInfo?.centerY
+          ) || availableLands[0];
+          
+          setSelectedLand(primaryLand);
+          setFormData(prev => ({
+            ...prev,
+            landCenterX: primaryLand.centerX,
+            landCenterY: primaryLand.centerY,
+            landSize: primaryLand.ownedSize
+          }));
+        }
+      } catch (error) {
+        console.error('Error loading user lands:', error);
+        setError('Failed to load your lands');
+      } finally {
+        setLoadingLands(false);
+      }
+    };
+
+    loadUserLands();
+  }, [currentUser, userProfile]);
+
+  useEffect(() => {
+    if (selectedLand) {
+      setFormData(prev => ({
+        ...prev,
+        landCenterX: selectedLand.centerX,
+        landCenterY: selectedLand.centerY,
+        landSize: selectedLand.ownedSize
+      }));
+    }
+  }, [selectedLand]);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!currentUser || !userProfile) {
       setError('Please log in to create an auction');
+      return;
+    }
+
+    if (!selectedLand) {
+      setError('Please select a land to auction');
+      return;
+    }
+
+    if (selectedLand.isAuctioned) {
+      setError('This land is already being auctioned');
       return;
     }
 
@@ -46,14 +108,13 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
       const auctionData: CreateAuctionData = {
         ...formData,
         buyNowPrice: enableBuyNow ? formData.buyNowPrice : undefined
-      };
-
-      await auctionService.createAuction(
+      };      await auctionService.createAuction(
         currentUser.uid,
         userProfile.displayName || userProfile.email || 'Anonymous',
         auctionData
       );
 
+      console.log('[CreateAuctionModal] Auction created successfully for user:', currentUser.uid);
       onSuccess();
     } catch (err: any) {
       setError(err.message || 'Failed to create auction');
@@ -83,16 +144,59 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
             >
               ×
             </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Land Info */}
+          </div>          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Land Selection */}
             <div className="bg-gray-700 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-white mb-2">Your Land</h3>
-              <div className="text-gray-300 space-y-1">
-                <p>Location: ({formData.landCenterX}, {formData.landCenterY})</p>
-                <p>Size: {formData.landSize}x{formData.landSize} pixels</p>
-              </div>
+              <h3 className="text-lg font-semibold text-white mb-3">Select Land to Auction</h3>
+              
+              {loadingLands ? (
+                <div className="text-gray-300 flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500"></div>
+                  Loading your lands...
+                </div>
+              ) : userLands.length === 0 ? (
+                <div className="text-gray-400">
+                  <p>No lands available for auction.</p>
+                  <p className="text-sm mt-1">You need to own land that isn't already being auctioned.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {userLands.map((land, index) => (
+                    <div
+                      key={`${land.centerX}-${land.centerY}`}
+                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                        selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY
+                          ? 'border-blue-500 bg-blue-900/30'
+                          : 'border-gray-600 hover:border-gray-500 bg-gray-800'
+                      }`}
+                      onClick={() => setSelectedLand(land)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-white font-medium">
+                            Land #{index + 1}
+                          </div>
+                          <div className="text-gray-300 text-sm">
+                            Location: ({land.centerX}, {land.centerY})
+                          </div>
+                          <div className="text-gray-300 text-sm">
+                            Size: {land.ownedSize}×{land.ownedSize} pixels
+                          </div>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border-2 ${
+                          selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-gray-500'
+                        }`}>
+                          {selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY && (
+                            <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Starting Price */}
@@ -167,11 +271,10 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </button>              <button
                 type="submit"
-                disabled={isCreating}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+                disabled={isCreating || !selectedLand || loadingLands}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isCreating ? 'Creating...' : 'Create Auction'}
               </button>

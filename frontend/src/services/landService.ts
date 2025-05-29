@@ -23,6 +23,18 @@ interface LandTile {
   claimedAt: number;
 }
 
+export interface UserLandInfo {
+  id: string;
+  centerX: number;
+  centerY: number;
+  ownedSize: number;
+  owner: string;
+  displayName?: string;
+  createdAt: number;
+  isAuctioned?: boolean;
+  auctionId?: string;
+}
+
 const DEFAULT_LAND_SIZE = 50;
 const MIN_PARCEL_PADDING = 20;
 const MAX_RANDOM_PLACEMENT_ATTEMPTS = 100;
@@ -66,18 +78,18 @@ const getLandBoundaries = async (): Promise<{
             ownedSize: userData.landInfo.ownedSize
           });
         }
-      });
-    } else {
+      });    } else {
       querySnapshot.forEach(doc => {
         const data = doc.data();
         const [xStr, yStr] = doc.id.split(',').map(Number);
         
-        if (!isNaN(xStr) && !isNaN(yStr) && data.owner && data.size) {
+        // Skip border lands and only include center lands
+        if (!isNaN(xStr) && !isNaN(yStr) && data.owner && !data.isBorder && (data.size || data.ownedSize)) {
           existingLands.push({
             centerX: xStr,
             centerY: yStr,
             owner: data.owner,
-            ownedSize: data.size
+            ownedSize: data.ownedSize || data.size
           });
         }
       });
@@ -362,17 +374,109 @@ export const generateUserLand = async (): Promise<LandInfo> => {
   };
 };
 
-export const getUserLands = async (userId: string): Promise<{x: number, y: number}[]> => {
-  const landsCollectionRef = collection(fs, 'lands');
-  const q = firestoreQuery(landsCollectionRef, where('owner', '==', userId));
-  
-  const querySnapshot = await getDocs(q);
-  if (querySnapshot.empty) {
+export const getUserLands = async (userId: string): Promise<UserLandInfo[]> => {
+  try {
+    const landsCollectionRef = collection(fs, 'lands');
+    const q = firestoreQuery(landsCollectionRef, where('owner', '==', userId));
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      return [];
+    }
+    
+    // Filter out border/corner lands and only return center lands
+    return querySnapshot.docs
+      .filter(docSnap => {
+        const data = docSnap.data();
+        // Only include lands that are NOT border lands (i.e., the main center lands)
+        return !data.isBorder;
+      })
+      .map(docSnap => {
+        const data = docSnap.data();
+        const [xStr, yStr] = docSnap.id.split(',');
+        return {
+          id: docSnap.id,
+          centerX: Number(xStr),
+          centerY: Number(yStr),
+          ownedSize: data.ownedSize || data.size || DEFAULT_LAND_SIZE,
+          owner: data.owner,
+          displayName: data.displayName,
+          createdAt: data.claimedAt || Date.now(),
+          isAuctioned: data.isAuctioned || false,
+          auctionId: data.auctionId
+        } as UserLandInfo;
+      });
+  } catch (error) {
+    console.error('Error fetching user lands:', error);
     return [];
   }
-  
-  return querySnapshot.docs.map(docSnap => {
-    const [xStr, yStr] = docSnap.id.split(',');
-    return { x: Number(xStr), y: Number(yStr) };
-  });
+};
+
+export const updateLandName = async (landId: string, displayName: string): Promise<void> => {
+  try {
+    const landDocRef = doc(fs, 'lands', landId);
+    await updateDoc(landDocRef, { displayName });
+  } catch (error) {
+    console.error('Error updating land name:', error);
+    throw error;
+  }
+};
+
+export const getAllLandsWithAuctionStatus = async (): Promise<UserLandInfo[]> => {
+  try {
+    const landsCollectionRef = collection(fs, 'lands');
+    const querySnapshot = await getDocs(landsCollectionRef);
+    
+    // Filter out border/corner lands and only return center lands
+    return querySnapshot.docs
+      .filter(docSnap => {
+        const data = docSnap.data();
+        // Only include lands that are NOT border lands (i.e., the main center lands)
+        return !data.isBorder;
+      })
+      .map(docSnap => {
+        const data = docSnap.data();
+        const [xStr, yStr] = docSnap.id.split(',');
+        return {
+          id: docSnap.id,
+          centerX: Number(xStr),
+          centerY: Number(yStr),
+          ownedSize: data.ownedSize || data.size || DEFAULT_LAND_SIZE,
+          owner: data.owner,
+          displayName: data.displayName,
+          createdAt: data.claimedAt || Date.now(),
+          isAuctioned: data.isAuctioned || false,
+          auctionId: data.auctionId
+        } as UserLandInfo;
+      });
+  } catch (error) {
+    console.error('Error fetching all lands:', error);
+    return [];
+  }
+};
+
+export const markLandAsAuctioned = async (landId: string, auctionId: string): Promise<void> => {
+  try {
+    const landDocRef = doc(fs, 'lands', landId);
+    await updateDoc(landDocRef, { 
+      isAuctioned: true,
+      auctionId: auctionId
+    });
+  } catch (error) {
+    console.error('Error marking land as auctioned:', error);
+    throw error;
+  }
+};
+
+export const unmarkLandAsAuctioned = async (landId: string): Promise<void> => {
+  try {
+    const landDocRef = doc(fs, 'lands', landId);
+    await updateDoc(landDocRef, { 
+      isAuctioned: false,
+      auctionId: null
+    });
+  } catch (error) {
+    console.error('Error unmarking land as auctioned:', error);
+    throw error;
+  }
 };

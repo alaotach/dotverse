@@ -21,16 +21,19 @@ const AuctionDashboard: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
-    if (!currentUser) return;
-
-    const loadData = async () => {
+    if (!currentUser) return;    const loadData = async () => {
       setLoading(true);
       try {
+        console.log('[AuctionDashboard] Loading data for user:', currentUser.uid);
+        
         const [activeAuctions, myAuctions, myBids] = await Promise.all([
           auctionService.getActiveAuctions(),
           auctionService.getUserAuctions(currentUser.uid),
           auctionService.getUserBids(currentUser.uid)
         ]);
+
+        const myAuctionsInActive = activeAuctions.filter(auction => auction.ownerId === currentUser.uid);
+        console.log('[AuctionDashboard] My auctions found in active list:', myAuctionsInActive.length, myAuctionsInActive);
 
         setAuctions(activeAuctions);
         setUserAuctions(myAuctions);
@@ -44,7 +47,6 @@ const AuctionDashboard: React.FC = () => {
 
     loadData();
 
-    // Subscribe to real-time updates for active auctions
     const unsubscribe = auctionService.subscribeToActiveAuctions((activeAuctions) => {
       setAuctions(activeAuctions);
     });
@@ -54,10 +56,24 @@ const AuctionDashboard: React.FC = () => {
     };
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser || activeTab !== 'my-auctions') return;
+    
+    const refreshUserAuctions = async () => {
+      try {
+        const myAuctions = await auctionService.getUserAuctions(currentUser.uid);
+        setUserAuctions(myAuctions);
+      } catch (error) {
+        console.error('Error refreshing user auctions:', error);
+      }
+    };
+    
+    refreshUserAuctions();
+  }, [activeTab, currentUser]);
+
   const filteredAuctions = useMemo(() => {
     let filtered = [...auctions];
 
-    // Apply filters
     switch (filter) {
       case 'ending-soon':
         const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
@@ -73,7 +89,6 @@ const AuctionDashboard: React.FC = () => {
         break;
     }
 
-    // Apply price filter
     if (maxPrice !== '' && maxPrice > 0) {
       filtered = filtered.filter(auction => auction.currentBid <= maxPrice);
     }
@@ -140,7 +155,6 @@ const AuctionDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex space-x-1 mb-6">
           <button
             onClick={() => setActiveTab('browse')}
@@ -162,10 +176,8 @@ const AuctionDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Browse Tab */}
         {activeTab === 'browse' && (
           <>
-            {/* Filters */}
             <div className="bg-gray-800 rounded-lg p-4 mb-6">
               <div className="flex flex-wrap gap-4 items-center">
                 <div className="flex gap-2">
@@ -209,7 +221,6 @@ const AuctionDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Auction Grid */}
             {filteredAuctions.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-400 text-lg">No auctions found matching your criteria</p>
@@ -224,7 +235,6 @@ const AuctionDashboard: React.FC = () => {
           </>
         )}
 
-        {/* My Auctions Tab */}
         {activeTab === 'my-auctions' && (
           <div>
             {userAuctions.length === 0 ? (
@@ -249,7 +259,6 @@ const AuctionDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* My Bids Tab */}
         {activeTab === 'my-bids' && (
           <div>
             {userBids.length === 0 ? (
@@ -267,13 +276,11 @@ const AuctionDashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Create Auction Modal */}
       {showCreateModal && (
         <CreateAuctionModal
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
-            // Refresh user auctions
             if (currentUser) {
               auctionService.getUserAuctions(currentUser.uid).then(setUserAuctions);
             }

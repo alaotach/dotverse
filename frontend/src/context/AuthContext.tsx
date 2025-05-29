@@ -33,6 +33,7 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -190,7 +191,6 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setIsLoading(false);
     }
   };
-
   const logout = async () => {
     setIsLoading(true);
     
@@ -206,13 +206,42 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setIsLoading(false);
   };
 
+  const refreshProfile = async () => {
+    if (!currentUser) return;
+    
+    try {
+      console.log("Refreshing user profile for:", currentUser.uid);
+      const profile = await getUserProfile(currentUser.uid);
+      if (profile) {
+        const appProfile: AppUserProfile = {
+          uid: profile.uid,
+          email: profile.email,
+          displayName: profile.displayName,
+          photoURL: profile.photoURL,
+          landInfo: profile.landInfo,
+          role: currentUser.role || 'user',
+          pixelsPlaced: currentUser.pixelsPlaced || 0,
+          totalSessionTime: currentUser.totalSessionTime || 0,
+          createdAt: typeof profile.createdAt === 'number' ? profile.createdAt : profile.createdAt?.seconds * 1000,
+          lastLogin: typeof profile.lastLogin === 'number' ? profile.lastLogin : profile.lastLogin?.seconds * 1000
+        };
+        setCurrentUser(appProfile);
+        setUserProfile(appProfile);
+        console.log("Profile refreshed successfully:", appProfile.landInfo);
+      }
+    } catch (error) {
+      console.error("Error refreshing user profile:", error);
+    }
+  };
+
   const value = {
     currentUser,
     userProfile,
     isLoading,
     login,
     register,
-    logout
+    logout,
+    refreshProfile
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

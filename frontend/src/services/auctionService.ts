@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { fs } from '../firebaseClient';
 import { economyService } from './economyService';
+import { markLandAsAuctioned, unmarkLandAsAuctioned } from './landService';
 
 export interface AuctionBid {
   userId: string;
@@ -27,7 +28,7 @@ export interface AuctionBid {
 
 export interface LandAuction {
   id: string;
-  landId: string; // "centerX,centerY" format
+  landId: string;
   ownerId: string;
   ownerDisplayName: string;
   landCenterX: number;
@@ -56,9 +57,10 @@ export interface CreateAuctionData {
 
 class AuctionService {
   private listeners: Map<string, () => void> = new Map();
-
   async createAuction(ownerId: string, ownerDisplayName: string, auctionData: CreateAuctionData): Promise<string> {
     try {
+      console.log('[AuctionService] Creating auction with ownerId:', ownerId, 'displayName:', ownerDisplayName);
+      
       const now = new Date();
       const endTime = new Date(now.getTime() + auctionData.duration * 60 * 60 * 1000);
       
@@ -98,10 +100,11 @@ class AuctionService {
         bidHistory: [],
         status: 'active',
         createdAt: serverTimestamp() as Timestamp
-      };
-
-      const docRef = await addDoc(collection(fs, 'auctions'), auctionDoc);
-      console.log('Auction created with ID:', docRef.id);
+      };      const docRef = await addDoc(collection(fs, 'auctions'), auctionDoc);
+      console.log('Auction created with ID:', docRef.id, 'for ownerId:', ownerId);
+      
+      await markLandAsAuctioned(landId, docRef.id);
+      console.log('Land marked as auctioned:', landId);
       
       return docRef.id;
     } catch (error) {
@@ -259,9 +262,10 @@ class AuctionService {
       return [];
     }
   }
-
   async getUserAuctions(userId: string): Promise<LandAuction[]> {
     try {
+      console.log('[AuctionService] Getting auctions for user:', userId);
+      
       const q = query(
         collection(fs, 'auctions'),
         where('ownerId', '==', userId),
@@ -269,10 +273,14 @@ class AuctionService {
       );
 
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
+      const userAuctions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as LandAuction));
+      
+      console.log('[AuctionService] Found user auctions:', userAuctions.length, userAuctions);
+      
+      return userAuctions;
     } catch (error) {
       console.error('Error getting user auctions:', error);
       return [];
@@ -298,6 +306,25 @@ class AuctionService {
     }
   }
 
+  async getAuction(auctionId: string): Promise<LandAuction | null> {
+    try {
+      const auctionRef = doc(fs, 'auctions', auctionId);
+      const auctionDoc = await getDoc(auctionRef);
+      
+      if (!auctionDoc.exists()) {
+        return null;
+      }
+
+      return {
+        id: auctionDoc.id,
+        ...auctionDoc.data()
+      } as LandAuction;
+    } catch (error) {
+      console.error('Error fetching auction:', error);
+      return null;
+    }
+  }
+
   async cancelAuction(auctionId: string, userId: string): Promise<void> {
     try {
       const auctionRef = doc(fs, 'auctions', auctionId);
@@ -319,11 +346,12 @@ class AuctionService {
 
       if (auction.bidHistory.length > 0) {
         throw new Error('Cannot cancel auction with existing bids');
-      }
-
-      await updateDoc(auctionRef, {
+      }      await updateDoc(auctionRef, {
         status: 'cancelled'
       });
+      
+      await unmarkLandAsAuctioned(auction.landId);
+      console.log('Land unmarked from auction:', auction.landId);
 
       console.log('Auction cancelled successfully');
     } catch (error) {
