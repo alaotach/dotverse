@@ -3,12 +3,15 @@ import { useAuth } from '../../src/context/AuthContext';
 import { getUserLands, updateLandName, type UserLandInfo } from '../../src/services/landService';
 import { auctionService, type LandAuction } from '../../src/services/auctionService';
 import LandCard from '../lands/LandCard';
+import LandExpansionModal from '../lands/LandExpansionModal';
 
 const UserProfile: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
   const [loadingLands, setLoadingLands] = useState(true);
   const [auctionData, setAuctionData] = useState<Map<string, LandAuction>>(new Map());
+  const [showExpansionModal, setShowExpansionModal] = useState(false);
+  const [selectedLandForExpansion, setSelectedLandForExpansion] = useState<UserLandInfo | null>(null);
 
   useEffect(() => {
     const loadUserLands = async () => {
@@ -57,6 +60,31 @@ const UserProfile: React.FC = () => {
     }
   };
 
+  const handleExpandLand = (land: UserLandInfo) => {
+    setSelectedLandForExpansion(land);
+    setShowExpansionModal(true);
+  };
+
+  const handleExpansionSuccess = () => {
+    if (currentUser) {
+      const loadUserLands = async () => {
+        try {
+          const lands = await getUserLands(currentUser.uid);
+          setUserLands(lands);
+        } catch (error) {
+          console.error('Error reloading user lands:', error);
+        }
+      };
+      loadUserLands();
+    }
+    setSelectedLandForExpansion(null);
+  };
+
+  const handleCloseExpansionModal = () => {
+    setShowExpansionModal(false);
+    setSelectedLandForExpansion(null);
+  };
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -71,7 +99,6 @@ const UserProfile: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* User Info Section */}
         <div className="bg-white shadow rounded-lg p-6 mb-8">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl font-bold">
@@ -86,11 +113,33 @@ const UserProfile: React.FC = () => {
                 User ID: {currentUser.uid}
               </p>
             </div>
-          </div>
-        </div>
 
-        {/* User Lands Section */}
-        <div className="bg-white shadow rounded-lg p-6">
+            {userLands.length > 0 && (
+                  <div className="mt-2 text-sm text-gray-600">
+                    <p>
+                      Total Lands: {userLands.length}
+                    </p>
+                    <p>
+                      Total Area: {userLands.reduce((total, land) => total + (land.ownedSize * land.ownedSize), 0)} pixels
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {userLands.length > 0 && (
+              <div className="text-right">
+                <div className="text-lg font-semibold text-gray-900">
+                  {userLands.length} Land{userLands.length !== 1 ? 's' : ''}
+                </div>
+                <div className="text-sm text-gray-500">
+                  Expand individual lands below
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white shadow rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900">My Lands</h2>
             <span className="text-sm text-gray-500">
@@ -100,15 +149,15 @@ const UserProfile: React.FC = () => {
 
           {loadingLands ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <span className="ml-3 text-gray-600">Loading your lands...</span>
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+              <span className="ml-2 text-gray-600">Loading your lands...</span>
             </div>
           ) : userLands.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-gray-400 mb-4">
-                <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 616 0z" />
                 </svg>
               </div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No lands owned</h3>
@@ -117,20 +166,38 @@ const UserProfile: React.FC = () => {
                 Explore Available Lands
               </button>
             </div>
-          ) : (
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {userLands.map((land) => (
-                <LandCard
-                  key={land.id}
-                  land={land}
-                  auction={land.auctionId ? auctionData.get(land.auctionId) : undefined}
-                  onNameUpdate={handleUpdateLandName}
-                />
+                <div key={land.id} className="relative">
+                  <LandCard
+                    land={land}
+                    auction={land.auctionId ? auctionData.get(land.auctionId) : undefined}
+                    onNameUpdate={handleUpdateLandName}
+                  />
+                  {/* Expand button for each land */}
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={() => handleExpandLand(land)}
+                      className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg shadow-lg transition-colors"
+                      title={`Expand land at (${land.centerX}, ${land.centerY})`}
+                    >
+                      <span className="text-sm">🏗️</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </div>
-      </div>
+        {selectedLandForExpansion && (
+        <LandExpansionModal
+          isOpen={showExpansionModal}
+          onClose={handleCloseExpansionModal}
+          onSuccess={handleExpansionSuccess}
+          selectedLand={selectedLandForExpansion}
+        />
+      )}
     </div>
   );
 };

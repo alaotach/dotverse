@@ -15,6 +15,7 @@ import { FaPlus, FaMinus, FaHandPaper, FaPaintBrush } from 'react-icons/fa';
 import { toPng } from 'html-to-image';
 import { getAllLandsWithAuctionStatus, getUserLands, type UserLandInfo } from '../src/services/landService';
 import { useNavigate } from 'react-router-dom';
+import LandExpansionModal from '../components/lands/LandExpansionModal';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -233,6 +234,10 @@ const Canvas = () => {
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
   const [isLandsDropdownOpen, setIsLandsDropdownOpen] = useState<boolean>(false);
   const [loadingUserLands, setLoadingUserLands] = useState<boolean>(false);
+  const [showExpansionModal, setShowExpansionModal] = useState<boolean>(false);
+  const [selectedLandForExpansion, setSelectedLandForExpansion] = useState<UserLandInfo | null>(null);
+  const [showLandsExpansionDropdown, setShowLandsExpansionDropdown] = useState<boolean>(false);
+
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -2645,6 +2650,54 @@ const Canvas = () => {
             )}
           </div>
         )}
+
+        {userLands.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setShowLandsExpansionDropdown(!showLandsExpansionDropdown);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="bg-green-500 hover:bg-green-600 text-white font-xs py-1 px-2 rounded text-xs flex items-center gap-1"
+              title="Expand lands"
+            >
+              🏗️ Expand ({userLands.length})
+              <span className="text-xs">▼</span>
+            </button>
+
+            {showLandsExpansionDropdown && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-48">
+                {userLands.map((land, index) => (
+                  <button
+                    key={`${land.centerX}-${land.centerY}-${index}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setSelectedLandForExpansion(land);
+                      setShowExpansionModal(true);
+                      setShowLandsExpansionDropdown(false);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-100 text-gray-800 text-xs border-b last:border-b-0 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-medium">
+                        {land.displayName || `Land #${index + 1}`}
+                      </div>
+                      <div className="text-gray-500">
+                        ({land.centerX}, {land.centerY}) - {land.ownedSize}×{land.ownedSize}
+                      </div>
+                    </div>
+                    <span className="text-green-600 ml-2">🏗️</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})
         </div>
@@ -2762,6 +2815,23 @@ const Canvas = () => {
         <br />
         Two-finger mode: {isPanMode ? 'Pan' : 'Zoom'}
       </div>
+
+      {selectedLandForExpansion && (
+        <LandExpansionModal
+          isOpen={showExpansionModal}
+          onClose={() => {
+            setShowExpansionModal(false);
+            setSelectedLandForExpansion(null);
+          }}
+          onSuccess={() => {
+            setShowExpansionModal(false);
+            setSelectedLandForExpansion(null);
+            refreshProfile();
+            getAllLands();
+          }}
+          selectedLand={selectedLandForExpansion}
+        />
+      )}
       
     </div>
   );
