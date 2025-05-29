@@ -14,12 +14,13 @@ import { useEffect } from 'react';
 import { EconomyProvider } from './context/EconomyContext';
 import EconomyDashboard from '../components/economy/EconomyDashboard';
 import AuctionDashboard from '../components/auction/AuctionDashboard';
+import NotificationCenter from '../components/notifications/NotificationCenter';
+import { NotificationProvider } from './context/NotificationContext';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
 }> = ({ element }) => {
   const { currentUser, isLoading } = useAuth();
-  
   if (isLoading) {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
@@ -70,6 +71,7 @@ function AppContent() {
           <Route path="/gallery" element={<ProtectedRoute element={<Gallery />} />} />
           <Route path="/economy" element={<ProtectedRoute element={<EconomyDashboard />} />} />
           <Route path="/auction" element={<ProtectedRoute element={<AuctionDashboard />} />} />
+          <Route path="/notifications" element={<ProtectedRoute element={<NotificationCenter />} />} />
           <Route 
             path="/admin/analytics" 
             element={<ProtectedRoute element={<AdminAnalytics />} />}
@@ -86,7 +88,9 @@ function App() {
     <Router>
       <AuthProvider>
         <EconomyProvider>
-          <AppContent />
+          <NotificationProvider>
+            <AppContent />
+          </NotificationProvider>
         </EconomyProvider>
       </AuthProvider>
     </Router>

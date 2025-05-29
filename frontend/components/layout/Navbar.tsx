@@ -4,6 +4,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import websocketService from "../../src/services/websocketService";
 import { useEconomy } from '../../src/context/EconomyContext';
 import LandDropdown from './LandDropdown';
+import NotificationDropdown from '../notifications/NotificationDropdown';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -77,9 +78,11 @@ const Navbar: React.FC = () => {
                         {userEconomy.balance?.toLocaleString() || 0} 🪙
                       </span>
                     </div>
-                  )}                  <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
+                  )}             
+                  <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>
+                  <NotificationDropdown />
                   <LandDropdown />
                   <Link to="/profile" className="flex items-center text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                     {userProfile?.photoURL ? (
