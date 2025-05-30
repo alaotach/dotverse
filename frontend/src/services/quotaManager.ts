@@ -369,7 +369,7 @@ class QuotaManager {
           console.error(`Failed to sync operation ${operation.id}, re-queueing:`, error);
           operation.retries = (operation.retries || 0) + 1;
           if (operation.retries <= this.MAX_RETRIES) {
-            this.offlineQueue.push(operation); // Re-add to front for retry later if needed
+            this.offlineQueue.push(operation);
           } else {
             console.error(`Operation ${operation.id} failed after ${this.MAX_RETRIES} retries. Discarding.`);
           }

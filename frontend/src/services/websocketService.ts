@@ -296,7 +296,7 @@ class WebSocketService {
     }
 
     const delay = Math.min(
-      RECONNECT_DELAY_BASE * Math.pow(1.2, this.reconnectAttempts), // Gentler exponential backoff
+      RECONNECT_DELAY_BASE * Math.pow(1.2, this.reconnectAttempts),
       RECONNECT_DELAY_MAX
     );
 

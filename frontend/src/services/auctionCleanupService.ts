@@ -4,7 +4,7 @@ import { auctionService } from './auctionService';
 
 class AuctionCleanupService {
   private intervalId: NodeJS.Timeout | null = null;
-  private readonly CHECK_INTERVAL = 60000; // Check every minute
+  private readonly CHECK_INTERVAL = 60000;
 
   start() {
     if (this.intervalId) return;
@@ -14,7 +14,6 @@ class AuctionCleanupService {
       this.checkExpiredAuctions();
     }, this.CHECK_INTERVAL);
 
-    // Run immediately
     this.checkExpiredAuctions();
   }
 

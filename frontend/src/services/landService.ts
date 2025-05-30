@@ -83,7 +83,6 @@ const getLandBoundaries = async (): Promise<{
         const data = doc.data();
         const [xStr, yStr] = doc.id.split(',').map(Number);
         
-        // Skip border lands and only include center lands
         if (!isNaN(xStr) && !isNaN(yStr) && data.owner && !data.isBorder && (data.size || data.ownedSize)) {
           existingLands.push({
             centerX: xStr,
@@ -384,11 +383,9 @@ export const getUserLands = async (userId: string): Promise<UserLandInfo[]> => {
       return [];
     }
     
-    // Filter out border/corner lands and only return center lands
     return querySnapshot.docs
       .filter(docSnap => {
         const data = docSnap.data();
-        // Only include lands that are NOT border lands (i.e., the main center lands)
         return !data.isBorder;
       })
       .map(docSnap => {
@@ -427,11 +424,9 @@ export const getAllLandsWithAuctionStatus = async (): Promise<UserLandInfo[]> =>
     const landsCollectionRef = collection(fs, 'lands');
     const querySnapshot = await getDocs(landsCollectionRef);
     
-    // Filter out border/corner lands and only return center lands
     return querySnapshot.docs
       .filter(docSnap => {
         const data = docSnap.data();
-        // Only include lands that are NOT border lands (i.e., the main center lands)
         return !data.isBorder;
       })
       .map(docSnap => {

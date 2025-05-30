@@ -1,201 +1,321 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../src/context/AuthContext';
+import { useEconomy } from '../../src/context/EconomyContext';
 import { getUserLands, updateLandName, type UserLandInfo } from '../../src/services/landService';
 import { auctionService, type LandAuction } from '../../src/services/auctionService';
+import { economyService } from '../../src/services/economyService';
+import { analyticsService } from '../../src/services/analyticsService';
 import LandCard from '../lands/LandCard';
+import OfferManagement from '../lands/OfferManagement';
 import LandExpansionModal from '../lands/LandExpansionModal';
+import CreateAuctionModal from '../auction/CreateAuctionModal';
+import { FiUser, FiMapPin, FiDollarSign, FiClock, FiTrendingUp, FiGift } from 'react-icons/fi';
+
+type TabType = 'overview' | 'lands' | 'auctions' | 'offers' | 'transactions';
 
 const UserProfile: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
+  const { userEconomy, refreshUserEconomy } = useEconomy();
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
-  const [loadingLands, setLoadingLands] = useState(true);
-  const [auctionData, setAuctionData] = useState<Map<string, LandAuction>>(new Map());
+  const [userAuctions, setUserAuctions] = useState<LandAuction[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [showExpansionModal, setShowExpansionModal] = useState(false);
-  const [selectedLandForExpansion, setSelectedLandForExpansion] = useState<UserLandInfo | null>(null);
+  const [showCreateAuctionModal, setShowCreateAuctionModal] = useState(false);
+  const [selectedLand, setSelectedLand] = useState<UserLandInfo | null>(null);
 
   useEffect(() => {
-    const loadUserLands = async () => {
-      if (!currentUser) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const tab = urlParams.get('tab');
+    if (tab === 'offers') {
+      setActiveTab('offers');
+    }
+  }, []);
 
-      setLoadingLands(true);
-      try {
-        const lands = await getUserLands(currentUser.uid);
-        setUserLands(lands);        
-        const auctionMap = new Map<string, LandAuction>();
-        for (const land of lands) {
-          if (land.isAuctioned && land.auctionId) {
-            try {
-              const auction = await auctionService.getAuction(land.auctionId);
-              if (auction) {
-                auctionMap.set(land.auctionId, auction);
-              }
-            } catch (error) {
-              console.error(`Error loading auction ${land.auctionId}:`, error);
-            }
-          }
-        }
-        setAuctionData(auctionMap);
-      } catch (error) {
-        console.error('Error loading user lands:', error);
-      } finally {
-        setLoadingLands(false);
-      }
-    };
+  useEffect(() => {
+    if (currentUser) {
+      loadUserData();
+    }
+  }, [currentUser, activeTab]);
 
-    loadUserLands();
-  }, [currentUser]);
-
-  const handleUpdateLandName = async (landId: string, newName: string) => {
+  const loadUserData = async () => {
+    if (!currentUser) return;
+    
+    setIsLoading(true);
     try {
-      await updateLandName(landId, newName);
-      
-      setUserLands(prev => prev.map(land => 
-        land.id === landId 
-          ? { ...land, displayName: newName }
-          : land
-      ));
+      switch (activeTab) {
+        case 'lands':
+          const lands = await getUserLands(currentUser.uid);
+          setUserLands(lands);
+          break;
+        case 'auctions':
+          const auctions = await auctionService.getUserAuctions(currentUser.uid);
+          setUserAuctions(auctions);
+          break;
+        case 'transactions':
+          const userTransactions = await economyService.getRecentTransactions(currentUser.uid);
+          setTransactions(userTransactions);
+          break;
+        default:
+          break;
+      }
     } catch (error) {
-      console.error('Error updating land name:', error);
-      throw error;
+      console.error('Error loading user data:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleExpandLand = (land: UserLandInfo) => {
-    setSelectedLandForExpansion(land);
-    setShowExpansionModal(true);
+  const handleLandNameUpdate = async (landId: string, newName: string) => {
+    try {
+      await updateLandName(landId, newName);
+      setUserLands(prev => 
+        prev.map(land => 
+          land.id === landId ? { ...land, displayName: newName } : land
+        )
+      );
+    } catch (error) {
+      console.error('Error updating land name:', error);
+    }
   };
 
   const handleExpansionSuccess = () => {
-    if (currentUser) {
-      const loadUserLands = async () => {
-        try {
-          const lands = await getUserLands(currentUser.uid);
-          setUserLands(lands);
-        } catch (error) {
-          console.error('Error reloading user lands:', error);
-        }
-      };
-      loadUserLands();
-    }
-    setSelectedLandForExpansion(null);
+    setShowExpansionModal(false);
+    setSelectedLand(null);
+    refreshUserEconomy();
+    loadUserData();
+    
   };
 
-  const handleCloseExpansionModal = () => {
-    setShowExpansionModal(false);
-    setSelectedLandForExpansion(null);
+  const handleAuctionSuccess = () => {
+    setShowCreateAuctionModal(false);
+    setSelectedLand(null);
+    loadUserData();
+    
+  };
+
+  const getTabButtonClass = (tab: TabType) => {
+    return `px-4 py-2 rounded-lg font-medium transition-colors ${
+      activeTab === tab
+        ? 'bg-blue-600 text-white'
+        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+    }`;
+  };
+
+  const formatTime = (timestamp: any) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString();
   };
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please Log In</h2>
-          <p className="text-gray-600">You need to be logged in to view your profile.</p>
-        </div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-white">Please log in to view your profile.</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white shadow rounded-lg p-6 mb-8">
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl font-bold">
-              {userProfile?.displayName?.charAt(0)?.toUpperCase() || currentUser.email?.charAt(0)?.toUpperCase() || 'U'}
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {userProfile?.displayName || 'Anonymous User'}
-              </h1>
-              <p className="text-gray-600">{currentUser.email}</p>
-              <p className="text-sm text-gray-500">
-                User ID: {currentUser.uid}
-              </p>
-            </div>
-
-            {userLands.length > 0 && (
-                  <div className="mt-2 text-sm text-gray-600">
-                    <p>
-                      Total Lands: {userLands.length}
-                    </p>
-                    <p>
-                      Total Area: {userLands.reduce((total, land) => total + (land.ownedSize * land.ownedSize), 0)} pixels
-                    </p>
-                  </div>
-                )}
+    <div className="min-h-screen bg-gray-900 text-white">
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-gray-800 rounded-lg p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-2xl font-bold mr-4">
+                {(userProfile?.displayName || currentUser.email || 'U')[0].toUpperCase()}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold">
+                  {userProfile?.displayName || 'Anonymous User'}
+                </h1>
+                <p className="text-gray-400">{currentUser.email}</p>
+                <p className="text-sm text-gray-500">
+                  Member since {formatTime(userProfile?.createdAt)}
+                </p>
               </div>
             </div>
-
-            {userLands.length > 0 && (
+            
+            {userEconomy && (
               <div className="text-right">
-                <div className="text-lg font-semibold text-gray-900">
-                  {userLands.length} Land{userLands.length !== 1 ? 's' : ''}
+                <div className="text-3xl font-bold text-green-400">
+                  {(userEconomy.balance || 0).toLocaleString()} 🪙
                 </div>
-                <div className="text-sm text-gray-500">
-                  Expand individual lands below
+                <p className="text-gray-400">Current Balance</p>
+                <div className="text-sm text-gray-500 mt-2">
+                  <div>Total Earned: {(userEconomy.totalEarned || 0).toLocaleString()} 🪙</div>
+                  <div>Total Spent: {(userEconomy.totalSpent || 0).toLocaleString()} 🪙</div>
                 </div>
               </div>
             )}
           </div>
+        </div>
 
-          <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900">My Lands</h2>
-            <span className="text-sm text-gray-500">
-              {userLands.length} {userLands.length === 1 ? 'land' : 'lands'} owned
-            </span>
-          </div>
+        <div className="flex flex-wrap gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={getTabButtonClass('overview')}
+          >
+            <FiUser className="inline mr-2" />
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('lands')}
+            className={getTabButtonClass('lands')}
+          >
+            <FiMapPin className="inline mr-2" />
+            My Lands ({userLands.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('auctions')}
+            className={getTabButtonClass('auctions')}
+          >
+            <FiDollarSign className="inline mr-2" />
+            My Auctions
+          </button>
+          <button
+            onClick={() => setActiveTab('offers')}
+            className={getTabButtonClass('offers')}
+          >
+            <FiGift className="inline mr-2" />
+            Offers
+          </button>
+          <button
+            onClick={() => setActiveTab('transactions')}
+            className={getTabButtonClass('transactions')}
+          >
+            <FiClock className="inline mr-2" />
+            Transactions
+          </button>
+        </div>
 
-          {loadingLands ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-              <span className="ml-2 text-gray-600">Loading your lands...</span>
-            </div>
-          ) : userLands.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 616 0z" />
-                </svg>
+        {/* Tab Content */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-gray-700 rounded-lg p-4">
+                <FiMapPin className="text-blue-400 mb-2" size={24} />
+                <h3 className="text-lg font-semibold">Lands Owned</h3>
+                <p className="text-2xl font-bold text-blue-400">{userLands.length}</p>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No lands owned</h3>
-              <p className="text-gray-600 mb-4">You don't own any land plots yet.</p>
-              <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition-colors">
-                Explore Available Lands
-              </button>
+              
+              <div className="bg-gray-700 rounded-lg p-4">
+                <FiDollarSign className="text-green-400 mb-2" size={24} />
+                <h3 className="text-lg font-semibold">Total Balance</h3>
+                <p className="text-2xl font-bold text-green-400">
+                  {(userEconomy?.balance || 0).toLocaleString()} 🪙
+                </p>
+              </div>
+              
+              <div className="bg-gray-700 rounded-lg p-4">
+                <FiClock className="text-purple-400 mb-2" size={24} />
+                <h3 className="text-lg font-semibold">Active Auctions</h3>
+                <p className="text-2xl font-bold text-purple-400">
+                  {userAuctions.filter(a => a.status === 'active').length}
+                </p>
+              </div>
+              
+              <div className="bg-gray-700 rounded-lg p-4">
+                <FiTrendingUp className="text-yellow-400 mb-2" size={24} />
+                <h3 className="text-lg font-semibold">Total Earned</h3>
+                <p className="text-2xl font-bold text-yellow-400">
+                  {(userEconomy?.totalEarned || 0).toLocaleString()} 🪙
+                </p>
+              </div>
             </div>
-            ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {userLands.map((land) => (
-                <div key={land.id} className="relative">
-                  <LandCard
-                    land={land}
-                    auction={land.auctionId ? auctionData.get(land.auctionId) : undefined}
-                    onNameUpdate={handleUpdateLandName}
-                  />
-                  {/* Expand button for each land */}
-                  <div className="absolute top-2 right-2">
-                    <button
-                      onClick={() => handleExpandLand(land)}
-                      className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg shadow-lg transition-colors"
-                      title={`Expand land at (${land.centerX}, ${land.centerY})`}
-                    >
-                      <span className="text-sm">🏗️</span>
-                    </button>
-                  </div>
+          )}
+
+          {activeTab === 'lands' && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">My Lands</h2>
+              </div>
+              
+              {isLoading ? (
+                <div className="text-center py-8">Loading your lands...</div>
+              ) : userLands.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  You don't own any lands yet. Start by claiming pixels on the canvas!
                 </div>
-              ))}
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {userLands.map((land) => (
+                    <LandCard
+                      key={land.id}
+                      land={land}
+                      onEdit={(land) => {
+                        setSelectedLand(land);
+                        setShowExpansionModal(true);
+                      }}
+                      onNameUpdate={handleLandNameUpdate}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'offers' && (
+            <OfferManagement />
+          )}
+
+          {activeTab === 'transactions' && (
+            <div>
+              <h2 className="text-xl font-bold mb-6">Transaction History</h2>
+              {isLoading ? (
+                <div className="text-center py-8">Loading transactions...</div>
+              ) : transactions.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  No transactions found.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {transactions.map((transaction) => (
+                    <div
+                      key={transaction.id}
+                      className="bg-gray-700 rounded-lg p-4 flex justify-between items-center"
+                    >
+                      <div>
+                        <h4 className="font-semibold">{transaction.description}</h4>
+                        <p className="text-gray-400 text-sm">
+                          {formatTime(transaction.createdAt)}
+                        </p>
+                      </div>
+                      <div className={`font-bold ${
+                        transaction.type === 'credit' ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {transaction.type === 'credit' ? '+' : '-'}
+                        {transaction.amount.toLocaleString()} 🪙
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
-        {selectedLandForExpansion && (
+      </div>
+
+      {showExpansionModal && selectedLand && (
         <LandExpansionModal
           isOpen={showExpansionModal}
-          onClose={handleCloseExpansionModal}
+          onClose={() => {
+            setShowExpansionModal(false);
+            setSelectedLand(null);
+          }}
           onSuccess={handleExpansionSuccess}
-          selectedLand={selectedLandForExpansion}
+          selectedLand={selectedLand}
+        />
+      )}
+
+      {showCreateAuctionModal && selectedLand && (
+        <CreateAuctionModal
+          onClose={() => {
+            setShowCreateAuctionModal(false);
+            setSelectedLand(null);
+          }}
+          onSuccess={handleAuctionSuccess}
         />
       )}
     </div>

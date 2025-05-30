@@ -76,7 +76,7 @@ export const EconomyProvider: React.FC<{ children: ReactNode }> = ({ children })
         return unsubscribe;
       } catch (error) {
         console.error('Error setting up economy:', error);
-        return () => {}; // Return empty cleanup function
+        return () => {};
       }
     };
 

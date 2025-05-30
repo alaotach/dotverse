@@ -23,7 +23,7 @@ class LandExpansionService {
   private readonly BASE_COST = 500;
   private readonly SIZE_INCREASE = 10;
   private readonly INFLATION_RATE = 1.5;
-  private readonly MAX_LAND_SIZE = 200; // will depend on levels in further updates
+  private readonly MAX_LAND_SIZE = 200;
 
   calculateExpansionCost(currentSize: number): number {
     const expansionLevel = Math.floor((currentSize - 50) / this.SIZE_INCREASE); 

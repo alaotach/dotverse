@@ -237,6 +237,127 @@ class NotificationService {
     });
   }
 
+  async notifyOfferReceived(
+    landOwnerId: string, 
+    offerId: string, 
+    buyerName: string, 
+    amount: number, 
+    landPosition: string,
+    landId: string
+  ): Promise<void> {
+    await this.createNotification({
+      userId: landOwnerId,
+      type: 'land_offer_received',
+      title: 'New Land Offer!',
+      message: `${buyerName} offered ${amount} 🪙 for your land at ${landPosition}.`,
+      read: false,
+      metadata: {
+        offerId,
+        landId,
+        amount,
+        buyerName,
+        landPosition,
+        actionType: 'offer_received'
+      }
+    });
+  }
+
+  async notifyOfferAccepted(
+    buyerId: string, 
+    offerId: string, 
+    landId: string, 
+    amount: number, 
+    landPosition: string
+  ): Promise<void> {
+    await this.createNotification({
+      userId: buyerId,
+      type: 'land_offer_accepted',
+      title: 'Offer Accepted! 🎉',
+      message: `Your offer of ${amount} 🪙 for land at ${landPosition} was accepted!`,
+      read: false,
+      metadata: {
+        offerId,
+        landId,
+        amount,
+        landPosition,
+        actionType: 'offer_accepted'
+      }
+    });
+  }
+
+  async notifyOfferRejected(
+    buyerId: string, 
+    offerId: string, 
+    landId: string, 
+    amount: number, 
+    landPosition: string
+  ): Promise<void> {
+    await this.createNotification({
+      userId: buyerId,
+      type: 'land_offer_rejected',
+      title: 'Offer Declined',
+      message: `Your offer of ${amount} 🪙 for land at ${landPosition} was declined.`,
+      read: false,
+      metadata: {
+        offerId,
+        landId,
+        amount,
+        landPosition,
+        actionType: 'offer_rejected'
+      }
+    });
+  }
+
+  async notifyOfferExpired(
+    buyerId: string, 
+    offerId: string, 
+    landId: string, 
+    amount: number, 
+    landPosition: string
+  ): Promise<void> {
+    await this.createNotification({
+      userId: buyerId,
+      type: 'land_offer_expired',
+      title: 'Offer Expired',
+      message: `Your offer of ${amount} 🪙 for land at ${landPosition} has expired.`,
+      read: false,
+      metadata: {
+        offerId,
+        landId,
+        amount,
+        landPosition,
+        actionType: 'offer_expired'
+      }
+    });
+  }
+
+  async notifyCounterOffer(
+    originalBuyerId: string,
+    offerId: string,
+    counterOfferId: string,
+    originalAmount: number,
+    counterAmount: number,
+    landPosition: string,
+    landId: string
+  ): Promise<void> {
+    await this.createNotification({
+      userId: originalBuyerId,
+      type: 'land_counter_offer',
+      title: 'Counter Offer Received',
+      message: `The seller countered your ${originalAmount} 🪙 offer with ${counterAmount} 🪙 for land at ${landPosition}.`,
+      read: false,
+      metadata: {
+        originalOfferId: offerId,
+        counterOfferId,
+        landId,
+        originalAmount,
+        counterAmount,
+        landPosition,
+        actionType: 'counter_offer'
+      }
+    });
+  }
+
   async getUnreadCount(userId: string): Promise<number> {
     try {
       const q = query(

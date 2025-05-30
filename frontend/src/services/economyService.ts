@@ -509,6 +509,246 @@ class EconomyService {
     }
   }
 
+  async lockFunds(userId: string, amount: number, purpose: string): Promise<string> {
+    console.log(`Locking ${amount} funds for user ${userId} for ${purpose}`);
+    
+    try {
+      await this.initializeUserEconomy(userId);
+      
+      const userEconomy = await this.getUserEconomy(userId);
+      if (!userEconomy || (userEconomy.balance || 0) < amount) {
+        throw new Error('Insufficient funds');
+      }
+
+      const lockedFundsRef = doc(collection(fs, 'lockedFunds'));
+      const lockId = lockedFundsRef.id;
+
+      const lockData = {
+        id: lockId,
+        userId,
+        amount,
+        purpose,
+        timestamp: Date.now(),
+        status: 'locked',
+        createdAt: serverTimestamp()
+      };
+
+      await runTransaction(fs, async (transaction) => {
+        const userEconomyRef = doc(fs, 'economy', userId);
+        const userDoc = await transaction.get(userEconomyRef);
+        
+        if (!userDoc.exists()) {
+          throw new Error('User economy document not found');
+        }
+        
+        const currentData = userDoc.data() as UserEconomyData;
+        const currentBalance = currentData.balance || 0;
+        
+        if (currentBalance < amount) {
+          throw new Error('Insufficient funds');
+        }
+        
+        transaction.update(userEconomyRef, {
+          balance: currentBalance - amount,
+          updatedAt: serverTimestamp()
+        });
+      
+        transaction.set(lockedFundsRef, lockData);
+      });
+
+      console.log(`Successfully locked ${amount} coins for user ${userId} with lock ID ${lockId}`);
+      return lockId;
+    } catch (error) {
+      console.error('Failed to lock funds:', error);
+      throw error;
+    }
+  }
+
+  async releaseFunds(lockId: string): Promise<void> {
+    console.log(`Releasing locked funds with ID ${lockId}`);
+    
+    try {
+      const lockedFundsRef = doc(fs, 'lockedFunds', lockId);
+      
+      await runTransaction(fs, async (transaction) => {
+        const lockDoc = await transaction.get(lockedFundsRef);
+        
+        if (!lockDoc.exists()) {
+          throw new Error('Lock not found');
+        }
+        
+        const lockData = lockDoc.data();
+        if (lockData.status !== 'locked') {
+          throw new Error('Funds are not in locked state');
+        }
+        
+        const userEconomyRef = doc(fs, 'economy', lockData.userId);
+        const userDoc = await transaction.get(userEconomyRef);
+        
+        if (!userDoc.exists()) {
+          throw new Error('User economy document not found');
+        }
+        
+        const currentData = userDoc.data() as UserEconomyData;
+        
+        transaction.update(userEconomyRef, {
+          balance: (currentData.balance || 0) + lockData.amount,
+          updatedAt: serverTimestamp()
+        });
+        
+        transaction.update(lockedFundsRef, {
+          status: 'released',
+          releasedAt: serverTimestamp()
+        });
+      });
+
+      console.log(`Successfully released locked funds with ID ${lockId}`);
+    } catch (error) {
+      console.error('Failed to release funds:', error);
+      throw error;
+    }
+  }
+
+  async transferFunds(fromUserId: string, toUserId: string, amount: number, description: string, lockId?: string): Promise<void> {
+    console.log(`Transferring ${amount} coins from ${fromUserId} to ${toUserId}`);
+    
+    try {
+      await this.initializeUserEconomy(fromUserId);
+      await this.initializeUserEconomy(toUserId);
+      
+      const fromTransactionRef = doc(collection(fs, 'economyTransactions'));
+      const toTransactionRef = doc(collection(fs, 'economyTransactions'));      await runTransaction(fs, async (transaction) => {
+        let lockDoc = null;
+        let fromDoc = null;
+        const toEconomyRef = doc(fs, 'economy', toUserId);
+        const toDoc = await transaction.get(toEconomyRef);
+        
+        if (!toDoc.exists()) {
+          throw new Error('Receiver economy document not found');
+        }
+        
+        if (lockId) {
+          const lockedFundsRef = doc(fs, 'lockedFunds', lockId);
+          lockDoc = await transaction.get(lockedFundsRef);
+          
+          if (!lockDoc.exists()) {
+            throw new Error('Lock not found');
+          }
+          
+          const lockData = lockDoc.data();
+          if (lockData.status !== 'locked' || lockData.userId !== fromUserId) {
+            throw new Error('Invalid lock for transfer');
+          }
+          
+          if (lockData.amount !== amount) {
+            throw new Error('Lock amount does not match transfer amount');
+          }
+        } else {
+          const fromEconomyRef = doc(fs, 'economy', fromUserId);
+          fromDoc = await transaction.get(fromEconomyRef);
+          
+          if (!fromDoc.exists()) {
+            throw new Error('Sender economy document not found');
+          }
+          
+          const fromData = fromDoc.data() as UserEconomyData;
+          if ((fromData.balance || 0) < amount) {
+            throw new Error('Insufficient funds');
+          }
+        }
+        
+        if (lockId && lockDoc) {
+          const lockedFundsRef = doc(fs, 'lockedFunds', lockId);
+          transaction.update(lockedFundsRef, {
+            status: 'used',
+            usedAt: serverTimestamp()
+          });
+        } else if (fromDoc) {
+          const fromEconomyRef = doc(fs, 'economy', fromUserId);
+          const fromData = fromDoc.data() as UserEconomyData;
+          transaction.update(fromEconomyRef, {
+            balance: (fromData.balance || 0) - amount,
+            updatedAt: serverTimestamp()
+          });
+        }
+        
+        const toData = toDoc.data() as UserEconomyData;
+        transaction.update(toEconomyRef, {
+          balance: (toData.balance || 0) + amount,
+          totalEarned: (toData.totalEarned || 0) + amount,
+          updatedAt: serverTimestamp()
+        });
+        
+        const timestamp = Date.now();
+          transaction.set(fromTransactionRef, {
+          id: fromTransactionRef.id,
+          userId: fromUserId,
+          type: 'purchase' as const,
+          amount: -amount,
+          timestamp,
+          description: `Transfer to user: ${description}`,
+          metadata: {
+            transferTo: toUserId,
+            ...(lockId && { lockId })
+          }
+        });
+        
+        transaction.set(toTransactionRef, {
+          id: toTransactionRef.id,
+          userId: toUserId,
+          type: 'reward' as const,
+          amount: amount,
+          timestamp,
+          description: `Transfer from user: ${description}`,
+          metadata: {
+            transferFrom: fromUserId,
+            ...(lockId && { lockId })
+          }
+        });
+      });
+
+      console.log(`Successfully transferred ${amount} coins from ${fromUserId} to ${toUserId}`);
+    } catch (error) {
+      console.error('Failed to transfer funds:', error);
+      throw error;
+    }
+  }
+
+  async recordTransaction(userId: string, type: EconomyTransaction['type'], amount: number, description: string, metadata?: any): Promise<void> {
+    console.log(`Recording transaction for user ${userId}: ${type} ${amount}`);
+    
+    try {
+      await this.initializeUserEconomy(userId);
+      
+      const transactionRef = doc(collection(fs, 'economyTransactions'));      const transactionData: Omit<EconomyTransaction, 'id'> = {
+        userId,
+        type,
+        amount,
+        timestamp: Date.now(),
+        description,
+        ...(metadata && { metadata })
+      };
+
+      await setDoc(transactionRef, {
+        ...transactionData,
+        id: transactionRef.id
+      });
+
+      console.log(`Successfully recorded transaction for user ${userId}`);
+    } catch (error) {
+      console.error('Failed to record transaction:', error);
+      throw error;
+    }
+  }
+
+  async refundOfferCharge(userId: string, refundAmount: number, description: string): Promise<void> {
+    if (refundAmount <= 0) {
+      return;
+    }
+    await this.addCoins(userId, refundAmount, description);
+    console.log(`Refunded ${refundAmount} coins to user ${userId}: ${description}`);
+  }
+
   cleanup(userId: string): void {
     const unsubscribe = this.listeners.get(userId);
     if (unsubscribe) {

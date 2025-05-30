@@ -28,9 +28,9 @@ export class PixelBatchManager {
 
   constructor(updateCallback: UpdateCallback, options: BatchManagerOptions = {}) {
     this.updateCallback = updateCallback;
-    this.batchInterval = options.initialBatchInterval || 200; // Default 200ms
-    this.maxBatchSize = options.maxBatchSize || 500; // Default 500 pixels
-    this.minBatchInterval = options.minBatchInterval || 16; // ~60fps
+    this.batchInterval = options.initialBatchInterval || 200;
+    this.maxBatchSize = options.maxBatchSize || 500;
+    this.minBatchInterval = options.minBatchInterval || 16;
     
     console.log(`PixelBatchManager initialized with interval: ${this.batchInterval}ms, maxSize: ${this.maxBatchSize}`);
   }

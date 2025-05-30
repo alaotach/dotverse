@@ -16,6 +16,7 @@ import { toPng } from 'html-to-image';
 import { getAllLandsWithAuctionStatus, getUserLands, type UserLandInfo } from '../src/services/landService';
 import { useNavigate } from 'react-router-dom';
 import LandExpansionModal from '../components/lands/LandExpansionModal';
+import LandInfoPanel from '../components/lands/LandInfoPanel';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -237,7 +238,29 @@ const Canvas = () => {
   const [showExpansionModal, setShowExpansionModal] = useState<boolean>(false);
   const [selectedLandForExpansion, setSelectedLandForExpansion] = useState<UserLandInfo | null>(null);
   const [showLandsExpansionDropdown, setShowLandsExpansionDropdown] = useState<boolean>(false);
+  const [selectedLandInfo, setSelectedLandInfo] = useState<UserLandInfo | null>(null);
+  const [showLandInfoPanel, setShowLandInfoPanel] = useState(false);
+  const [showCreateAuctionModal, setShowCreateAuctionModal] = useState<boolean>(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    land: UserLandInfo | null;
+  } | null>(null);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenu) {
+        setContextMenu(null);
+      }
+    };
+
+    if (contextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [contextMenu]);
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -434,7 +457,33 @@ const Canvas = () => {
       setIsCapturing(false);
     }
     }, [isCapturing]);
+  const handleLandRightClick = useCallback((event: React.MouseEvent, land: UserLandInfo) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      land: land
+    });
+  }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenu) {
+        setContextMenu(null);
+      }
+    };
+
+    if (contextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [contextMenu]);
+
+  
   const updateGridFromVisibleChunks = useCallback(() => {
     if (!initialDataLoaded) return;
 
@@ -620,7 +669,7 @@ const Canvas = () => {
       }
     }
     
-    console.log('[Canvas] Drawing blocked - not on owned land at point:', worldX, worldY);
+    // console.log('[Canvas] Drawing blocked - not on owned land at point:', worldX, worldY);
     return false;
   }, [currentUser, userProfile, allLands]);
   
@@ -636,12 +685,16 @@ const Canvas = () => {
       setLoadingLands(false);
     }
   }, []);
-  const handleLandClick = useCallback((land: UserLandInfo, event: React.MouseEvent) => {
+  const handleLandClick = useCallback(async (land: UserLandInfo, event: React.MouseEvent) => {
     event.stopPropagation();
     
     if (land.isAuctioned && land.auctionId) {
       navigate(`/auction/`);
-    }  }, [navigate]);
+    } else {
+      setSelectedLandInfo(land);
+      setShowLandInfoPanel(true);
+    }
+  }, [navigate]);
 
   const loadUserLands = useCallback(async () => {
     if (!currentUser) return;
@@ -1863,12 +1916,24 @@ const Canvas = () => {
     }
   }, [getPixelKey]);
 
-  websocketService.on('canvas_reset', handleCanvasReset);
-  const handleLandOwnershipChange = useCallback(async (data: any) => {
+  websocketService.on('canvas_reset', handleCanvasReset);  const handleLandOwnershipChange = useCallback(async (data: any) => {
     console.log('[Canvas] Land ownership changed, refreshing land data:', data);
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     getAllLands();
+    
     if (currentUser) {
-      await refreshProfile();
+      console.log('[Canvas] Refreshing user profile due to land ownership change');
+      try {
+        await refreshProfile();
+        console.log('[Canvas] Profile refresh completed successfully');
+        
+        await new Promise(resolve => setTimeout(resolve, 50));
+        console.log('[Canvas] Forced re-render completed');
+      } catch (error) {
+        console.error('[Canvas] Error refreshing profile:', error);
+      }
     }
   }, [getAllLands, currentUser, refreshProfile]);
   websocketService.on('land_ownership_change', handleLandOwnershipChange);
@@ -1901,7 +1966,6 @@ const Canvas = () => {
 
     return () => clearInterval(refreshInterval);
   }, [currentUser, allLands.length, getAllLands]);
-
   useEffect(() => {
     const handleWindowFocus = () => {
       if (currentUser) {
@@ -1915,61 +1979,62 @@ const Canvas = () => {
   }, [currentUser, getAllLands]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (isLandsDropdownOpen && !target.closest('.lands-dropdown-container')) {
-        setIsLandsDropdownOpen(false);
-      }
+    const handleClickOutside = () => {
+      setIsLandsDropdownOpen(false);
     };
 
     if (isLandsDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isLandsDropdownOpen]);
-
-  const cellLandMap = useMemo(() => {
+  }, [isLandsDropdownOpen]);  const cellLandMap = useMemo(() => {
+    console.log('[Canvas] Recalculating cellLandMap - allLands count:', allLands.length, 'userProfile.landInfo:', userProfile?.landInfo);
     const newCellLandMap = new Map<string, {landInfo: LandInfo, isCurrentUserLand: boolean}>();
-    
-    if (currentUser && userProfile && userProfile.landInfo) {
-      const { centerX, centerY, ownedSize } = userProfile.landInfo;
-      const halfOwnedSize = Math.floor(ownedSize / 2);
+    allLands.forEach(land => {
+      const isCurrentUserLand = !!(currentUser && currentUser.uid === land.owner);
+      console.log('[Canvas] Processing land at', land.centerX, land.centerY, 'owner:', land.owner, 'isCurrentUserLand:', isCurrentUserLand);
       
-      for (let y = centerY - halfOwnedSize; y <= centerY + halfOwnedSize; y++) {
-        for (let x = centerX - halfOwnedSize; x <= centerX + halfOwnedSize; x++) {
+      const halfSize = Math.floor(land.ownedSize / 2);
+      for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
+        for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
           newCellLandMap.set(`${x}:${y}`, { 
-            landInfo: {
-              centerX,
-              centerY,
-              ownedSize,
-              owner: currentUser.uid,
-              displayName: userProfile.displayName || "You"
-            },
-            isCurrentUserLand: true
+            landInfo: land, 
+            isCurrentUserLand 
           });
         }
       }
-    }
-    
-    allLands.forEach(land => {
-      const isCurrentUserLand = currentUser && userProfile && userProfile.landInfo && 
-                            userProfile.landInfo.centerX === land.centerX && 
-                            userProfile.landInfo.centerY === land.centerY;
-    
-      if (!isCurrentUserLand) {
-        const halfSize = Math.floor(land.ownedSize / 2);
-        for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
-          for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
-            if (!newCellLandMap.has(`${x}:${y}`)) { 
-              newCellLandMap.set(`${x}:${y}`, { 
-                landInfo: land, 
-                isCurrentUserLand: false 
+    });    
+    if (currentUser && userProfile && userProfile.landInfo) {
+      const { centerX, centerY, ownedSize } = userProfile.landInfo;
+      const halfOwnedSize = Math.floor(ownedSize / 2);
+      console.log('[Canvas] Processing user profile land at', centerX, centerY, 'size:', ownedSize);
+      const conflictingDbLand = allLands.find(land => 
+        land.centerX === centerX && land.centerY === centerY
+      );
+      
+      console.log('[Canvas] Conflicting DB land found:', !!conflictingDbLand, 'owner match:', conflictingDbLand?.owner === currentUser.uid);
+      if (!conflictingDbLand || conflictingDbLand.owner === currentUser.uid) {
+        for (let y = centerY - halfOwnedSize; y <= centerY + halfOwnedSize; y++) {
+          for (let x = centerX - halfOwnedSize; x <= centerX + halfOwnedSize; x++) {
+            const cellKey = `${x}:${y}`;
+            if (!newCellLandMap.has(cellKey) || 
+                (conflictingDbLand && conflictingDbLand.owner === currentUser.uid)) {
+              newCellLandMap.set(cellKey, { 
+                landInfo: {
+                  centerX,
+                  centerY,
+                  ownedSize,
+                  owner: currentUser.uid,
+                  displayName: userProfile.displayName || "You"
+                },                isCurrentUserLand: true
               });
             }
           }
         }
       }
-    });
+    }
+    
+    console.log('[Canvas] cellLandMap built with', newCellLandMap.size, 'cells');
     return newCellLandMap;
   }, [currentUser, userProfile?.landInfo, allLands]);
 
@@ -2047,7 +2112,7 @@ const Canvas = () => {
         if (borderBottom) cellStyle.borderBottom = borderBottom;
         if (borderLeft) cellStyle.borderLeft = borderLeft;
         if (borderRight) cellStyle.borderRight = borderRight;
-        
+          
         if (debugMode && !isDrawableHere && currentUser && userProfile) {
           cellStyle.backgroundColor = color === "#ffffff" ? 
             "rgba(255, 0, 0, 0.1)" : 
@@ -2058,14 +2123,23 @@ const Canvas = () => {
           cellStyle.border = '1px solid rgba(255, 0, 0, 0.3)';
         }
         
-        cells.push(
+        const cellElement = (
           <div
             key={pixelKey}
             style={cellStyle}
             className={isPanning ? 'cursor-move' : (isDrawableHere ? 'cursor-crosshair' : 'cursor-not-allowed')}
-            data-world-coords={`${worldX},${worldY}`}
+            data-world-coords={`${worldX},${worldY}`}            onContextMenu={landMapEntry ? (e) => {
+              const userLandInfo: UserLandInfo = {
+                ...landMapEntry.landInfo,
+                id: `${landMapEntry.landInfo.centerX},${landMapEntry.landInfo.centerY}`,
+                createdAt: Date.now()
+              };
+              handleLandRightClick(e, userLandInfo);
+            } : undefined}
           />
         );
+        
+        cells.push(cellElement);
       }
     }
     return cells;
@@ -2125,6 +2199,7 @@ const Canvas = () => {
       </div>
     );
   }
+
 
   return (
     <div 
@@ -2698,6 +2773,23 @@ const Canvas = () => {
           </div>
         )}
 
+        {showLandInfoPanel && selectedLandInfo && (
+          <LandInfoPanel
+            land={selectedLandInfo}
+            isOwner={selectedLandInfo.owner === currentUser?.uid}
+            onClose={() => {
+              setShowLandInfoPanel(false);
+              setSelectedLandInfo(null);
+            }}
+            onExpand={() => {
+              setShowExpansionModal(true);
+            }}
+            onCreateAuction={() => {
+              setShowCreateAuctionModal(true);
+            }}
+          />
+        )}
+
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})
         </div>
@@ -2815,6 +2907,40 @@ const Canvas = () => {
         <br />
         Two-finger mode: {isPanMode ? 'Pan' : 'Zoom'}
       </div>
+
+      {contextMenu && (
+        <div 
+          className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 py-2"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-4 py-2 hover:bg-gray-700 text-white"
+            onClick={() => {
+              if (contextMenu.land) {
+                setSelectedLandInfo(contextMenu.land);
+                setShowLandInfoPanel(true);
+              }
+              setContextMenu(null);
+            }}
+          >
+            View Land Info
+          </button>
+          {contextMenu.land && contextMenu.land.owner !== currentUser?.uid && (
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-gray-700 text-white"              o
+              nClick={() => {
+                if (contextMenu.land) {
+                  setSelectedLandInfo(contextMenu.land);
+                  setShowLandInfoPanel(true);
+                }
+                setContextMenu(null);
+              }}
+            >
+              Make Offer
+            </button>
+          )}
+        </div>
+      )}
 
       {selectedLandForExpansion && (
         <LandExpansionModal
