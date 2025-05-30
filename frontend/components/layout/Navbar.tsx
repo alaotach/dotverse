@@ -5,6 +5,7 @@ import websocketService from "../../src/services/websocketService";
 import { useEconomy } from '../../src/context/EconomyContext';
 import LandDropdown from './LandDropdown';
 import NotificationDropdown from '../notifications/NotificationDropdown';
+import ChatButton from '../chat/ChatButton';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -83,6 +84,7 @@ const Navbar: React.FC = () => {
                     Gallery
                   </Link>
                   <NotificationDropdown />
+                  <ChatButton />
                   <LandDropdown />
                   <Link to="/profile" className="flex items-center text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                     {userProfile?.photoURL ? (

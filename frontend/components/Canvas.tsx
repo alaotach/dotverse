@@ -247,11 +247,6 @@ const Canvas = () => {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    land: UserLandInfo | null;
-  } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
     landId: string;
     landInfo: LandInfo;
     mergeCandidates: MergeCandidate[];

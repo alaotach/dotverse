@@ -16,6 +16,8 @@ import EconomyDashboard from '../components/economy/EconomyDashboard';
 import AuctionDashboard from '../components/auction/AuctionDashboard';
 import NotificationCenter from '../components/notifications/NotificationCenter';
 import { NotificationProvider } from './context/NotificationContext';
+import { ChatProvider } from './context/ChatContext';
+import ChatPanel from '../components/chat/ChatPanel';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -32,6 +34,7 @@ const ProtectedRoute: React.FC<{
 function AppContent() {
   const location = useLocation();
   const isCanvasPage = location.pathname === '/canvas';
+  const { currentUser } = useAuth();
 
   useEffect(() => {
     if (isCanvasPage) {
@@ -53,6 +56,7 @@ function AppContent() {
             <Route path="/canvas" element={<Canvas />} />
           </Routes>
         </main>
+        {currentUser && <ChatPanel />}
       </div>
     );
   }
@@ -79,6 +83,7 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+       {currentUser && <ChatPanel />}
     </div>
   );
 }
@@ -89,7 +94,9 @@ function App() {
       <AuthProvider>
         <EconomyProvider>
           <NotificationProvider>
-            <AppContent />
+            <ChatProvider>
+              <AppContent />
+            </ChatProvider>
           </NotificationProvider>
         </EconomyProvider>
       </AuthProvider>
