@@ -2954,6 +2954,8 @@ const Canvas = () => {
             setSelectedLandForExpansion(null);
             refreshProfile();
             getAllLands();
+            setInitialDataLoaded(false);
+            setTimeout(() => setInitialDataLoaded(true), 100);
           }}
           selectedLand={selectedLandForExpansion}
         />

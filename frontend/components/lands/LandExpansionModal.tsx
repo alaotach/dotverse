@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { landExpansionService } from '../../src/services/landExpansionService';
-import { type UserLandInfo } from '../../src/services/landService';
+import { getUserLands, type UserLandInfo } from '../../src/services/landService';
 
 interface LandExpansionModalProps {
   isOpen: boolean;
@@ -22,32 +22,132 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
   const [isExpanding, setIsExpanding] = useState(false);
   const [error, setError] = useState<string>('');
   const [previewData, setPreviewData] = useState<any>(null);
+  const [latestLandSize, setLatestLandSize] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshTimestamp, setRefreshTimestamp] = useState(Date.now());
+  const [manualRefresh, setManualRefresh] = useState(false);
 
-  const landToExpand = selectedLand || (userProfile?.landInfo ? {
-    id: 'profile-land',
-    centerX: userProfile.landInfo.centerX,
-    centerY: userProfile.landInfo.centerY,
-    ownedSize: userProfile.landInfo.ownedSize,
-    owner: currentUser?.uid || '',
-    displayName: 'My Land',
-    isAuctioned: false
-  } : null);
+  const getLandToExpand = () => {
+    return selectedLand || (userProfile?.landInfo ? {
+      id: 'profile-land',
+      centerX: userProfile.landInfo.centerX,
+      centerY: userProfile.landInfo.centerY,
+      ownedSize: userProfile.landInfo.ownedSize,
+      owner: currentUser?.uid || '',
+      displayName: 'My Land',
+      isAuctioned: false
+    } : null);
+  };
+
+  const fetchLatestLandSize = async (skipLoadingState = false) => {
+    if (!skipLoadingState) {
+      setIsRefreshing(true);
+    }
+    
+    try {
+      if (!currentUser) return;
+      
+      await refreshProfile();
+      if (selectedLand) {
+        const lands = await getUserLands(currentUser.uid);
+        const updatedLand = lands.find(land => 
+          land.centerX === selectedLand.centerX && 
+          land.centerY === selectedLand.centerY
+        );
+        
+        if (updatedLand) {
+          console.log("[LandExpansionModal] Found updated land size:", updatedLand.ownedSize);
+          setLatestLandSize(updatedLand.ownedSize);
+          return updatedLand.ownedSize;
+        }
+      }
+      
+      if (userProfile?.landInfo) {
+        console.log("[LandExpansionModal] Using profile land size:", userProfile.landInfo.ownedSize);
+        setLatestLandSize(userProfile.landInfo.ownedSize);
+        return userProfile.landInfo.ownedSize;
+      }
+      
+      return 50;
+    } catch (error) {
+      console.error("Error fetching latest land size:", error);
+      return selectedLand?.ownedSize || userProfile?.landInfo?.ownedSize || 50;
+    } finally {
+      if (!skipLoadingState) {
+        setIsRefreshing(false);
+      }
+    }
+  };
 
   useEffect(() => {
-    if (isOpen && landToExpand) {
-      const preview = landExpansionService.getExpansionPreview(landToExpand.ownedSize);
-      setPreviewData(preview);
+    let isMounted = true;
+    
+    if (isOpen && !previewData) {
+      const initialLoad = async () => {
+        setIsRefreshing(true);
+        try {
+          const size = await fetchLatestLandSize(true);
+          if (isMounted) {
+            const preview = landExpansionService.getExpansionPreview(size);
+            setPreviewData(preview);
+            console.log('[LandExpansionModal] Initial load with size:', size, 'Preview:', preview);
+            setRefreshTimestamp(Date.now());
+          }
+        } finally {
+          if (isMounted) {
+            setIsRefreshing(false);
+          }
+        }
+      };
+      
+      initialLoad();
     }
-  }, [isOpen, landToExpand]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const refreshData = async () => {
+      if (!manualRefresh) return;
+      
+      const size = await fetchLatestLandSize();
+      const preview = landExpansionService.getExpansionPreview(size);
+      setPreviewData(preview);
+      console.log('[LandExpansionModal] Manual refresh with size:', size, 'Preview:', preview);
+      setManualRefresh(false);
+    };
+    
+    refreshData();
+  }, [refreshTimestamp, manualRefresh]);
 
   const handleExpansion = async () => {
-    if (!currentUser || !landToExpand) {
+    if (!currentUser) {
+      setError('Land information not available');
+      return;
+    }
+    
+    const landToExpand = getLandToExpand();
+    if (!landToExpand) {
       setError('Land information not available');
       return;
     }
 
+    const currentSize = latestLandSize || 
+      selectedLand?.ownedSize || 
+      userProfile?.landInfo?.ownedSize || 50;
+    
     if (!userEconomy || (userEconomy.balance || 0) < previewData.cost) {
       setError(`Insufficient funds. You need ${previewData.cost} 🪙`);
+      return;
+    }
+
+    const MAX_LAND_SIZE = 200; 
+    if (currentSize >= MAX_LAND_SIZE) {
+      setError(`Land has reached the maximum size limit of ${MAX_LAND_SIZE}x${MAX_LAND_SIZE}`);
       return;
     }
 
@@ -55,21 +155,32 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
     setError('');
 
     try {
+      console.log('[LandExpansionModal] Requesting expansion with VERIFIED current size:', currentSize);
+      
       const result = await landExpansionService.requestLandExpansion(
         currentUser.uid,
         landToExpand.centerX,
         landToExpand.centerY,
-        landToExpand.ownedSize
+        currentSize
       );
 
       if (result.success) {
+        console.log('[LandExpansionModal] Expansion successful, new size:', result.newSize);
+        
         await Promise.all([
           refreshProfile(),
           refreshEconomy()
         ]);
+
+        if (result.newSize) {
+          setLatestLandSize(result.newSize);
+          const newPreview = landExpansionService.getExpansionPreview(result.newSize);
+          setPreviewData(newPreview);
+          console.log('[LandExpansionModal] Updated preview with confirmed new size:', result.newSize);
+        }
         
         onSuccess();
-        onClose();
+        setRefreshTimestamp(Date.now());
       } else {
         setError(result.message);
       }
@@ -81,9 +192,18 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
     }
   };
 
+  const triggerManualRefresh = () => {
+    setManualRefresh(true);
+    setRefreshTimestamp(Date.now());
+  };
+
+  const landToExpand = getLandToExpand();
   if (!isOpen || !previewData || !landToExpand) return null;
 
   const canAfford = userEconomy && previewData.canAfford(userEconomy.balance || 0);
+
+  const displaySize = latestLandSize || 
+    (selectedLand?.ownedSize || userProfile?.landInfo?.ownedSize || 50);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -99,12 +219,19 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
         </div>
 
         <div className="space-y-4">
+          {isRefreshing && (
+            <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-3 flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent mr-2"></div>
+              <div className="text-blue-300 text-sm">Refreshing land data...</div>
+            </div>
+          )}
+
           <div className="bg-gray-700 rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-2">
               {landToExpand.displayName || `Land at (${landToExpand.centerX}, ${landToExpand.centerY})`}
             </h3>
             <div className="text-gray-300">
-              <div>Current Size: {previewData.currentSize}×{previewData.currentSize} pixels</div>
+              <div>Current Size: {displaySize}×{displaySize} pixels</div>
               <div>Location: ({landToExpand.centerX}, {landToExpand.centerY})</div>
             </div>
           </div>
@@ -165,10 +292,25 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
             </div>
           </div>
 
+          <button
+            onClick={triggerManualRefresh}
+            disabled={isRefreshing}
+            className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-700 disabled:opacity-50 transition-colors mb-2 flex items-center justify-center gap-2"
+          >
+            {isRefreshing ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                <span>Refreshing...</span>
+              </>
+            ) : (
+              <span>Refresh Land Data</span>
+            )}
+          </button>
+
           {previewData.isAtMaxSize && (
             <div className="bg-yellow-900 border border-yellow-600 rounded-lg p-3">
               <div className="text-yellow-300 text-sm">
-                ⚠️ This expansion will reach the maximum land size limit.
+                ⚠️ This expansion will reach the maximum land size limit of 200×200.
               </div>
             </div>
           )}
@@ -188,7 +330,7 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
             </button>
             <button
               onClick={handleExpansion}
-              disabled={!canAfford || isExpanding || previewData.isAtMaxSize}
+              disabled={!canAfford || isExpanding || previewData.isAtMaxSize || isRefreshing || displaySize >= 200}
               className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
             >
               {isExpanding ? 'Expanding...' : `Expand for ${previewData.cost.toLocaleString()} 🪙`}

@@ -42,7 +42,7 @@ class LandExpansionService {
       const conflicts: string[] = [];
       
       const newHalfSize = Math.floor(newSize / 2);
-      const currentHalfSize = Math.floor(currentSize / 2);
+      // const currentHalfSize = Math.floor(currentSize / 2);
       
       for (const land of allLands) {
         if (land.centerX === centerX && land.centerY === centerY) {
@@ -115,14 +115,16 @@ class LandExpansionService {
           message: `Cannot expand: conflicts with existing lands. ${conflictCheck.conflicts.join(', ')}`
         };
       }
+
+
+
       const result = await runTransaction(fs, async (transaction) => {
         const userRef = doc(fs, 'users', userId);
+        const landRef = doc(fs, 'lands', `${currentCenterX},${currentCenterY}`);
         transaction.update(userRef, {
           'landInfo.ownedSize': newSize,
           lastUpdated: serverTimestamp()
         });
-
-        const landRef = doc(fs, 'lands', `${currentCenterX},${currentCenterY}`);
         transaction.update(landRef, {
           ownedSize: newSize,
           lastExpanded: serverTimestamp()
@@ -171,7 +173,7 @@ class LandExpansionService {
       cost,
       canAfford,
       maxSize: this.MAX_LAND_SIZE,
-      isAtMaxSize: newSize >= this.MAX_LAND_SIZE
+      isAtMaxSize: newSize > this.MAX_LAND_SIZE
     };
   }
 }

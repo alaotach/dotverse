@@ -4,7 +4,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { getUserLands, updateLandName, type UserLandInfo } from '../../src/services/landService';
 
 const LandDropdown: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
@@ -12,6 +12,7 @@ const LandDropdown: React.FC = () => {
   const [editingLandId, setEditingLandId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lastLoadTimeRef = useRef<number>(0);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -28,22 +29,39 @@ const LandDropdown: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isOpen && currentUser && userLands.length === 0) {
-      loadUserLands();
+    if (isOpen && currentUser) {
+      loadUserLands(true);
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, userProfile]);
 
-  const loadUserLands = async () => {
+  const loadUserLands = async (forceRefresh = false) => {
     if (!currentUser) return;
     
+    const now = Date.now();
+    if (!forceRefresh && now - lastLoadTimeRef.current < 5000) {
+      return;
+    }
+
     setIsLoading(true);
     try {
       const lands = await getUserLands(currentUser.uid);
       setUserLands(lands);
+      lastLoadTimeRef.current = now;
+      console.log('[LandDropdown] Loaded lands:', lands);
     } catch (error) {
       console.error('Error loading user lands:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDropdownToggle = () => {
+    const newIsOpen = !isOpen;
+    setIsOpen(newIsOpen);
+    
+    if (newIsOpen && currentUser) {
+      setUserLands([]);
+      loadUserLands(true);
     }
   };
 
@@ -84,7 +102,7 @@ const LandDropdown: React.FC = () => {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleDropdownToggle}
         className="flex items-center text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors"
       >
         My Lands
@@ -106,7 +124,13 @@ const LandDropdown: React.FC = () => {
             </div>
             
             {isLoading ? (
-              <div className="px-4 py-3 text-sm text-gray-500">Loading lands...</div>
+              <div className="px-4 py-3 text-sm text-gray-500 flex items-center">
+                <svg className="animate-spin h-4 w-4 mr-2 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading lands...
+              </div>
             ) : userLands.length > 0 ? (
               <div className="max-h-64 overflow-y-auto">
                 {userLands.map((land) => (
@@ -184,14 +208,23 @@ const LandDropdown: React.FC = () => {
             ) : (
               <div className="px-4 py-3 text-sm text-gray-500">No lands owned</div>
             )}
-            
-            <div className="border-t border-gray-200 mt-2">
+
+            <div className="flex justify-between px-4 py-2 border-t border-gray-200">
+              <button
+                onClick={() => loadUserLands(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 transition-colors flex items-center"
+              >
+                <svg className="h-3 w-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
               <button
                 onClick={() => {
                   navigate('/profile');
                   setIsOpen(false);
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+                className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
               >
                 View All Lands
               </button>

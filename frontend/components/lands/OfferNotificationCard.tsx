@@ -34,7 +34,6 @@ const OfferNotificationCard: React.FC<OfferNotificationCardProps> = ({
     try {
       const result = await landOfferService.respondToOffer(offerId, 'accepted', currentUser.uid);
       if (result.success && result.landSaleCompleted) {
-        // Refresh current user's profile since they just sold their land
         await refreshProfile();
       }
       onAccept();
