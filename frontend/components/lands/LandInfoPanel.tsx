@@ -6,6 +6,8 @@ import type { UserLandInfo } from '../../src/services/landService';
 import type { LandAuction } from '../../src/services/auctionService';
 import MakeOfferModal from './MakeOfferModal';
 import { FiMapPin, FiMaximize, FiDollarSign, FiClock, FiUser, FiEye } from 'react-icons/fi';
+import { landMergingService, type MergeCandidate } from '../../src/services/landMergingService';
+import LandMergeModal from './LandMergeModal';
 
 interface LandInfoPanelProps {
   land: UserLandInfo;
@@ -28,6 +30,20 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
   const { userEconomy } = useEconomy();
   const navigate = useNavigate();
   const [showOfferModal, setShowOfferModal] = useState(false);
+  const [mergeCandidates, setMergeCandidates] = useState<MergeCandidate[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
+
+  useEffect(() => {
+    const loadMergeCandidates = async () => {
+      if (isOwner && currentUser) {
+        const candidates = await landMergingService.findMergeCandidates(currentUser.uid, land.id);
+        setMergeCandidates(candidates);
+      }
+    };
+    
+    loadMergeCandidates();
+  }, [isOwner, currentUser, land.id]);
 
   const handleViewOnCanvas = () => {
     navigate(`/canvas?x=${land.centerX}&y=${land.centerY}`);
@@ -197,6 +213,41 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
                 View on Canvas
               </button>
 
+              {isOwner && mergeCandidates.length > 0 && (
+                <div className="bg-gray-700 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center">
+                    <FiArrowRight className="mr-2" />
+                    Merge Options
+                  </h3>
+                  <div className="space-y-2">
+                    {mergeCandidates.map((candidate, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setSelectedMergeCandidate(candidate);
+                          setShowMergeModal(true);
+                        }}
+                        className="w-full bg-gray-600 hover:bg-gray-500 text-white p-3 rounded-lg transition-colors text-left"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="font-medium">
+                              Merge {candidate.direction} → {candidate.resultingSize}×{candidate.resultingSize}
+                            </div>
+                            <div className="text-gray-300 text-sm">
+                              Combine with adjacent land
+                            </div>
+                          </div>
+                          <div className="text-yellow-400 font-bold">
+                            {candidate.cost} 🪙
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {isOwner && (
                 <>
                   {!land.isAuctioned && onExpand && (
@@ -302,6 +353,23 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
           }}
           onSuccess={() => {
             setShowOfferModal(false);
+          }}
+        />
+      )}
+
+      {showMergeModal && selectedMergeCandidate && (
+        <LandMergeModal
+          isOpen={showMergeModal}
+          onClose={() => {
+            setShowMergeModal(false);
+            setSelectedMergeCandidate(null);
+          }}
+          primaryLandId={land.id}
+          mergeCandidate={selectedMergeCandidate}
+          onSuccess={() => {
+            setShowMergeModal(false);
+            setSelectedMergeCandidate(null);
+            onClose();
           }}
         />
       )}

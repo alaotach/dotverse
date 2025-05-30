@@ -216,6 +216,46 @@ const isLandAvailable = async (
   }
 };
 
+export const getLandMergeHistory = async (landId: string): Promise<any[]> => {
+  try {
+    const landRef = doc(fs, 'lands', landId);
+    const landDoc = await getDoc(landRef);
+    
+    if (landDoc.exists()) {
+      const data = landDoc.data();
+      return data.mergeHistory || [];
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error getting land merge history:', error);
+    return [];
+  }
+};
+
+
+export const updateLandAfterMerge = async (
+  landId: string, 
+  newCenterX: number, 
+  newCenterY: number, 
+  newSize: number,
+  mergedFromIds: string[]
+): Promise<void> => {
+  try {
+    const landRef = doc(fs, 'lands', landId);
+    await updateDoc(landRef, {
+      centerX: newCenterX,
+      centerY: newCenterY,
+      ownedSize: newSize,
+      lastMerged: new Date(),
+      mergedFrom: mergedFromIds
+    });
+  } catch (error) {
+    console.error('Error updating land after merge:', error);
+    throw error;
+  }
+};
+
 export const generateUserLand = async (): Promise<LandInfo> => {
   console.log("Generating new user land...");
   const { minX, maxX, minY, maxY, totalLands, existingLands } = await getLandBoundaries();

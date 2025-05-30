@@ -17,6 +17,7 @@ import { getAllLandsWithAuctionStatus, getUserLands, type UserLandInfo } from '.
 import { useNavigate } from 'react-router-dom';
 import LandExpansionModal from '../components/lands/LandExpansionModal';
 import LandInfoPanel from '../components/lands/LandInfoPanel';
+import { landMergingService, type MergeCandidate } from '../src/services/landMergingService';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -246,6 +247,16 @@ const Canvas = () => {
     y: number;
     land: UserLandInfo | null;
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    landId: string;
+    landInfo: LandInfo;
+    mergeCandidates: MergeCandidate[];
+  } | null>(null);
+
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -457,16 +468,25 @@ const Canvas = () => {
       setIsCapturing(false);
     }
     }, [isCapturing]);
-  const handleLandRightClick = useCallback((event: React.MouseEvent, land: UserLandInfo) => {
+  const handleLandRightClick = async (event: React.MouseEvent, landInfo: LandInfo) => {
     event.preventDefault();
-    event.stopPropagation();
+    
+    if (!currentUser || landInfo.owner !== currentUser.uid) {
+      return;
+    }
+    
+    const landId = `${landInfo.centerX},${landInfo.centerY}`;
+    
+    const mergeCandidates = await landMergingService.findMergeCandidates(currentUser.uid, landId);
     
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
-      land: land
+      landId,
+      landInfo,
+      mergeCandidates
     });
-  }, []);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -2909,37 +2929,83 @@ const Canvas = () => {
       </div>
 
       {contextMenu && (
-        <div 
-          className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 py-2"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            className="w-full text-left px-4 py-2 hover:bg-gray-700 text-white"
-            onClick={() => {
-              if (contextMenu.land) {
-                setSelectedLandInfo(contextMenu.land);
-                setShowLandInfoPanel(true);
-              }
-              setContextMenu(null);
+        <>
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={closeContextMenu}
+          />
+          <div
+            className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 py-2 min-w-48"
+            style={{
+              left: `${Math.min(contextMenu.x, window.innerWidth - 200)}px`,
+              top: `${Math.min(contextMenu.y, window.innerHeight - 150)}px`,
             }}
           >
-            View Land Info
-          </button>
-          {contextMenu.land && contextMenu.land.owner !== currentUser?.uid && (
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-gray-700 text-white"              o
-              nClick={() => {
-                if (contextMenu.land) {
-                  setSelectedLandInfo(contextMenu.land);
-                  setShowLandInfoPanel(true);
-                }
-                setContextMenu(null);
-              }}
-            >
-              Make Offer
-            </button>
-          )}
-        </div>
+            <div className="px-4 py-2 text-gray-300 text-sm font-medium border-b border-gray-600">
+              Land at ({contextMenu.landInfo.centerX}, {contextMenu.landInfo.centerY})
+            </div>
+            
+            {contextMenu.mergeCandidates.length > 0 && (
+              <>
+                <div className="px-4 py-2 text-gray-400 text-xs">
+                  Merge with adjacent lands:
+                </div>
+                {contextMenu.mergeCandidates.map((candidate, index) => (
+                  <button
+                    key={index}
+                    className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center justify-between"
+                    onClick={() => {
+                      setSelectedMergeCandidate(candidate);
+                      setShowMergeModal(true);
+                      closeContextMenu();
+                    }}
+                  >
+                    <span>
+                      Merge {candidate.direction} → {candidate.resultingSize}×{candidate.resultingSize}
+                    </span>
+                    <span className="text-yellow-400 text-xs">
+                      {candidate.cost} 🪙
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+            {contextMenu.mergeCandidates.length === 0 && (
+              <div className="px-4 py-2 text-gray-500 text-sm">
+                No adjacent lands to merge
+              </div>
+            )}
+            
+            <div className="border-t border-gray-600 mt-2">
+              <button
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm"
+                onClick={() => {
+                  navigate(`/profile`);
+                  closeContextMenu();
+                }}
+              >
+                Manage Land
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showMergeModal && selectedMergeCandidate && contextMenu && (
+        <LandMergeModal
+          isOpen={showMergeModal}
+          onClose={() => {
+            setShowMergeModal(false);
+            setSelectedMergeCandidate(null);
+          }}
+          primaryLandId={contextMenu.landId}
+          mergeCandidate={selectedMergeCandidate}
+          onSuccess={() => {
+            setShowMergeModal(false);
+            setSelectedMergeCandidate(null);
+            window.location.reload();
+          }}
+        />
       )}
 
       {selectedLandForExpansion && (
