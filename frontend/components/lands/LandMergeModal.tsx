@@ -80,32 +80,39 @@ const LandMergeModal: React.FC<LandMergeModalProps> = ({
           <div className="bg-gray-700 rounded-lg p-4 mb-4">
             <h3 className="text-white font-semibold mb-3">Merge Preview</h3>
             <div className="flex items-center justify-center space-x-4">
-              <div className="text-center">
+                <div className="text-center">
                 <div className="text-gray-300 text-sm mb-1">Primary Land</div>
                 <div className="bg-blue-600 w-12 h-12 rounded flex items-center justify-center text-white text-xs">
-                  {mergeCandidate.land.ownedSize}×{mergeCandidate.land.ownedSize}
+                    {mergeCandidate.land.ownedSize}×{mergeCandidate.land.ownedSize}
                 </div>
-              </div>
-              
-              <FiArrowRight className="text-gray-400" size={20} />
-              
-              <div className="text-center">
-                <div className="text-gray-300 text-sm mb-1">Adjacent Land ({mergeCandidate.direction})</div>
+                </div>
+                
+                <FiArrowRight className="text-gray-400" size={20} />
+                
+                <div className="text-center">
+                <div className="text-gray-300 text-sm mb-1">
+                    Adjacent Land ({mergeCandidate.direction})
+                </div>
                 <div className="bg-blue-600 w-12 h-12 rounded flex items-center justify-center text-white text-xs">
-                  {mergeCandidate.land.ownedSize}×{mergeCandidate.land.ownedSize}
+                    {mergeCandidate.land.ownedSize}×{mergeCandidate.land.ownedSize}
                 </div>
-              </div>
-              
-              <FiArrowRight className="text-gray-400" size={20} />
-              
-              <div className="text-center">
+                </div>
+                
+                <FiArrowRight className="text-gray-400" size={20} />
+                
+                <div className="text-center">
                 <div className="text-gray-300 text-sm mb-1">Merged Result</div>
-                <div className="bg-green-600 w-16 h-12 rounded flex items-center justify-center text-white text-xs">
-                  {mergeCandidate.resultingSize}×{mergeCandidate.resultingSize}
+                <div className={`w-16 h-12 rounded flex items-center justify-center text-white text-xs ${
+                    mergeCandidate.resultingShape === 'irregular' ? 'bg-orange-600' : 'bg-green-600'
+                }`}>
+                    {mergeCandidate.resultingSize}×{mergeCandidate.resultingSize}
+                    {mergeCandidate.resultingShape === 'irregular' && (
+                    <FiGrid className="ml-1" size={10} />
+                    )}
                 </div>
-              </div>
+                </div>
             </div>
-          </div>
+            </div>
 
           <div className="bg-gray-700 rounded-lg p-4 mb-4">
             <div className="flex items-center justify-between mb-2">
@@ -134,13 +141,19 @@ const LandMergeModal: React.FC<LandMergeModalProps> = ({
         </div>
 
         <div className="mb-6">
-          <h4 className="text-white font-medium mb-2">Merge Details:</h4>
-          <ul className="text-gray-300 text-sm space-y-1">
-            <li>• Combines two adjacent lands into one larger plot</li>
-            <li>• Original lands will be replaced by a single merged land</li>
-            <li>• New land size: {mergeCandidate.resultingSize}×{mergeCandidate.resultingSize} pixels</li>
-            <li>• Direction: Merging to the {mergeCandidate.direction}</li>
-          </ul>
+            <h4 className="text-white font-medium mb-2">Merge Details:</h4>
+            <ul className="text-gray-300 text-sm space-y-1">
+                <li>• Combines two adjacent lands into one larger plot</li>
+                <li>• Original lands will be replaced by a single merged land</li>
+                <li>• New land size: {mergeCandidate.resultingSize}×{mergeCandidate.resultingSize} pixels</li>
+                <li>• Direction: Merging to the {mergeCandidate.direction}</li>
+                {mergeCandidate.resultingShape === 'irregular' && (
+                <>
+                    <li className="text-orange-400">• <strong>Irregular Shape:</strong> Non-rectangular land plot</li>
+                    <li className="text-orange-400">• Higher merge cost due to complex shape</li>
+                </>
+                )}
+            </ul>
         </div>
 
         {error && (

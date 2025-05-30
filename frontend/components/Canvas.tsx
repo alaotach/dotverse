@@ -85,6 +85,8 @@ interface LandInfo {
   isEmpty?: boolean;
   isAuctioned?: boolean;
   auctionId?: string;
+  shape?: 'rectangle' | 'irregular';
+  occupiedCells?: string[];
 }
 
 interface DrawAction {
@@ -2007,23 +2009,41 @@ const Canvas = () => {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isLandsDropdownOpen]);  const cellLandMap = useMemo(() => {
+  }, [isLandsDropdownOpen]);  
+  
+  const cellLandMap = useMemo(() => {
     console.log('[Canvas] Recalculating cellLandMap - allLands count:', allLands.length, 'userProfile.landInfo:', userProfile?.landInfo);
     const newCellLandMap = new Map<string, {landInfo: LandInfo, isCurrentUserLand: boolean}>();
     allLands.forEach(land => {
       const isCurrentUserLand = !!(currentUser && currentUser.uid === land.owner);
       console.log('[Canvas] Processing land at', land.centerX, land.centerY, 'owner:', land.owner, 'isCurrentUserLand:', isCurrentUserLand);
       
-      const halfSize = Math.floor(land.ownedSize / 2);
-      for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
-        for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
+      if (land.occupiedCells && land.occupiedCells.length > 0) {
+        land.occupiedCells.forEach(cellKey => {
+          const [x, y] = cellKey.split(':').map(Number);
           newCellLandMap.set(`${x}:${y}`, { 
-            landInfo: land, 
+            landInfo: {
+              ...land,
+              shape: 'irregular'
+            }, 
             isCurrentUserLand 
           });
+        });
+      } else {
+        const halfSize = Math.floor(land.ownedSize / 2);
+        for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
+          for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
+            newCellLandMap.set(`${x}:${y}`, { 
+              landInfo: {
+                ...land,
+                shape: 'rectangle'
+              }, 
+              isCurrentUserLand 
+            });
+          }
         }
       }
-    });    
+    });   
     if (currentUser && userProfile && userProfile.landInfo) {
       const { centerX, centerY, ownedSize } = userProfile.landInfo;
       const halfOwnedSize = Math.floor(ownedSize / 2);
@@ -2045,8 +2065,10 @@ const Canvas = () => {
                   centerY,
                   ownedSize,
                   owner: currentUser.uid,
-                  displayName: userProfile.displayName || "You"
-                },                isCurrentUserLand: true
+                  displayName: userProfile.displayName || "You",
+                  shape: 'rectangle'
+                },                
+                isCurrentUserLand: true
               });
             }
           }
@@ -2109,22 +2131,37 @@ const Canvas = () => {
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
           const { centerX, centerY, ownedSize } = land;
-          const halfSize = Math.floor(ownedSize / 2);
           
           const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
           const borderWidth = "3px";
           
-          if (worldX === centerX - halfSize) {
-            borderLeft = `${borderWidth} solid ${borderColor}`;
-          }
-          if (worldX === centerX + halfSize) {
-            borderRight = `${borderWidth} solid ${borderColor}`;
-          }
-          if (worldY === centerY - halfSize) {
-            borderTop = `${borderWidth} solid ${borderColor}`;
-          }
-          if (worldY === centerY + halfSize) {
-            borderBottom = `${borderWidth} solid ${borderColor}`;
+          if (shape === 'irregular') {
+            const irregularBorder = `${borderWidth} dashed ${borderColor}`;
+            borderTop = irregularBorder;
+            borderBottom = irregularBorder;
+            borderLeft = irregularBorder;
+            borderRight = irregularBorder;
+            
+            if (color === "#ffffff") {
+              cellStyle.backgroundColor = isCurrentUserLand ? 
+                "rgba(255, 0, 0, 0.05)" : 
+                "rgba(0, 128, 255, 0.05)";
+            }
+          } else {
+            const halfSize = Math.floor(ownedSize / 2);
+            
+            if (worldX === centerX - halfSize) {
+              borderLeft = `${borderWidth} solid ${borderColor}`;
+            }
+            if (worldX === centerX + halfSize) {
+              borderRight = `${borderWidth} solid ${borderColor}`;
+            }
+            if (worldY === centerY - halfSize) {
+              borderTop = `${borderWidth} solid ${borderColor}`;
+            }
+            if (worldY === centerY + halfSize) {
+              borderBottom = `${borderWidth} solid ${borderColor}`;
+            }
           }
         }
         
@@ -2960,8 +2997,14 @@ const Canvas = () => {
                       closeContextMenu();
                     }}
                   >
-                    <span>
+                    <span className="flex items-center">
+                      {candidate.direction === 'irregular' && (
+                        <FiGrid className="mr-1 text-orange-400" size={12} />
+                      )}
                       Merge {candidate.direction} → {candidate.resultingSize}×{candidate.resultingSize}
+                      {candidate.resultingShape === 'irregular' && (
+                        <span className="ml-1 text-orange-400 text-xs">(Irregular)</span>
+                      )}
                     </span>
                     <span className="text-yellow-400 text-xs">
                       {candidate.cost} 🪙

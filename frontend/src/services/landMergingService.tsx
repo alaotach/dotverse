@@ -8,6 +8,13 @@ export interface MergeCandidate {
   direction: 'north' | 'south' | 'east' | 'west';
   resultingSize: number;
   cost: number;
+  mergedBounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+  occupiedCells?: Set<string>;
 }
 
 export interface MergeResult {
@@ -17,54 +24,89 @@ export interface MergeResult {
     centerX: number;
     centerY: number;
     size: number;
+    shape: 'rectangle' | 'irregular';
+    occupiedCells?: string[];
   };
+}
+
+interface landBounds {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
 }
 
 class LandMergingService {
   private readonly BASE_MERGE_COST = 1000;
   private readonly SIZE_MULTIPLIER = 1.2;
+  private readonly IRREGULAR_SHAPE_MULTIPLIER = 1.2;
 
   calculateMergeCost(land1Size: number, land2Size: number): number {
     const totalArea = (land1Size * land1Size) + (land2Size * land2Size);
     const cost = Math.floor(this.BASE_MERGE_COST * Math.pow(totalArea / 2500, this.SIZE_MULTIPLIER));
+    if(isIrregular) {
+      cost = Math.floor(cost*this.IRREGULAR_SHAPE_MULTIPLIER);
+    }
     return Math.max(cost, this.BASE_MERGE_COST);
   }
 
-  private canLandsMerge(land1: UserLandInfo, land2: UserLandInfo): boolean {
-    if (land1.owner !== land2.owner) return false;
+  private getLandCells(land: UserLandInfo): Set<string> {
+    const cells = new Set<string>();
+    const halfSize = Math.floor(land.ownedSize / 2);
     
-    if (land1.ownedSize !== land2.ownedSize) return false;
+    for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
+      for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
+        cells.add(`${x}:${y}`);
+      }
+    }
     
-    if (land1.isAuctioned || land2.isAuctioned) return false;
-    
-    const size = land1.ownedSize;
-    const halfSize = Math.floor(size / 2);
-    
-    const land1Bounds = {
-      minX: land1.centerX - halfSize,
-      maxX: land1.centerX + halfSize,
-      minY: land1.centerY - halfSize,
-      maxY: land1.centerY + halfSize
+    return cells;
+  }
+
+  private getLandBounds(land: UserLandInfo): LandBounds {
+    const halfSize = Math.floor(land.ownedSize / 2);
+    return {
+      minX: land.centerX - halfSize,
+      maxX: land.centerX + halfSize,
+      minY: land.centerY - halfSize,
+      maxY: land.centerY + halfSize
     };
-    
-    const land2Bounds = {
-      minX: land2.centerX - halfSize,
-      maxX: land2.centerX + halfSize,
-      minY: land2.centerY - halfSize,
-      maxY: land2.centerY + halfSize
-    };
-    
+  }
+
+  private areAdjacent(land1: UserLandInfo, land2: UserLandInfo): boolean {
+    const bounds1 = this.getLandBounds(land1);
+    const bounds2 = this.getLandBounds(land2);
+
     const horizontallyAdjacent = (
-      (land1Bounds.maxX === land2Bounds.minX || land1Bounds.minX === land2Bounds.maxX) &&
-      !(land1Bounds.maxY < land2Bounds.minY || land1Bounds.minY > land2Bounds.maxY)
+      (bounds1.maxX + 1 === bounds2.minX || bounds2.maxX + 1 === bounds1.minX) &&
+      !(bounds1.maxY < bounds2.minY || bounds1.minY > bounds2.maxY)
     );
-    
     const verticallyAdjacent = (
-      (land1Bounds.maxY === land2Bounds.minY || land1Bounds.minY === land2Bounds.maxY) &&
-      !(land1Bounds.maxX < land2Bounds.minX || land1Bounds.minX > land2Bounds.maxX)
+      (bounds1.maxY + 1 === bounds2.minY || bounds2.maxY + 1 === bounds1.minY) &&
+      !(bounds1.maxX < bounds2.minX || bounds1.minX > bounds2.maxX)
     );
-    
     return horizontallyAdjacent || verticallyAdjacent;
+  }
+
+  private getMergeDirection(primaryLand: UserLandInfo, secondaryLand: UserLandInfo): 'north' | 'south' | 'east' | 'west' | 'irregular' | null {
+    const bounds1 = this.getLandBounds(primaryLand);
+    const bounds2 = this.getLandBounds(secondaryLand);
+
+    if (primaryLand.ownedSize === secondaryLand.ownedSize) {
+      if(bounds2.minX === bounds1.maxX+1 && bounds1.minY === bounds2.minY && bounds1.maxY === bounds2.maxY){
+        return 'east';
+      }
+      if(bounds2.maxX+1 === bounds1.minX && bounds1.minY === bounds2.minY && bounds1.maxY === bounds2.maxY){
+        return 'west';
+      }
+      if(bounds2.minY === bounds1.maxY+1 && bounds1.minX === bounds2.minX && bounds1.maxX === bounds2.maxX){
+        return 'south';
+      }
+      if(bounds2.maxY+1 === bounds1.minY && bounds1.minX === bounds2.minX && bounds1.maxX === bounds2.maxX){
+        return 'north';
+      }
+    }
+    return 'irregular';
   }
 
   private getMergeDirection(primaryLand: UserLandInfo, secondaryLand: UserLandInfo): 'north' | 'south' | 'east' | 'west' | null {
@@ -83,25 +125,49 @@ class LandMergingService {
     centerX: number;
     centerY: number;
     newSize: number;
+    shape: 'rectangle' | 'irregular';
+    mergedBounds: LandBounds;
+    occupiedCells?: Set<string>;
   } {
-    const size = land1.ownedSize;
+    const bounds1 = this.getLandBounds(land1);
+    const bounds2 = this.getLandBounds(land2);
     
-    const minX = Math.min(land1.centerX, land2.centerX) - Math.floor(size / 2);
-    const maxX = Math.max(land1.centerX, land2.centerX) + Math.floor(size / 2);
-    const minY = Math.min(land1.centerY, land2.centerY) - Math.floor(size / 2);
-    const maxY = Math.max(land1.centerY, land2.centerY) + Math.floor(size / 2);
+    const mergedBounds = {
+      minX: Math.min(bounds1.minX, bounds2.minX),
+      maxX: Math.max(bounds1.maxX, bounds2.maxX),
+      minY: Math.min(bounds1.minY, bounds2.minY),
+      maxY: Math.max(bounds1.maxY, bounds2.maxY)
+    };
     
-    const newCenterX = Math.floor((minX + maxX) / 2);
-    const newCenterY = Math.floor((minY + maxY) / 2);
-    
-    const newWidth = maxX - minX;
-    const newHeight = maxY - minY;
-    const newSize = Math.max(newWidth, newHeight);
+    const newCenterX = Math.floor((mergedBounds.minX + mergedBounds.maxX) / 2);
+    const newCenterY = Math.floor((mergedBounds.minY + mergedBounds.maxY) / 2);
+
+    const newWidth = mergedBounds.maxX - mergedBounds.minX;
+    const newHeight = mergedBounds.maxY - mergedBounds.minY;
+    const totalArea = (land1.ownedSize*land1.ownedSize) + (land2.ownedSize*land2.ownedSize);
+    const boundingRectArea = newWidth*newHeight;
+    const isRectangular = (totalArea ===boundingRectArea) && (newWidth === newHeight);
+
+    let occupiedCells: Set<string> | undefined;
+    let newSize: number;
+
+    if (isRectangular) {
+      newSize = newWidth;
+    } else {
+      occupiedCells = new Set([
+        ...this.getLandCells(land1),
+        ...this.getLandCells(land2)
+      ]);
+      newSize = Math.max(newWidth, newHeight);
+    }
     
     return {
       centerX: newCenterX,
       centerY: newCenterY,
-      newSize: Math.max(newSize, size + 10)
+      newSize,
+      shape: isRectangular ? 'rectangle' : 'irregular',
+      mergedBounds,
+      occupiedCells
     };
   }
 
@@ -123,19 +189,23 @@ class LandMergingService {
           const direction = this.getMergeDirection(targetLand, otherLand);
           if (direction) {
             const merged = this.calculateMergedLandProperties(targetLand, otherLand);
-            const cost = this.calculateMergeCost(targetLand.ownedSize, otherLand.ownedSize);
+            const isIrregular = merged.shape === 'irregular';
+            const cost = this.calculateMergeCost(targetLand.ownedSize, otherLand.ownedSize, isIrregular);
             
             candidates.push({
               land: otherLand,
               direction,
               resultingSize: merged.newSize,
-              cost
+              resultingShape: merged.shape,
+              cost,
+              mergedBounds: merged.mergedBounds,
+              occupiedCells: merged.occupiedCells
             });
           }
         }
       }
       
-      return candidates;
+      return candidates.sort((a, b) => a.cost - b.cost);
     } catch (error) {
       console.error('Error finding merge candidates:', error);
       return [];
@@ -166,9 +236,11 @@ class LandMergingService {
         };
       }
       
-      const cost = this.calculateMergeCost(primaryLand.ownedSize, secondaryLand.ownedSize);
-      const userEconomy = await economyService.getUserEconomy(userId);
+      const mergedProperties = this.calculateMergedLandProperties(primaryLand, secondaryLand);
+      const isIrregular = mergedProperties.shape === 'irregular';
+      const cost = this.calculateMergeCost(primaryLand.ownedSize, secondaryLand.ownedSize, isIrregular);
       
+      const userEconomy = await economyService.getUserEconomy(userId);
       if (!userEconomy || (userEconomy.balance || 0) < cost) {
         return {
           success: false,
@@ -176,14 +248,13 @@ class LandMergingService {
         };
       }
       
-      const mergedProperties = this.calculateMergedLandProperties(primaryLand, secondaryLand);
-      
       const conflictCheck = await this.checkMergeConflicts(
         userId,
         mergedProperties.centerX,
         mergedProperties.centerY,
         mergedProperties.newSize,
-        [primaryLandId, secondaryLandId]
+        [primaryLandId, secondaryLandId],
+        mergedProperties.occupiedCells
       );
       
       if (!conflictCheck.success) {
@@ -204,13 +275,20 @@ class LandMergingService {
         }
         
         const primaryLandRef = doc(fs, 'lands', primaryLandId);
-        transaction.update(primaryLandRef, {
+        const updateData: any = {
           centerX: mergedProperties.centerX,
           centerY: mergedProperties.centerY,
           ownedSize: mergedProperties.newSize,
           lastMerged: new Date(),
-          mergedFrom: [primaryLandId, secondaryLandId]
-        });
+          mergedFrom: [primaryLandId, secondaryLandId],
+          shape: mergedProperties.shape
+        };
+        
+        if (mergedProperties.occupiedCells) {
+          updateData.occupiedCells = Array.from(mergedProperties.occupiedCells);
+        }
+
+        transaction.update(primaryLandRef, updateData);
         
         const secondaryLandRef = doc(fs, 'lands', secondaryLandId);
         transaction.delete(secondaryLandRef);
@@ -226,19 +304,22 @@ class LandMergingService {
           balance: currentBalance - cost
         });
         
-        return mergedProperties;
+        return {
+          ...mergedProperties,
+          occupiedCells: mergedProperties.occupiedCells ? Array.from(mergedProperties.occupiedCells) : undefined
+        };
       });
       
       await economyService.recordTransaction(
         userId,
         'purchase',
         -cost,
-        `Merged lands at (${primaryLand.centerX}, ${primaryLand.centerY}) and (${secondaryLand.centerX}, ${secondaryLand.centerY})`
+        `Merged lands at (${primaryLand.centerX}, ${primaryLand.centerY}) and (${secondaryLand.centerX}, ${secondaryLand.centerY}) - ${isIrregular ? 'Irregular' : 'Regular'} merge`
       );
       
       return {
         success: true,
-        message: `Successfully merged lands! New size: ${result.newSize}×${result.newSize}`,
+        message: `Successfully merged lands! New ${isIrregular ? 'irregular' : 'rectangular'} land: ${result.newSize}×${result.newSize}`,
         newLandInfo: result
       };
       
@@ -250,43 +331,56 @@ class LandMergingService {
       };
     }
   }
+
+
   private async checkMergeConflicts(
     userId: string,
     newCenterX: number,
     newCenterY: number,
     newSize: number,
-    excludeLandIds: string[]
+    excludeLandIds: string[],
+    occupiedCells?: Set<string>
   ): Promise<MergeResult> {
     try {
       const allLands = await getUserLands(userId);
-      const halfSize = Math.floor(newSize / 2);
       
-      const newBounds = {
-        minX: newCenterX - halfSize,
-        maxX: newCenterX + halfSize,
-        minY: newCenterY - halfSize,
-        maxY: newCenterY + halfSize
-      };
-      
-      for (const land of allLands) {
-        if (excludeLandIds.includes(land.id)) continue;
-        
-        const landHalfSize = Math.floor(land.ownedSize / 2);
-        const landBounds = {
-          minX: land.centerX - landHalfSize,
-          maxX: land.centerX + landHalfSize,
-          minY: land.centerY - landHalfSize,
-          maxY: land.centerY + landHalfSize
+      if (occupiedCells) {
+        for (const land of allLands) {
+          if (excludeLandIds.includes(land.id)) continue;
+          
+          const landCells = this.getLandCells(land);
+          
+          for (const cell of occupiedCells) {
+            if (landCells.has(cell)) {
+              return {
+                success: false,
+                message: `Merge would conflict with existing land at (${land.centerX}, ${land.centerY})`
+              };
+            }
+          }
+        }
+      } else {
+        const halfSize = Math.floor(newSize / 2);
+        const newBounds = {
+          minX: newCenterX - halfSize,
+          maxX: newCenterX + halfSize,
+          minY: newCenterY - halfSize,
+          maxY: newCenterY + halfSize
         };
         
-        if (!(newBounds.maxX < landBounds.minX || 
-              newBounds.minX > landBounds.maxX || 
-              newBounds.maxY < landBounds.minY || 
-              newBounds.minY > landBounds.maxY)) {
-          return {
-            success: false,
-            message: `Merge would conflict with existing land at (${land.centerX}, ${land.centerY})`
-          };
+        for (const land of allLands) {
+          if (excludeLandIds.includes(land.id)) continue;
+          const landBounds = this.getLandBounds(land);
+          
+          if (!(newBounds.maxX < landBounds.minX || 
+                newBounds.minX > landBounds.maxX || 
+                newBounds.maxY < landBounds.minY || 
+                newBounds.minY > landBounds.maxY)) {
+            return {
+              success: false,
+              message: `Merge would conflict with existing land at (${land.centerX}, ${land.centerY})`
+            };
+          }
         }
       }
       

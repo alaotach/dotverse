@@ -231,11 +231,24 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
                       >
                         <div className="flex justify-between items-center">
                           <div>
-                            <div className="font-medium">
-                              Merge {candidate.direction} → {candidate.resultingSize}×{candidate.resultingSize}
+                            <div className="font-medium flex items-center">
+                              {candidate.direction === 'irregular' ? (
+                                <>
+                                  <FiGrid className="mr-1 text-orange-400" size={16} />
+                                  Irregular merge → {candidate.resultingSize}×{candidate.resultingSize}
+                                </>
+                              ) : (
+                                `Merge ${candidate.direction} → ${candidate.resultingSize}×${candidate.resultingSize}`
+                              )}
+                              {candidate.resultingShape === 'irregular' && (
+                                <span className="ml-2 text-orange-400 text-xs">(Irregular Shape)</span>
+                              )}
                             </div>
                             <div className="text-gray-300 text-sm">
-                              Combine with adjacent land
+                              {candidate.resultingShape === 'irregular' 
+                                ? 'Creates an irregular-shaped land plot'
+                                : 'Combine with adjacent land'
+                              }
                             </div>
                           </div>
                           <div className="text-yellow-400 font-bold">
