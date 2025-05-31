@@ -17,6 +17,70 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
 import { stickerService, type Sticker, type StickerPack } from '../src/services/stickerService';
+import { FaPalette } from 'react-icons/fa';
+
+interface Theme {
+  id: string;
+  name: string;
+  defaultPixelColor: string;
+  backgroundColor: string;
+  gridLineColor: string;
+  toolbarTextColor: string;
+  toolbarBgColor: string;
+  emptyLandFillColorCurrentUser: string;
+  emptyLandFillColorOtherUser: string;
+  debugRestrictedCellColor: string;
+  cursorColor?: string;
+  cellTextColor?: string;
+}
+
+const PREDEFINED_THEMES: Theme[] = [
+  {
+    id: 'classic_white',
+    name: 'Classic White',
+    defaultPixelColor: '#ffffff',
+    backgroundColor: '#f0f0f0',
+    gridLineColor: 'rgba(200, 200, 200, 0.3)',
+    toolbarTextColor: '#000000',
+    toolbarBgColor: '#ffffff',
+    emptyLandFillColorCurrentUser: "rgba(255, 0, 0, 0.05)",
+    emptyLandFillColorOtherUser: "rgba(0, 128, 255, 0.05)",
+    debugRestrictedCellColor: "rgba(255, 0, 0, 0.1)",
+    cursorColor: '#000000',
+    cellTextColor: '#000000',
+  },
+  {
+    id: 'dark_mode',
+    name: 'Dark Mode',
+    defaultPixelColor: '#2e2e2e',
+    backgroundColor: '#121212',
+    gridLineColor: 'rgba(80, 80, 80, 0.7)',
+    toolbarTextColor: '#ffffff',
+    toolbarBgColor: '#333333',
+    emptyLandFillColorCurrentUser: "rgba(255, 80, 80, 0.15)",
+    emptyLandFillColorOtherUser: "rgba(80, 150, 255, 0.15)",
+    debugRestrictedCellColor: "rgba(255, 80, 80, 0.2)",
+    cursorColor: '#ffffff',
+    cellTextColor: '#cccccc',
+  },
+  {
+    id: 'blueprint',
+    name: 'Blueprint',
+    defaultPixelColor: '#003366',
+    backgroundColor: '#002244',
+    gridLineColor: 'rgba(100, 150, 200, 0.4)',
+    toolbarTextColor: '#ffffff',
+    toolbarBgColor: '#004488',
+    emptyLandFillColorCurrentUser: "rgba(255, 215, 0, 0.1)",
+    emptyLandFillColorOtherUser: "rgba(173, 216, 230, 0.1)",
+    debugRestrictedCellColor: "rgba(255, 165, 0, 0.15)",
+    cursorColor: '#FFFF00',
+    cellTextColor: '#ADD8E6',
+  },
+];
+
+const DEFAULT_THEME_ID = 'classic_white';
+const LOCAL_STORAGE_THEME_KEY = 'dotverse_current_theme_id';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -52,7 +116,6 @@ const LOCAL_STORAGE_VIEWPORT_X_KEY = 'dotverse_viewport_x';
 const LOCAL_STORAGE_VIEWPORT_Y_KEY = 'dotverse_viewport_y';
 const LOCAL_STORAGE_ZOOM_LEVEL_KEY = 'dotverse_zoom_level';
 
-const GRID_LINE_COLOR = "rgba(200, 200, 200, 0.3)";
 const SHOW_GRID_LINES = true;
 const GRID_LINE_THRESHOLD = 0.6;
 
@@ -181,6 +244,28 @@ const Canvas = () => {
   const [selectedStickerPack, setSelectedStickerPack] = useState<string>('');
   const [stickerPacks, setStickerPacks] = useState<StickerPack[]>([]);
   const [stickerOverlays, setStickerOverlays] = useState<Map<string, { sticker: Sticker; x: number; y: number }>>(new Map());
+  const [currentThemeId, setCurrentThemeId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(LOCAL_STORAGE_THEME_KEY) || DEFAULT_THEME_ID;
+    }
+    return DEFAULT_THEME_ID;
+  });
+
+  const currentTheme = useMemo(() => {
+    return PREDEFINED_THEMES.find(theme => theme.id === currentThemeId) || PREDEFINED_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!;
+  }, [currentThemeId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_THEME_KEY, currentThemeId);
+      document.documentElement.style.setProperty('--canvas-bg-color', currentTheme.backgroundColor);
+      document.documentElement.style.setProperty('--canvas-default-pixel-color', currentTheme.defaultPixelColor);
+      document.documentElement.style.setProperty('--canvas-grid-line-color', currentTheme.gridLineColor);
+      document.documentElement.style.setProperty('--toolbar-bg-color', currentTheme.toolbarBgColor);
+      document.documentElement.style.setProperty('--toolbar-text-color', currentTheme.toolbarTextColor);
+    }
+  }, [currentThemeId, currentTheme]);
+
 
   useEffect(() => {
     const loadStickerPacks = async () => {
@@ -224,7 +309,6 @@ const Canvas = () => {
     
   const userLandBorderColor = "rgba(255, 0, 0, 0.7)"; 
   const otherLandBorderColor = "rgba(0, 128, 255, 0.5)";
-  const emptyLandFillColor = "rgba(200, 200, 200, 0.2)";
 
   const [viewportCellWidth, setViewportCellWidth] = useState(100); 
   const [viewportCellHeight, setViewportCellHeight] = useState(100);
@@ -1016,8 +1100,9 @@ const Canvas = () => {
     setRedoHistory([]);
   }, []);
 
-  const floodFill = useCallback((startX: number, startY: number, newColor: string) => {
-    const targetColor = masterGridDataRef.current.get(getPixelKey(startX, startY)) || "#ffffff";
+  const floodFill = useCallback((startX: number, startY: number, newColor: string, targetColorOverride?: string) => {
+    const pixelKeyStart = getPixelKey(startX, startY);
+    const targetColor = targetColorOverride !== undefined ? targetColorOverride : (masterGridDataRef.current.get(pixelKeyStart) || currentTheme.defaultPixelColor);
     
     if (targetColor === newColor) {
       console.log('Fill cancelled: target color same as new color');
@@ -1044,7 +1129,7 @@ const Canvas = () => {
       
       if (!canDrawAtPoint(x, y)) continue;
       
-      const currentColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+      const currentColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor;
       
       if (currentColor !== targetColor) continue;
       
@@ -1118,7 +1203,7 @@ const Canvas = () => {
     
     setLastPlaced(Date.now());
     
-  }, [canDrawAtPoint, getPixelKey, selectedColor, addToHistory]);
+  }, [canDrawAtPoint, getPixelKey, selectedColor, addToHistory, currentTheme.defaultPixelColor]);
 
 
   const handleColorChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1328,12 +1413,13 @@ const Canvas = () => {
 
     if (isFillActive) {
       const fillColor = selectedColor;
-      floodFill(worldX, worldY, fillColor);
+      const clickedPixelColor = masterGridDataRef.current.get(getPixelKey(worldX, worldY)) || currentTheme.defaultPixelColor;
+      floodFill(worldX, worldY, fillColor, clickedPixelColor);
       trackPixel(worldX, worldY, fillColor);
       return;
     }
     
-    const color = isEraserActive ? "#ffffff" : selectedColor;
+    const color = isEraserActive ? currentTheme.defaultPixelColor : selectedColor;
 
     if (isEraserActive && eraserSize > 0) {
       const halfSize = Math.floor(eraserSize / 2);
@@ -1346,7 +1432,7 @@ const Canvas = () => {
           const targetY = worldY + dy;
           if (canDrawAtPoint(targetX, targetY)) {
             const pixelKey = getPixelKey(targetX, targetY);
-            const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+            const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor;
             
             if (oldColor !== color) {
               drawingSessionPixelsRef.current.push({ x: targetX, y: targetY, oldColor, newColor: color });
@@ -1405,7 +1491,7 @@ const Canvas = () => {
           const targetY = worldY + dy;
           if (canDrawAtPoint(targetX, targetY)) {
             const pixelKey = getPixelKey(targetX, targetY);
-            const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+            const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor;
             
             if (oldColor !== color) {
               drawingSessionPixelsRef.current.push({ x: targetX, y: targetY, oldColor, newColor: color });
@@ -1467,7 +1553,7 @@ const Canvas = () => {
       linePixels.forEach(pixel => {
         if (canDrawAtPoint(pixel.x, pixel.y)) {
           const pixelKey = getPixelKey(pixel.x, pixel.y);
-          const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+          const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor
           
           if (oldColor !== color) {
             drawingSessionPixelsRef.current.push({ x: pixel.x, y: pixel.y, oldColor, newColor: color });
@@ -1512,7 +1598,7 @@ const Canvas = () => {
     }
     
     const pixelKey = getPixelKey(worldX, worldY);
-    const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+    const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor
     
     if (oldColor !== color) {
       drawingSessionPixelsRef.current.push({ x: worldX, y: worldY, oldColor, newColor: color });
@@ -1529,7 +1615,7 @@ const Canvas = () => {
         return newGrid;
       });
 
-      if (isStickerMode && selectedStickerPack && color !== "#ffffff") {
+      if (isStickerMode && selectedStickerPack && color !== currentTheme.defaultPixelColor) {
         const randomSticker = stickerService.getRandomSticker(selectedStickerPack);
         if (randomSticker) {
           setStickerOverlays(prev => {
@@ -1560,7 +1646,7 @@ const Canvas = () => {
     
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel, isStickerMode, selectedStickerPack, getPixelKey]);
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel, isStickerMode, selectedStickerPack, getPixelKey, currentTheme]);
 
   const clearCanvas = useCallback(async () => {
     if (!currentUser || !userProfile?.landInfo) {
@@ -1579,10 +1665,10 @@ const Canvas = () => {
       for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
         for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
           const pixelKey = getPixelKey(x, y);
-          const oldColor = masterGridDataRef.current.get(pixelKey) || "#ffffff";
+          const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor;
           
-          if (oldColor !== "#ffffff") {
-            actionPixels.push({ x, y, oldColor, newColor: "#ffffff" });
+          if (oldColor !== currentTheme.defaultPixelColor) {
+            actionPixels.push({ x, y, oldColor, newColor: currentTheme.defaultPixelColor });
           }
         }
       }
@@ -1605,12 +1691,12 @@ const Canvas = () => {
       for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
         for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
           const pixelKey = getPixelKey(x, y);
-          updatedGrid.set(pixelKey, "#ffffff");
-          
-          masterGridDataRef.current.set(pixelKey, "#ffffff");
+          updatedGrid.set(pixelKey, currentTheme.defaultPixelColor);
+
+          masterGridDataRef.current.set(pixelKey, currentTheme.defaultPixelColor);
           optimisticUpdatesMapRef.current.set(pixelKey, {
             timestamp: Date.now(),
-            color: "#ffffff"
+            color: currentTheme.defaultPixelColor
           });
           setStickerOverlays(prev => {
             const newOverlays = new Map(prev);
@@ -1637,7 +1723,7 @@ const Canvas = () => {
     } finally {
       setIsClearing(false);
     }
-  }, [currentUser, userProfile, getPixelKey, grid, addToHistory]);  
+  }, [currentUser, userProfile, getPixelKey, grid, addToHistory, currentTheme.defaultPixelColor]);  
   
   const bind = useGesture(
     {
@@ -2050,9 +2136,9 @@ const Canvas = () => {
         for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
           for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
             const pixelKey = getPixelKey(x, y);
-            newGrid.set(pixelKey, "#ffffff");
-            
-            masterGridDataRef.current.set(pixelKey, "#ffffff");
+            newGrid.set(pixelKey, currentTheme.defaultPixelColor);
+
+            masterGridDataRef.current.set(pixelKey, currentTheme.defaultPixelColor);
             setStickerOverlays(prev => {
               const newOverlays = new Map(prev);
               newOverlays.delete(pixelKey);
@@ -2071,7 +2157,7 @@ const Canvas = () => {
       masterGridDataRef.current.clear();
       optimisticUpdatesMapRef.current.clear();
     }
-  }, [getPixelKey]);
+  }, [getPixelKey, currentTheme.defaultPixelColor]);
 
   websocketService.on('canvas_reset', handleCanvasReset);  const handleLandOwnershipChange = useCallback(async (data: any) => {
     console.log('[Canvas] Land ownership changed, refreshing land data:', data);
@@ -2235,7 +2321,7 @@ const Canvas = () => {
         const worldY = screenY + startWorldY;
         const pixelKey = getPixelKey(worldX, worldY);
         
-        const color = grid.get(pixelKey) || "#ffffff";
+        const color = grid.get(pixelKey) || currentTheme.defaultPixelColor;
         
         const isDrawableHere = !!currentUser && !!userProfile && canDrawAtPoint(worldX, worldY);
         
@@ -2255,7 +2341,7 @@ const Canvas = () => {
         let borderRight = '';
         
         if (showGridLines) {
-          const gridBorder = `1px solid ${GRID_LINE_COLOR}`;
+          const gridBorder = `1px solid ${currentTheme.gridLineColor}`;
           borderTop = gridBorder;
           borderBottom = gridBorder;
           borderLeft = gridBorder;
@@ -2277,7 +2363,7 @@ const Canvas = () => {
             borderLeft = irregularBorder;
             borderRight = irregularBorder;
             
-            if (color === "#ffffff") {
+            if (color === currentTheme.defaultPixelColor) {
               cellStyle.backgroundColor = isCurrentUserLand ? 
                 "rgba(255, 0, 0, 0.05)" : 
                 "rgba(0, 128, 255, 0.05)";
@@ -2306,7 +2392,7 @@ const Canvas = () => {
         if (borderRight) cellStyle.borderRight = borderRight;
           
         if (debugMode && !isDrawableHere && currentUser && userProfile) {
-          cellStyle.backgroundColor = color === "#ffffff" ? 
+          cellStyle.backgroundColor = color === currentTheme.defaultPixelColor ? 
             "rgba(255, 0, 0, 0.1)" : 
             color;
           cellStyle.opacity = 0.7;
@@ -2351,7 +2437,8 @@ const Canvas = () => {
     zoomLevel,
     initialDataLoaded,
     getPixelKey,
-    showGridLines
+    showGridLines,
+    currentTheme
   ]);
 
   
@@ -2399,6 +2486,7 @@ const Canvas = () => {
       {...bind()}
       className="relative w-screen h-screen overflow-hidden bg-gray-200 cursor-default"
       style={{ 
+        backgroundColor: currentTheme.backgroundColor,
         touchAction: "none",
         WebkitOverflowScrolling: "touch",
         overscrollBehavior: "none",
@@ -2449,8 +2537,9 @@ const Canvas = () => {
       onTouchStart={(e) => e.stopPropagation()}
       onTouchEnd={(e) => e.stopPropagation()}
       id = "data-toolbar"
+      style={{ backgroundColor: currentTheme.toolbarBgColor, color: currentTheme.toolbarTextColor }}
       >
-        <label htmlFor="colorPicker" className="mr-1">Color:</label>
+        <label htmlFor="colorPicker" className="mr-1" style={{ color: currentTheme.toolbarTextColor }}>Color:</label>
         <input
           type="color"
           id="colorPicker"
@@ -2462,6 +2551,29 @@ const Canvas = () => {
           onTouchEnd={(e) => e.stopPropagation()}
           className="h-8 w-14 mr-4"
         />
+
+        <div className="flex items-center ml-2">
+          <label htmlFor="themeSelector" className="mr-1 text-sm" style={{ color: currentTheme.toolbarTextColor }}>Theme:</label>
+          <select
+            id="themeSelector"
+            value={currentThemeId}
+            onChange={(e) => setCurrentThemeId(e.target.value)}
+            className="p-1 rounded text-sm"
+            style={{ 
+              backgroundColor: currentTheme.toolbarBgColor,
+              color: currentTheme.toolbarTextColor, 
+              border: `1px solid ${currentTheme.gridLineColor}` 
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {PREDEFINED_THEMES.map(theme => (
+              <option key={theme.id} value={theme.id} style={{ backgroundColor: theme.toolbarBgColor, color: theme.toolbarTextColor }}>
+                {theme.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {!isEraserActive && (
           <div className="flex items-center ml-2 bg-blue-50 p-2 rounded-md border border-blue-200"
@@ -2723,16 +2835,17 @@ const Canvas = () => {
               top: `${mousePosition.y - (eraserSize * effectiveCellSize) / 2}px`,
               width: `${eraserSize * effectiveCellSize}px`,
               height: `${eraserSize * effectiveCellSize}px`,
-              border: '2px solid rgba(255, 0, 0, 0.8)',
-              backgroundColor: 'rgba(255, 0, 0, 0.2)', 
+              border: `2px solid ${currentTheme.cursorColor || 'rgba(255,0,0,0.8)'}`,
+              backgroundColor: `${currentTheme.cursorColor ? currentTheme.cursorColor + '33' : 'rgba(255,0,0,0.2)'}`,
               borderRadius: '4px',
               display: mousePosition.x === 0 && mousePosition.y === 0 ? 'none' : 'block'
             }}
           >
             <div 
-              className="absolute top-0 left-0 text-xs text-black font-bold px-1"
+              className="absolute top-0 left-0 text-xs font-bold px-1"
               style={{
                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                color: currentTheme.cursorColor && currentTheme.cursorColor !== '#ffffff' ? currentTheme.cursorColor : '#000000',
                 borderRadius: '2px'
               }}
             >
@@ -2749,7 +2862,7 @@ const Canvas = () => {
               top: `${mousePosition.y - (brushSize * effectiveCellSize) / 2}px`,
               width: `${brushSize * effectiveCellSize}px`,
               height: `${brushSize * effectiveCellSize}px`,
-              border: `2px solid ${selectedColor}`,
+              border: `2px solid ${selectedColor === currentTheme.defaultPixelColor ? (currentTheme.cursorColor || selectedColor) : selectedColor}`,
               backgroundColor: `${selectedColor}33`,
               borderRadius: '4px',
               boxSizing: 'border-box'
@@ -2762,7 +2875,7 @@ const Canvas = () => {
                 left: '2px',
                 fontSize: '11px',
                 fontWeight: 'bold',
-                color: selectedColor === '#000000' ? '#fff' : '#000',
+                color: selectedColor === '#000000' || selectedColor === currentTheme.defaultPixelColor ? (currentTheme.cursorColor || '#fff') : '#000',
                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                 padding: '1px 3px',
                 borderRadius: '2px',
@@ -2826,7 +2939,9 @@ const Canvas = () => {
           title="Force synchronization with server"
         >
           Sync
-        </button>        {currentUser && userProfile?.landInfo && (
+        </button>        
+        
+        {currentUser && userProfile?.landInfo && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -3116,7 +3231,7 @@ const Canvas = () => {
         </button>
         
         {debugMode && currentUser && userProfile?.landInfo && (
-          <div className="text-xs bg-gray-100 p-1 rounded">
+          <div className="text-xs bg-gray-100 p-1 rounded" style={{backgroundColor: currentTheme.toolbarBgColor, color: currentTheme.toolbarTextColor}}>
             Center: ({userProfile.landInfo.centerX}, {userProfile.landInfo.centerY}), 
             Size: {userProfile.landInfo.ownedSize}x{userProfile.landInfo.ownedSize}
           </div>        )}
