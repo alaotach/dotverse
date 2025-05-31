@@ -18,6 +18,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
 import { stickerService, type Sticker, type StickerPack } from '../src/services/stickerService';
 import { FaPalette } from 'react-icons/fa';
+import { ssrDynamicImportKey } from "vite/runtime";
 
 interface Theme {
   id: string;

@@ -6,6 +6,9 @@ import { useEconomy } from '../../src/context/EconomyContext';
 import LandDropdown from './LandDropdown';
 import NotificationDropdown from '../notifications/NotificationDropdown';
 import ChatButton from '../chat/ChatButton';
+import { useMusic } from '../../src/context/MusicContext';
+import { FiMusic } from 'react-icons/fi';
+import { musicTracks } from '../../src/services/musicService';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -14,6 +17,7 @@ const Navbar: React.FC = () => {
   const [pixelCount, setPixelCount] = useState(0);
   const isAdmin = userProfile?.role === 'admin' || userProfile?.email === 'admin@dotverse.com';
   const { userEconomy } = useEconomy();
+  const { isPlayerVisible, togglePlayerVisibility, isPlaying } = useMusic();
 
   useEffect(() => {
   const handlePixelStats = (stats: { pixelCount: number }) => {
@@ -85,6 +89,15 @@ const Navbar: React.FC = () => {
                   </Link>
                   <NotificationDropdown />
                   <ChatButton />
+                  <button
+                    onClick={togglePlayerVisibility}
+                    className={`p-2 rounded-full transition-colors ${
+                      isPlayerVisible ? (isPlaying ? 'text-purple-400 hover:text-purple-300 bg-gray-700' : 'text-gray-100 hover:text-white bg-gray-700') : 'text-gray-400 hover:text-white'
+                    }`}
+                    title={isPlayerVisible ? "Hide Music Player" : "Show Music Player"}
+                  >
+                    <FiMusic size={20} />
+                  </button>
                   <LandDropdown />
                   <Link to="/profile" className="flex items-center text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">
                     {userProfile?.photoURL ? (

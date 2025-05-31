@@ -18,6 +18,8 @@ import NotificationCenter from '../components/notifications/NotificationCenter';
 import { NotificationProvider } from './context/NotificationContext';
 import { ChatProvider } from './context/ChatContext';
 import ChatPanel from '../components/chat/ChatPanel';
+import { MusicProvider, useMusic } from './context/MusicContext';
+import Controls from '../components/music/Controls';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -29,6 +31,13 @@ const ProtectedRoute: React.FC<{
   
   return currentUser ? <>{element}</> : <Navigate to="/login" replace />;
 };
+
+const MusicPlayerGlobalRenderer: React.FC = () => {
+  const { currentUser } = useAuth();
+  const { isPlayerVisible } = useMusic(); // Use context to decide if player UI should be rendered
+  if (!currentUser || !isPlayerVisible) return null; // Only render if user logged in AND player is set to be visible
+  return <Controls />;
+}
 
 
 function AppContent() {
@@ -95,7 +104,10 @@ function App() {
         <EconomyProvider>
           <NotificationProvider>
             <ChatProvider>
-              <AppContent />
+              <MusicProvider>
+                <AppContent />
+                <MusicPlayerGlobalRenderer />
+              </MusicProvider>
             </ChatProvider>
           </NotificationProvider>
         </EconomyProvider>
