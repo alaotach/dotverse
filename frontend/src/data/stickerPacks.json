@@ -1,0 +1,317 @@
+[
+  {
+    "id": "kawaii",
+    "name": "Kawaii",
+    "description": "51 awesome stickers in the kawaii pack",
+    "thumbnailUrl": "/src/assets/stickers/kawaii/0 preview.png",
+    "stickers": [
+      {
+        "id": "kawaii_0",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/0 preview.png",
+        "name": "0 Preview"
+      },
+      {
+        "id": "kawaii_1",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/1.png",
+        "name": "1"
+      },
+      {
+        "id": "kawaii_2",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/10.png",
+        "name": "10"
+      },
+      {
+        "id": "kawaii_3",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/11.png",
+        "name": "11"
+      },
+      {
+        "id": "kawaii_4",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/12.png",
+        "name": "12"
+      },
+      {
+        "id": "kawaii_5",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/13.png",
+        "name": "13"
+      },
+      {
+        "id": "kawaii_6",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/14.png",
+        "name": "14"
+      },
+      {
+        "id": "kawaii_7",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/15.png",
+        "name": "15"
+      },
+      {
+        "id": "kawaii_8",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/16.png",
+        "name": "16"
+      },
+      {
+        "id": "kawaii_9",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/17.png",
+        "name": "17"
+      },
+      {
+        "id": "kawaii_10",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/18.png",
+        "name": "18"
+      },
+      {
+        "id": "kawaii_11",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/19.png",
+        "name": "19"
+      },
+      {
+        "id": "kawaii_12",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/2.png",
+        "name": "2"
+      },
+      {
+        "id": "kawaii_13",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/20.png",
+        "name": "20"
+      },
+      {
+        "id": "kawaii_14",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/21.png",
+        "name": "21"
+      },
+      {
+        "id": "kawaii_15",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/22.png",
+        "name": "22"
+      },
+      {
+        "id": "kawaii_16",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/23.png",
+        "name": "23"
+      },
+      {
+        "id": "kawaii_17",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/24.png",
+        "name": "24"
+      },
+      {
+        "id": "kawaii_18",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/25.png",
+        "name": "25"
+      },
+      {
+        "id": "kawaii_19",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/26.png",
+        "name": "26"
+      },
+      {
+        "id": "kawaii_20",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/27.png",
+        "name": "27"
+      },
+      {
+        "id": "kawaii_21",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/28.png",
+        "name": "28"
+      },
+      {
+        "id": "kawaii_22",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/29.png",
+        "name": "29"
+      },
+      {
+        "id": "kawaii_23",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/3.png",
+        "name": "3"
+      },
+      {
+        "id": "kawaii_24",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/30.png",
+        "name": "30"
+      },
+      {
+        "id": "kawaii_25",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/31.png",
+        "name": "31"
+      },
+      {
+        "id": "kawaii_26",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/32.png",
+        "name": "32"
+      },
+      {
+        "id": "kawaii_27",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/33.png",
+        "name": "33"
+      },
+      {
+        "id": "kawaii_28",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/34.png",
+        "name": "34"
+      },
+      {
+        "id": "kawaii_29",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/35.png",
+        "name": "35"
+      },
+      {
+        "id": "kawaii_30",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/36.png",
+        "name": "36"
+      },
+      {
+        "id": "kawaii_31",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/37.png",
+        "name": "37"
+      },
+      {
+        "id": "kawaii_32",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/38.png",
+        "name": "38"
+      },
+      {
+        "id": "kawaii_33",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/39.png",
+        "name": "39"
+      },
+      {
+        "id": "kawaii_34",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/4.png",
+        "name": "4"
+      },
+      {
+        "id": "kawaii_35",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/40.png",
+        "name": "40"
+      },
+      {
+        "id": "kawaii_36",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/41.png",
+        "name": "41"
+      },
+      {
+        "id": "kawaii_37",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/42.png",
+        "name": "42"
+      },
+      {
+        "id": "kawaii_38",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/43.png",
+        "name": "43"
+      },
+      {
+        "id": "kawaii_39",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/44.png",
+        "name": "44"
+      },
+      {
+        "id": "kawaii_40",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/45.png",
+        "name": "45"
+      },
+      {
+        "id": "kawaii_41",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/46.png",
+        "name": "46"
+      },
+      {
+        "id": "kawaii_42",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/47.png",
+        "name": "47"
+      },
+      {
+        "id": "kawaii_43",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/48.png",
+        "name": "48"
+      },
+      {
+        "id": "kawaii_44",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/49.png",
+        "name": "49"
+      },
+      {
+        "id": "kawaii_45",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/5.png",
+        "name": "5"
+      },
+      {
+        "id": "kawaii_46",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/50.png",
+        "name": "50"
+      },
+      {
+        "id": "kawaii_47",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/6.png",
+        "name": "6"
+      },
+      {
+        "id": "kawaii_48",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/7.png",
+        "name": "7"
+      },
+      {
+        "id": "kawaii_49",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/8.png",
+        "name": "8"
+      },
+      {
+        "id": "kawaii_50",
+        "packId": "kawaii",
+        "url": "/src/assets/stickers/kawaii/9.png",
+        "name": "9"
+      }
+    ],
+    "baseColor": "#FF6B6B"
+  }
+]

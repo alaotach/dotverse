@@ -23,6 +23,7 @@ import TpPanel from './tp/TpPanel';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
+import { stickerService, Sticker, StickerPack } from '../src/services/stickerService';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -173,7 +174,7 @@ const Canvas = () => {
     total: 100,
     percentUsed: 0
   });
-    const [allLands, setAllLands] = useState<UserLandInfo[]>([]);
+  const [allLands, setAllLands] = useState<UserLandInfo[]>([]);
   const [loadingLands, setLoadingLands] = useState<boolean>(true);
   const [initialDataLoaded, setInitialDataLoaded] = useState<boolean>(false);
   const [initialViewportSet, setInitialViewportSet] = useState<boolean>(false);
@@ -183,6 +184,24 @@ const Canvas = () => {
   const pixelBatchManagerRef = useRef<PixelBatchManager | null>(null);
   const { trackPixel } = useAnalytics();
   const navigate = useNavigate();
+  const [isStickerMode, setIsStickerMode] = useState<boolean>(false);
+  const [selectedStickerPack, setSelectedStickerPack] = useState<string>('');
+  const [stickerPacks, setStickerPacks] = useState<StickerPack[]>([]);
+  const [stickerOverlays, setStickerOverlays] = useState<Map<string, { sticker: Sticker; x: number; y: number }>>(new Map());
+
+  useEffect(() => {
+    const loadStickerPacks = async () => {
+      try {
+        const packs = await stickerService.getStickerPacks();
+        setStickerPacks(packs);
+        console.log('Loaded sticker packs:', packs);
+      } catch (error) {
+        console.error('Error loading sticker packs:', error);
+      }
+    };
+
+    loadStickerPacks();
+  }, []);
 
   const debouncedSaveViewport = useCallback(
     debounce((vpOffset: { x: number; y: number }, zmLevel: number) => {
@@ -657,7 +676,9 @@ const Canvas = () => {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [getPixelKey, updateGridFromVisibleChunks]);  const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
+  }, [getPixelKey, updateGridFromVisibleChunks]);  
+  
+  const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
     if (!currentUser) {
       return false;
     }
@@ -1117,12 +1138,14 @@ const Canvas = () => {
     setIsEraserActive(prev => !prev);
     if (!isEraserActive) {
       setIsFillActive(false);
+      setIsStickerMode(false);
     }
   }, [isEraserActive]);
   const toggleFill = useCallback(() => {
     setIsFillActive(prev => !prev);
     if (!isFillActive) {
       setIsEraserActive(false);
+      setIsStickerMode(false);
     }
     console.log('Fill tool toggled:', !isFillActive);
   }, [isFillActive]);
@@ -1186,6 +1209,76 @@ const Canvas = () => {
     console.log(`Brush size changed to: ${newSize}x${newSize}`);
   }, []);
 
+  const renderStickerOverlays = useCallback(() => {
+    const overlays: React.ReactNode[] = [];
+    
+    const startWorldX = Math.floor(viewportOffset.x);
+    const startWorldY = Math.floor(viewportOffset.y);
+    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
+    
+    stickerOverlays.forEach((stickerData, pixelKey) => {
+      const { sticker, x: worldX, y: worldY } = stickerData;
+      
+      const isInViewport = 
+        worldX >= viewportOffset.x && 
+        worldX < viewportOffset.x + viewportCellWidth &&
+        worldY >= viewportOffset.y && 
+        worldY < viewportOffset.y + viewportCellHeight;
+      
+      if (!isInViewport) return;
+      
+      const screenX = worldX - startWorldX;
+      const screenY = worldY - startWorldY;
+      
+      const pixelLeft = (screenX * effectiveCellSize) - offsetX;
+      const pixelTop = (screenY * effectiveCellSize) - offsetY;
+
+      overlays.push(
+        <div
+          key={`sticker-${pixelKey}`}
+          className="absolute pointer-events-none"
+          style={{
+            left: `${pixelLeft}px`,
+            top: `${pixelTop}px`,
+            width: `${effectiveCellSize}px`,
+            height: `${effectiveCellSize}px`,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <img
+            src={sticker.url}
+            alt={sticker.name}
+            style={{
+              width: '90%',
+              height: '90%',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.5))',
+            }}
+            onError={(e) => {
+              console.error('Failed to load sticker:', sticker.url);
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
+      );
+    });
+    
+    return overlays;
+  }, [stickerOverlays, viewportOffset, viewportCellWidth, viewportCellHeight, effectiveCellSize]);
+    
+
+  const toggleSticker = useCallback(() => {
+    setIsStickerMode(prev => !prev);
+    if (!isStickerMode) {
+      setIsEraserActive(false);
+      setIsFillActive(false);
+    }
+  }, [isStickerMode]);
+
   
 
   const handleDrawing = useCallback( (event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
@@ -1210,8 +1303,8 @@ const Canvas = () => {
     const mouseXOnCanvas = clientX - rect.left;
     const mouseYOnCanvas = clientY - rect.top;
     
-  const worldX = Math.floor(viewportOffset.x + (mouseXOnCanvas / effectiveCellSize));
-  const worldY = Math.floor(viewportOffset.y + (mouseYOnCanvas / effectiveCellSize));
+    const worldX = Math.floor(viewportOffset.x + (mouseXOnCanvas / effectiveCellSize));
+    const worldY = Math.floor(viewportOffset.y + (mouseYOnCanvas / effectiveCellSize));
 
     console.log('Coordinate Debug:', {
       mouse: { clientX, clientY },
@@ -1279,6 +1372,12 @@ const Canvas = () => {
               color,
               timestamp: now,
               clientId: clientIdRef.current
+            });
+
+            setStickerOverlays(prev => {
+              const newOverlays = new Map(prev);
+              newOverlays.delete(pixelKey);
+              return newOverlays;
             });
           }
         }
@@ -1437,6 +1536,21 @@ const Canvas = () => {
         return newGrid;
       });
 
+      if (isStickerMode && selectedStickerPack && color !== "#ffffff") {
+        const randomSticker = stickerService.getRandomSticker(selectedStickerPack);
+        if (randomSticker) {
+          setStickerOverlays(prev => {
+            const newOverlays = new Map(prev);
+            newOverlays.set(pixelKey, {
+              sticker: randomSticker,
+              x: worldX,
+              y: worldY
+            });
+            return newOverlays;
+          });
+        }
+      }
+
       const pixel: Pixel = {
         x: worldX,
         y: worldY,
@@ -1448,10 +1562,12 @@ const Canvas = () => {
       websocketService.send('pixel_update', [pixel]);
       trackPixel(worldX, worldY, color);
     }
+
+    
     
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel]);
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel, isStickerMode, selectedStickerPack, getPixelKey]);
 
   const clearCanvas = useCallback(async () => {
     if (!currentUser || !userProfile?.landInfo) {
@@ -1502,6 +1618,11 @@ const Canvas = () => {
           optimisticUpdatesMapRef.current.set(pixelKey, {
             timestamp: Date.now(),
             color: "#ffffff"
+          });
+          setStickerOverlays(prev => {
+            const newOverlays = new Map(prev);
+            newOverlays.delete(pixelKey);
+            return newOverlays;
           });
         }
       }
@@ -1939,6 +2060,11 @@ const Canvas = () => {
             newGrid.set(pixelKey, "#ffffff");
             
             masterGridDataRef.current.set(pixelKey, "#ffffff");
+            setStickerOverlays(prev => {
+              const newOverlays = new Map(prev);
+              newOverlays.delete(pixelKey);
+              return newOverlays;
+            });
           }
         }
         return newGrid;
@@ -2866,6 +2992,51 @@ const Canvas = () => {
         <ChatButton/>
         <TpPanel onTeleport={handleTeleport} currentPosition={viewportOffset}/>
 
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setIsStickerMode(prev => !prev);
+            if (!isStickerMode) {
+              setIsEraserActive(false);
+              setIsFillActive(false);
+            }
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          className={`px-3 py-1 rounded text-white flex items-center gap-1 ${
+            isStickerMode ? 'bg-purple-700' : 'bg-purple-500 hover:bg-purple-600'
+          }`}
+          title="Sticker mode - draw pixels with random stickers"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
+          </svg>
+          {isStickerMode ? "Sticker ON" : "Sticker"}
+        </button>
+
+        {isStickerMode && (
+          <div className="flex items-center ml-2 bg-purple-50 p-2 rounded-md border border-purple-200">
+            <label htmlFor="stickerPack" className="mr-2 text-xs font-medium text-purple-700">
+              Pack:
+            </label>
+            <select
+              id="stickerPack"
+              value={selectedStickerPack}
+              onChange={(e) => setSelectedStickerPack(e.target.value)}
+              className="bg-purple-100 border border-purple-300 text-purple-700 text-xs rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="">Select Pack</option>
+              {stickerPacks.map((pack) => (
+                <option key={pack.id} value={pack.id}>
+                  {pack.name} ({pack.stickers.length})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})
         </div>
@@ -2968,6 +3139,7 @@ const Canvas = () => {
         }}
       >
         {gridCells}
+        {renderStickerOverlays()}
         {auctionOverlays}
       </div>
       
