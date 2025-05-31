@@ -35,7 +35,7 @@ function generateStickerPacks() {
         stickers.push({
           id: stickerId,
           packId: folderName,
-          url: `/src/assets/stickers/${folderName}/${fileName}`,
+          url: `/assets/stickers/${folderName}/${fileName}`,
           name: stickerName.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
         });
       });

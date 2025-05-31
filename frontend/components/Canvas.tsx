@@ -23,7 +23,7 @@ import TpPanel from './tp/TpPanel';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
-import { stickerService, Sticker, StickerPack } from '../src/services/stickerService';
+import { stickerService, type Sticker, type StickerPack } from '../src/services/stickerService';
 
 const CELL_SCROLL_STEP = 5;
 
