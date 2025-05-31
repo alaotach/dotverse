@@ -17,6 +17,8 @@ import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
 import { stickerService, type Sticker, type StickerPack } from '../src/services/stickerService';
 import { FiGrid } from 'react-icons/fi';
+import { dailyCheckInService } from '../src/services/dailyLoginRewardService';
+import { DailyCheckInModal } from './dailylogin/DailyLoginModal';
 
 interface Theme {
   id: string;
@@ -218,6 +220,7 @@ const Canvas = () => {
     }
     return DEFAULT_THEME_ID;
   });
+  const [showDailyCheckIn, setShowDailyCheckIn] = useState(false);
 
   const allStickersMap = useMemo(() => {
     const map = new Map<string, Sticker>();
@@ -240,6 +243,18 @@ const Canvas = () => {
   const currentTheme = useMemo(() => {
     return PREDEFINED_THEMES.find(theme => theme.id === currentThemeId) || PREDEFINED_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!;
   }, [currentThemeId]);
+
+  useEffect(() => {
+    const checkForDailyCheckIn = () => {
+      if (dailyCheckInService.canCheckInToday()) {
+        setTimeout(() => {
+          setShowDailyCheckIn(true);
+        }, 2000);
+      }
+    };
+
+    checkForDailyCheckIn();
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -3347,6 +3362,11 @@ const Canvas = () => {
           </div>
         </>
       )}
+
+      <DailyCheckInModal 
+        isOpen={showDailyCheckIn} 
+        onClose={() => setShowDailyCheckIn(false)} 
+      />
 
       {showMergeModal && selectedMergeCandidate && contextMenu && (
         <LandMergeModal

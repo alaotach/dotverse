@@ -8,6 +8,8 @@ interface EconomyContextType {
   recentTransactions: EconomyTransaction[];
   isLoading: boolean;
   refreshEconomy: () => Promise<void>;
+  addCoins: (amount: number, description?: string) => Promise<void>;
+  removeCoins: (amount: number, description?: string) => Promise<void>;
 }
 
 const EconomyContext = createContext<EconomyContextType | undefined>(undefined);
@@ -56,6 +58,34 @@ export const EconomyProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  const addCoins = async (amount: number, description: string = 'Daily check-in reward') => {
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+    
+    try {
+      await economyService.addCoins(currentUser.uid, amount, description);
+      await refreshEconomy();
+    } catch (error) {
+      console.error('Error adding coins:', error);
+      throw error;
+    }
+  };
+
+  const removeCoins = async (amount: number, description: string = 'Purchase') => {
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+    
+    try {
+      await economyService.removeCoins(currentUser.uid, amount, description);
+      await refreshEconomy(); 
+    } catch (error) {
+      console.error('Error removing coins:', error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     if (!currentUser) {
       setUserEconomy(null);
@@ -98,7 +128,9 @@ export const EconomyProvider: React.FC<{ children: ReactNode }> = ({ children })
     userEconomy,
     recentTransactions,
     isLoading,
-    refreshEconomy
+    refreshEconomy,
+    addCoins,
+    removeCoins
   };
 
   return (

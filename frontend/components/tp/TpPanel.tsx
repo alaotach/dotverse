@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FiMap, FiPlus, FiX, FiTrash2, FiEdit, FiChevronDown, FiBookmark, FiArrowRight } from 'react-icons/fi';
-import { tpService, SavedLocations } from '../../src/services/tpService';
+import { tpService, type SavedLocations } from '../../src/services/tpService';
 import { useAuth } from '../../src/context/AuthContext';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';

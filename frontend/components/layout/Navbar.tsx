@@ -8,7 +8,7 @@ import NotificationDropdown from '../notifications/NotificationDropdown';
 import ChatButton from '../chat/ChatButton';
 import { useMusic } from '../../src/context/MusicContext';
 import { FiMusic } from 'react-icons/fi';
-import { musicTracks } from '../../src/services/musicService';
+import { DailyCheckInButton, LoginButton } from '../dailylogin/LoginButton';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -89,6 +89,7 @@ const Navbar: React.FC = () => {
                   </Link>
                   <NotificationDropdown />
                   <ChatButton />
+                  <DailyCheckInButton />
                   <button
                     onClick={togglePlayerVisibility}
                     className={`p-2 rounded-full transition-colors ${
