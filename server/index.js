@@ -82,17 +82,20 @@ io.on('connection', (socket) => {
     clientData.lastActivity = Date.now();
 
     if (Array.isArray(pixels)) {
-      pixels.forEach(pixel => {
-        if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
+      pixels.forEach(pixel => {        if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
           const key = `${pixel.x}:${pixel.y}`;
           
-          pixelData.set(key, {
+          const pixelDataToStore = {
             color: pixel.color,
             timestamp: pixel.timestamp || Date.now(),
             clientId: pixel.clientId || clientData.registeredId || clientId
-          });
-
-          console.log(`Stored pixel at ${key}: ${pixel.color}`);
+          };
+          
+          if (pixel.stickerId) {
+            pixelDataToStore.stickerId = pixel.stickerId;
+          }
+          
+          pixelData.set(key, pixelDataToStore);          console.log(`Stored pixel at ${key}: ${pixel.color}${pixel.stickerId ? ` (sticker: ${pixel.stickerId})` : ''}`);
           
           socket.broadcast.emit('pixel_update', [pixel]);
         }
@@ -148,7 +151,6 @@ io.on('connection', (socket) => {
       });
     }
   });
-
   socket.on('sync_request', () => {
     const allPixels = Array.from(pixelData.entries()).map(([key, data]) => {
       const [x, y] = key.split(':').map(Number);
@@ -159,6 +161,11 @@ io.on('connection', (socket) => {
       const batch = allPixels.slice(i, i + BATCH_SIZE);
       socket.emit('sync_data', batch);
     }
+    
+    socket.emit('sync_complete', { 
+      totalPixels: allPixels.length,
+      timestamp: Date.now()
+    });
     
     console.log(`Sent sync data to ${clientId}: ${allPixels.length} pixels`);
   });

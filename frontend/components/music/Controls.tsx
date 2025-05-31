@@ -9,7 +9,7 @@ const Controls: React.FC = () => {
     hasInteracted, setHasInteracted
   } = useMusic();
 
-  const [isPanelMinimized, setIsPanelMinimized] = React.useState(true); // Start minimized
+  const [isPanelMinimized, setIsPanelMinimized] = React.useState(true);
 
   useEffect(() => {
     if (!hasInteracted) {
@@ -53,7 +53,7 @@ const Controls: React.FC = () => {
             <FiMinimize size={16} />
           </button>
         )}
-         {isPanelMinimized && ( // Show maximize icon only when minimized
+         {isPanelMinimized && (
           <div className="absolute bottom-1 right-1 opacity-50">
             <FiMaximize size={10} />
           </div>

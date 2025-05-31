@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import websocketService from "../src/services/websocketService";
 import { useAuth } from "../src/context/AuthContext";
-import { getLocalCache } from "../src/services/localStorageCache";
 import { PixelBatchManager } from '../src/services/pixelBatchManager';
 import { useAnalytics } from '../src/services/AnalyticsService';
 import { useGesture } from '@use-gesture/react';
@@ -17,8 +16,7 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import LandMergeModal from './lands/LandMergeModal';
 import { stickerService, type Sticker, type StickerPack } from '../src/services/stickerService';
-import { FaPalette } from 'react-icons/fa';
-import { ssrDynamicImportKey } from "vite/runtime";
+import { FiGrid } from 'react-icons/fi';
 
 interface Theme {
   id: string;
@@ -83,20 +81,12 @@ const PREDEFINED_THEMES: Theme[] = [
 const DEFAULT_THEME_ID = 'classic_white';
 const LOCAL_STORAGE_THEME_KEY = 'dotverse_current_theme_id';
 
-const CELL_SCROLL_STEP = 5;
-
 const COOLDOWN_SECONDS = 0;
-const PIXELS_PATH = "pixels";
 const CELL_SIZE = 10;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 10;
 const ZOOM_SENSITIVITY = 0.1;
-const CHUNK_SIZE = 25; 
-const BATCH_SIZE = 1000; 
-const UPDATE_BATCH_INTERVAL = 100; 
-const SYNC_THROTTLE_MS = 30000;
-const PIXELS_PER_LINE = 20;
-
+const CHUNK_SIZE = 25;
 
 const debounce = (func: Function, delay: number) => {
   let timeoutId: NodeJS.Timeout;
@@ -104,14 +94,8 @@ const debounce = (func: Function, delay: number) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       func(...args);
-    }, delay);
-  };
+    }, delay);  };
 };
-const LOCAL_CACHE_ENABLED = true;
-const QUOTA_SAFETY_MARGIN = 0.8;
-const USE_CHUNKED_STORAGE = true;
-const CHUNK_COLLECTION = 'pixelChunks';
-
 
 const LOCAL_STORAGE_VIEWPORT_X_KEY = 'dotverse_viewport_x';
 const LOCAL_STORAGE_VIEWPORT_Y_KEY = 'dotverse_viewport_y';
@@ -120,23 +104,13 @@ const LOCAL_STORAGE_ZOOM_LEVEL_KEY = 'dotverse_zoom_level';
 const SHOW_GRID_LINES = true;
 const GRID_LINE_THRESHOLD = 0.6;
 
-const throttle = (func: Function, limit: number) => {
-  let inThrottle: boolean = false;
-  return function(...args: any[]) {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-};
-
 interface Pixel {
   x: number;
   y: number;
   color: string;
   timestamp?: number;
   clientId?: string;
+  stickerId?: string;
 }
 
 interface LandInfo {
@@ -196,7 +170,7 @@ const plotLine = (x0: number, y0: number, x1: number, y1: number): {x: number, y
   return points;
 };
 
-const NON_PASSIVE_EVENT_OPTIONS = { passive: false, capture: false };
+
 
 const toggleBrowserFullScreen = () => {
   if (!document.fullscreenElement) {
@@ -224,15 +198,8 @@ const Canvas = () => {
   const [isEraserActive, setIsEraserActive] = useState<boolean>(false); 
   const [eraserSize, setEraserSize] = useState<number>(1);   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [showAuthWarning, setShowAuthWarning] = useState<boolean>(false);
-  const [debugMode, setDebugMode] = useState<boolean>(false);
-  const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
-  const [quotaStatus, setQuotaStatus] = useState<{used: number, total: number, percentUsed: number}>({
-    used: 0, 
-    total: 100,
-    percentUsed: 0
-  });
+  const [debugMode, setDebugMode] = useState<boolean>(false);  const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
   const [allLands, setAllLands] = useState<UserLandInfo[]>([]);
-  const [loadingLands, setLoadingLands] = useState<boolean>(true);
   const [initialDataLoaded, setInitialDataLoaded] = useState<boolean>(false);
   const [initialViewportSet, setInitialViewportSet] = useState<boolean>(false);
   const [canvasWidth, setCanvasWidth] = useState<number>(0);
@@ -252,6 +219,24 @@ const Canvas = () => {
     return DEFAULT_THEME_ID;
   });
 
+  const allStickersMap = useMemo(() => {
+    const map = new Map<string, Sticker>();
+    stickerPacks.forEach(pack => {
+      pack.stickers.forEach(sticker => {
+        map.set(sticker.id, sticker);
+      });
+    });
+    return map;
+  }, [stickerPacks]);
+  const findStickerById = useCallback((stickerId: string): Sticker | null => {
+    const sticker = allStickersMap.get(stickerId);
+    if (!sticker) {
+      console.warn(`[Canvas] Could not find sticker with ID: ${stickerId}. Available stickers: ${Array.from(allStickersMap.keys()).join(', ')}`);
+      return null;
+    }
+    return sticker;
+  }, [allStickersMap]);
+
   const currentTheme = useMemo(() => {
     return PREDEFINED_THEMES.find(theme => theme.id === currentThemeId) || PREDEFINED_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!;
   }, [currentThemeId]);
@@ -267,13 +252,19 @@ const Canvas = () => {
     }
   }, [currentThemeId, currentTheme]);
 
-
   useEffect(() => {
     const loadStickerPacks = async () => {
       try {
         const packs = await stickerService.getStickerPacks();
         setStickerPacks(packs);
         console.log('Loaded sticker packs:', packs);
+        
+        let totalStickers = 0;
+        packs.forEach(pack => {
+          console.log(`Sticker pack ${pack.id} has ${pack.stickers.length} stickers`);
+          totalStickers += pack.stickers.length;
+        });
+        console.log(`Total stickers available: ${totalStickers}`);
       } catch (error) {
         console.error('Error loading sticker packs:', error);
       }
@@ -315,15 +306,10 @@ const Canvas = () => {
   const [viewportCellHeight, setViewportCellHeight] = useState(100);
   
   const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
+    const { currentUser, userProfile, refreshProfile } = useAuth(); 
   
-  const { currentUser, userProfile, refreshProfile } = useAuth(); 
-  const previousGridRef = useRef<Map<string, string>>(new Map());
-  
-  const masterGridDataRef = useRef<Map<string, string>>(new Map()); 
-  const activeChunkKeysRef = useRef<Set<string>>(new Set()); 
+  const masterGridDataRef = useRef<Map<string, string>>(new Map());  const activeChunkKeysRef = useRef<Set<string>>(new Set()); 
 
-  const lastPositionRef = useRef<{ x: number, y: number } | null>(null);
-  const lastPaintedCellRef = useRef<{ x: number, y: number } | null>(null);
   const syncInProgressRef = useRef<boolean>(false);
   const lastSyncRequestTimeRef = useRef<number>(0);
   const MIN_SYNC_INTERVAL = 5000;
@@ -331,9 +317,7 @@ const Canvas = () => {
   const optimisticUpdatesMapRef = useRef<Map<string, {timestamp: number, color: string}>>(new Map());
   const canvasContainerRef = useRef<HTMLDivElement>(null); 
   const panStartMousePositionRef = useRef<{ x: number, y: number } | null>(null);
-  const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);
-  const isSpacebarHeldRef = useRef<boolean>(false); 
-  const lastDrawTimestampRef = useRef<number | null>(null); 
+  const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);  const isSpacebarHeldRef = useRef<boolean>(false);
   const latestViewportOffsetTargetRef = useRef(viewportOffset);
   const latestZoomLevelTargetRef = useRef(zoomLevel);
   const animationFrameRequestRef = useRef<number | null>(null);
@@ -341,11 +325,9 @@ const Canvas = () => {
   const [brushSize, setBrushSize] = useState<number>(1);
   const [isFillActive, setIsFillActive] = useState<boolean>(false);
   const [undoHistory, setUndoHistory] = useState<DrawAction[]>([]);
-  const [redoHistory, setRedoHistory] = useState<DrawAction[]>([]);
-  const [isUndoRedoOperation, setIsUndoRedoOperation] = useState<boolean>(false);
-  const [currentDrawingAction, setCurrentDrawingAction] = useState<DrawAction | null>(null);
+  const [redoHistory, setRedoHistory] = useState<DrawAction[]>([]);  const [isUndoRedoOperation, setIsUndoRedoOperation] = useState<boolean>(false);
   const isDrawingSessionActiveRef = useRef<boolean>(false);
-  const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string }[]>([]);
+  const drawingSessionPixelsRef = useRef<{ x: number; y: number; oldColor: string; newColor: string, oldStickerId?: string, newStickerId?: string; }[]>([]);
   const [isPanMode, setIsPanMode] = useState<boolean>(false); 
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
 
@@ -355,9 +337,7 @@ const Canvas = () => {
   const [showExpansionModal, setShowExpansionModal] = useState<boolean>(false);
   const [selectedLandForExpansion, setSelectedLandForExpansion] = useState<UserLandInfo | null>(null);
   const [showLandsExpansionDropdown, setShowLandsExpansionDropdown] = useState<boolean>(false);
-  const [selectedLandInfo, setSelectedLandInfo] = useState<UserLandInfo | null>(null);
-  const [showLandInfoPanel, setShowLandInfoPanel] = useState(false);
-  const [showCreateAuctionModal, setShowCreateAuctionModal] = useState<boolean>(false);
+  const [selectedLandInfo, setSelectedLandInfo] = useState<UserLandInfo | null>(null);  const [showLandInfoPanel, setShowLandInfoPanel] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -366,11 +346,10 @@ const Canvas = () => {
     mergeCandidates: MergeCandidate[];
   } | null>(null);
 
-  const [showMergeModal, setShowMergeModal] = useState(false);
-  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
+  const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (_event: MouseEvent) => {
       if (contextMenu) {
         setContextMenu(null);
       }
@@ -399,10 +378,7 @@ const Canvas = () => {
   }, [viewportOffset]);
 
   useEffect(() => {
-    latestZoomLevelTargetRef.current = zoomLevel;
-  }, [zoomLevel]);
-
-  const cellSize = CELL_SIZE || 10;
+    latestZoomLevelTargetRef.current = zoomLevel;  }, [zoomLevel]);
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement> | WheelEvent) => {
     if (!canvasContainerRef.current) return;
@@ -429,11 +405,9 @@ const Canvas = () => {
       setViewportOffset({ x: newViewportX, y: newViewportY });
     } else {
       let scrollPixelX = event.deltaX;
-      let scrollPixelY = event.deltaY;
-
-      if (event.deltaMode === 1) { 
-        scrollPixelX *= PIXELS_PER_LINE;
-        scrollPixelY *= PIXELS_PER_LINE;
+      let scrollPixelY = event.deltaY;      if (event.deltaMode === 1) { 
+        scrollPixelX *= 20; 
+        scrollPixelY *= 20; 
       }
 
       if (event.shiftKey && scrollPixelY !== 0 && scrollPixelX === 0) {
@@ -595,24 +569,8 @@ const Canvas = () => {
       y: event.clientY,
       landId,
       landInfo,
-      mergeCandidates
-    });
+      mergeCandidates    });
   };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (contextMenu) {
-        setContextMenu(null);
-      }
-    };
-
-    if (contextMenu) {
-      document.addEventListener('click', handleClickOutside);
-      return () => {
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
-  }, [contextMenu]);
 
   const closeContextMenu = () => {
     setContextMenu(null);
@@ -630,13 +588,39 @@ const Canvas = () => {
       const startX = chunkRegX * CHUNK_SIZE;
       const endX = startX + CHUNK_SIZE;
       const startY = chunkRegY * CHUNK_SIZE;
-      const endY = startY + CHUNK_SIZE;
-
-      for (let wy = startY; wy < endY; wy++) {
+      const endY = startY + CHUNK_SIZE;      for (let wy = startY; wy < endY; wy++) {
         for (let wx = startX; wx < endX; wx++) {
           const pixelKey = getPixelKey(wx, wy);
-          const color = masterGridDataRef.current.get(pixelKey);
-          if (color) {
+          const pixelData = masterGridDataRef.current.get(pixelKey);
+          if (pixelData) {
+            let color = pixelData;
+            try {
+              if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
+                const parsed = JSON.parse(pixelData);
+                color = parsed.color;
+                if (parsed.stickerId) {
+                  const sticker = findStickerById(parsed.stickerId);
+                  if (sticker) {
+                    setStickerOverlays(prev => {
+                      if (prev.has(pixelKey)) {
+                        return prev;
+                      }
+                      
+                      const newOverlays = new Map(prev);
+                      newOverlays.set(pixelKey, {
+                        sticker,
+                        x: wx,
+                        y: wy
+                      });
+                      return newOverlays;
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.log("Failed to parse pixel data:", e);
+            }
+            
             newGrid.set(pixelKey, color);
           }
         }
@@ -657,46 +641,18 @@ const Canvas = () => {
     if (now - lastSyncRequestTimeRef.current < MIN_SYNC_INTERVAL) {
       console.log(`Sync request throttled. Last request was ${now - lastSyncRequestTimeRef.current}ms ago`);
       return;
-    }
-
-    console.log("[Canvas] requestFullSync: Starting WebSocket sync");
+    }    console.log("[Canvas] requestFullSync: Starting WebSocket sync");
     syncInProgressRef.current = true;
     lastSyncRequestTimeRef.current = now;
 
-    let cachedPixels: Array<{ key: string, value: string, timestamp: number }> = [];
-    if (LOCAL_CACHE_ENABLED) {
-      try {
-        cachedPixels = await getLocalCache(true) || [];
-        console.log(`[Canvas] requestFullSync: Loaded ${cachedPixels.length} pixels from local cache.`);
-      } catch (error) {
-        console.error("[Canvas] requestFullSync: Error loading from local cache:", error);
-      }
-    }
     if (pixelBatchManagerRef.current) {
       pixelBatchManagerRef.current.clear();
     }
-    try {
+    try {      
       masterGridDataRef.current.clear();
 
-      if (LOCAL_CACHE_ENABLED && cachedPixels.length > 0) {
-        cachedPixels.forEach(cachedPixel => {
-          const [x, y] = cachedPixel.key.split(':').map(Number);
-          if (!isNaN(x) && !isNaN(y)) {
-            masterGridDataRef.current.set(cachedPixel.key, cachedPixel.value);
-            
-            optimisticUpdatesMapRef.current.set(cachedPixel.key, {
-              timestamp: cachedPixel.timestamp || Date.now(), 
-              color: cachedPixel.value
-            });
-          }
-        });
-        console.log(`[Canvas] requestFullSync: Applied ${cachedPixels.length} cached pixels to master grid.`);
-      }
-
       let receivedPixelCount = 0;
-      let syncDataComplete = false;
-      
-      const syncDataHandler = (data: any[]) => {
+      let syncDataComplete = false;      const syncDataHandler = (data: any[]) => {
         if (Array.isArray(data)) {
           data.forEach(pixel => {
             if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
@@ -704,7 +660,26 @@ const Canvas = () => {
               
               const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
               if (!optimisticUpdate || optimisticUpdate.timestamp < (pixel.timestamp || 0)) {
-                masterGridDataRef.current.set(pixelKey, pixel.color);
+                const pixelData = pixel.stickerId 
+                  ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
+                  : pixel.color;
+                  
+                masterGridDataRef.current.set(pixelKey, pixelData);
+                
+                if (pixel.stickerId) {
+                  const sticker = findStickerById(pixel.stickerId);
+                  if (sticker) {
+                    setStickerOverlays(prev => {
+                      const newOverlays = new Map(prev);
+                      newOverlays.set(pixelKey, {
+                        sticker,
+                        x: pixel.x,
+                        y: pixel.y
+                      });
+                      return newOverlays;
+                    });
+                  }
+                }
               }
               receivedPixelCount++;
             }
@@ -742,15 +717,11 @@ const Canvas = () => {
       
       updateGridFromVisibleChunks();
       
-      setLastSyncTime(Date.now());
-      setInitialDataLoaded(true);
+      setLastSyncTime(Date.now());      setInitialDataLoaded(true);
       
     } catch (error) {
-      
-      if (cachedPixels.length > 0) {
-        setInitialDataLoaded(true);
-        updateGridFromVisibleChunks();
-      }
+      console.error("[Canvas] Error during sync:", error);
+      setInitialDataLoaded(true);
     } finally {
       syncInProgressRef.current = false;
     }
@@ -809,17 +780,13 @@ const Canvas = () => {
     // console.log('[Canvas] Drawing blocked - not on owned land at point:', worldX, worldY);
     return false;
   }, [currentUser, userProfile, allLands]);
-  
-  const getAllLands = useCallback(async () => {
-    setLoadingLands(true);
+    const getAllLands = useCallback(async () => {
     try {
       const lands = await getAllLandsWithAuctionStatus();
       setAllLands(lands);
       
     } catch (error) {
       console.error("Error fetching all lands:", error);
-    } finally {
-      setLoadingLands(false);
     }
   }, []);
   const handleLandClick = useCallback(async (land: UserLandInfo, event: React.MouseEvent) => {
@@ -1600,35 +1567,46 @@ const Canvas = () => {
     
     const pixelKey = getPixelKey(worldX, worldY);
     const oldColor = masterGridDataRef.current.get(pixelKey) || currentTheme.defaultPixelColor
-    
-    if (oldColor !== color) {
-      drawingSessionPixelsRef.current.push({ x: worldX, y: worldY, oldColor, newColor: color });
+      if (oldColor !== color) {
+      const oldStickerData = stickerOverlays.get(pixelKey);
+      const oldStickerId = oldStickerData ? oldStickerData.sticker.id : undefined;
       
-      masterGridDataRef.current.set(pixelKey, color);
+      let randomSticker: Sticker | null = null;
+      if (isStickerMode && selectedStickerPack && color !== currentTheme.defaultPixelColor) {
+        randomSticker = stickerService.getRandomSticker(selectedStickerPack);
+      }
+      
+      const newStickerId = randomSticker ? randomSticker.id : undefined;      drawingSessionPixelsRef.current.push({ x: worldX, y: worldY, oldColor, newColor: color, oldStickerId: oldStickerId, newStickerId: newStickerId });
+      const pixelData = newStickerId 
+        ? JSON.stringify({ color, stickerId: newStickerId })
+        : color;
+        
+      masterGridDataRef.current.set(pixelKey, pixelData);
       optimisticUpdatesMapRef.current.set(pixelKey, {
         timestamp: now,
-        color
-      });
-
-      setGrid(prev => {
+        color: pixelData
+      });setGrid(prev => {
         const newGrid = new Map(prev);
         newGrid.set(pixelKey, color);
         return newGrid;
       });
-
-      if (isStickerMode && selectedStickerPack && color !== currentTheme.defaultPixelColor) {
-        const randomSticker = stickerService.getRandomSticker(selectedStickerPack);
-        if (randomSticker) {
-          setStickerOverlays(prev => {
-            const newOverlays = new Map(prev);
-            newOverlays.set(pixelKey, {
-              sticker: randomSticker,
-              x: worldX,
-              y: worldY
-            });
-            return newOverlays;
+      
+      if (randomSticker) {
+        setStickerOverlays(prev => {
+          const newOverlays = new Map(prev);
+          newOverlays.set(pixelKey, {
+            sticker: randomSticker,
+            x: worldX,
+            y: worldY
           });
-        }
+          return newOverlays;
+        });
+      } else {
+        setStickerOverlays(prev => {
+          const newOverlays = new Map(prev);
+          newOverlays.delete(pixelKey);
+          return newOverlays;
+        });
       }
 
       const pixel: Pixel = {
@@ -1636,7 +1614,8 @@ const Canvas = () => {
         y: worldY,
         color,
         timestamp: now,
-        clientId: clientIdRef.current
+        clientId: clientIdRef.current,
+        stickerId: newStickerId
       };
       
       websocketService.send('pixel_update', [pixel]);
@@ -1951,12 +1930,11 @@ const Canvas = () => {
   }, [addToHistory, isEraserActive]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const activeElement = document.activeElement;
+    const handleKeyDown = (event: KeyboardEvent) => {      const activeElement = document.activeElement;
       const isInputFocused = activeElement && (
         activeElement.tagName === 'INPUT' || 
         activeElement.tagName === 'TEXTAREA' ||
-        activeElement.contentEditable === 'true'
+        (activeElement as HTMLElement).contentEditable === 'true'
       );
       
       if (isInputFocused) return;
@@ -2065,26 +2043,51 @@ const Canvas = () => {
       setWsConnected(isConnected);
     };
     
-    websocketService.onConnectionChange(handleConnectionChange);
-    
-    const handlePixelUpdate = (data: any) => {
+    websocketService.onConnectionChange(handleConnectionChange);    const handlePixelUpdate = (data: any) => {
       if (Array.isArray(data)) {
         data.forEach(pixel => {
           if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
             const pixelKey = getPixelKey(pixel.x, pixel.y);
-            
-            const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
+              const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
             if (optimisticUpdate && optimisticUpdate.timestamp > (pixel.timestamp || 0)) {
               return;
             }
             
-            masterGridDataRef.current.set(pixelKey, pixel.color);
+            const pixelData = pixel.stickerId 
+              ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
+              : pixel.color;
+              
+            masterGridDataRef.current.set(pixelKey, pixelData);
             
-            const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
+            if (pixel.stickerId) {
+              console.log(`[Canvas] Processing pixel update with stickerId: ${pixel.stickerId} at ${pixelKey}`);
+            }
+            
+            if (pixel.stickerId) {
+              const sticker = findStickerById(pixel.stickerId);
+              if (sticker) {
+                setStickerOverlays(prev => {
+                  const newOverlays = new Map(prev);
+                  newOverlays.set(pixelKey, {
+                    sticker,
+                    x: pixel.x,
+                    y: pixel.y
+                  });
+                  return newOverlays;
+                });
+              }
+            } else {
+              setStickerOverlays(prev => {
+                const newOverlays = new Map(prev);
+                newOverlays.delete(pixelKey);
+                return newOverlays;
+              });
+            }
+              const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
             if (activeChunkKeysRef.current.has(chunkKey)) {
               setGrid(prev => {
                 const newGrid = new Map(prev);
-                newGrid.set(pixelKey, pixel.color);
+                newGrid.set(pixelKey, pixelData);
                 return newGrid;
               });
             }
@@ -2317,12 +2320,25 @@ const Canvas = () => {
     const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
     
     for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
-      for (let screenX = 0; screenX < viewportCellWidth; screenX++) {
-        const worldX = screenX + startWorldX;
+      for (let screenX = 0; screenX < viewportCellWidth; screenX++) {        const worldX = screenX + startWorldX;
         const worldY = screenY + startWorldY;
         const pixelKey = getPixelKey(worldX, worldY);
         
-        const color = grid.get(pixelKey) || currentTheme.defaultPixelColor;
+        let pixelData = grid.get(pixelKey);
+        let color = currentTheme.defaultPixelColor;
+        
+        if (pixelData) {
+          try {
+            if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
+              const parsed = JSON.parse(pixelData);
+              color = parsed.color; 
+            } else {
+              color = pixelData;
+            }
+          } catch (e) {
+            color = pixelData;
+          }
+        }
         
         const isDrawableHere = !!currentUser && !!userProfile && canDrawAtPoint(worldX, worldY);
         
@@ -2350,9 +2366,8 @@ const Canvas = () => {
         }
         
         const landMapEntry = cellLandMap.get(pixelKey);
-        if (landMapEntry) {
-          const { landInfo: land, isCurrentUserLand } = landMapEntry;
-          const { centerX, centerY, ownedSize, shape, occupiedCells } = land;
+        if (landMapEntry) {          const { landInfo: land, isCurrentUserLand } = landMapEntry;
+          const { centerX, centerY, ownedSize, shape } = land;
 
           const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
           const borderWidth = "3px";
@@ -3093,7 +3108,6 @@ const Canvas = () => {
               setShowExpansionModal(true);
             }}
             onCreateAuction={() => {
-              setShowCreateAuctionModal(true);
             }}
           />
         )}
