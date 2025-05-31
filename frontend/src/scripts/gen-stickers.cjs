@@ -1,7 +1,7 @@
 const { writeFileSync, readdirSync, statSync } = require('fs');
 const { join, extname, basename } = require('path');
 
-const STICKER_PACKS_DIR = './src/assets/stickers';
+const STICKER_PACKS_DIR = '../public/assets/stickers/';
 const OUTPUT_FILE = './src/data/stickerPacks.json';
 const PACK_COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
