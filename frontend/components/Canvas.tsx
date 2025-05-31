@@ -22,7 +22,7 @@ import ChatButton from "./chat/ChatButton";
 import TpPanel from './tp/TpPanel';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import LandMergeModal from '../lands/LandMergeModal';
+import LandMergeModal from './lands/LandMergeModal';
 
 const CELL_SCROLL_STEP = 5;
 
