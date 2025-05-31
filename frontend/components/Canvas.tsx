@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import LandExpansionModal from '../components/lands/LandExpansionModal';
 import LandInfoPanel from '../components/lands/LandInfoPanel';
 import { landMergingService, type MergeCandidate } from '../src/services/landMergingService';
+import ChatButton from "./chat/ChatButton";
 
 const CELL_SCROLL_STEP = 5;
 
@@ -2125,8 +2126,8 @@ const Canvas = () => {
         const landMapEntry = cellLandMap.get(pixelKey);
         if (landMapEntry) {
           const { landInfo: land, isCurrentUserLand } = landMapEntry;
-          const { centerX, centerY, ownedSize } = land;
-          
+          const { centerX, centerY, ownedSize, shape, occupiedCells } = land;
+
           const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
           const borderWidth = "3px";
           
@@ -2841,6 +2842,8 @@ const Canvas = () => {
             }}
           />
         )}
+
+        <ChatButton/>
 
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})

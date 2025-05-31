@@ -16,6 +16,13 @@ interface LandInfo {
   centerX: number;
   centerY: number;
   ownedSize: number;
+  owner: string
+  displayName?: string;
+  isEmpty?: boolean;
+  isAuctioned?: boolean;
+  auctionId?: string;
+  shape?: 'rectangle' | 'irregular';
+  occupiedCells?: string[];
 }
 
 interface LandTile {
@@ -33,6 +40,8 @@ export interface UserLandInfo {
   createdAt: number;
   isAuctioned?: boolean;
   auctionId?: string;
+  shape?: 'rectangle' | 'irregular';
+  occupiedCells?: string[];
 }
 
 const DEFAULT_LAND_SIZE = 50;

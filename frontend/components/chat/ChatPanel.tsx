@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FiSend, FiX, FiChevronDown } from 'react-icons/fi';
 import { useChat } from '../../src/context/ChatContext';
 import { useAuth } from '../../src/context/AuthContext';
+import { BsDashCircleDotted } from 'react-icons/bs';
 
 const ChatPanel: React.FC = () => {
   const { msgs, sendMessage, isOpen, setIsOpen } = useChat();
