@@ -19,6 +19,10 @@ import LandExpansionModal from '../components/lands/LandExpansionModal';
 import LandInfoPanel from '../components/lands/LandInfoPanel';
 import { landMergingService, type MergeCandidate } from '../src/services/landMergingService';
 import ChatButton from "./chat/ChatButton";
+import TpPanel from './tp/TpPanel';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import LandMergeModal from '../lands/LandMergeModal';
 
 const CELL_SCROLL_STEP = 5;
 
@@ -193,7 +197,19 @@ const Canvas = () => {
     }, 1000),
     [initialDataLoaded, initialViewportSet]
   );
-  
+
+  const handleTeleport = useCallback((x: number, y: number, locationName?: string) => {
+    if (canvasContainerRef.current) {
+      setViewportOffset({ x, y });
+      if (locationName) {
+        toast.info(`Teleported to ${locationName}`, {
+          position: "top-center",
+          autoClose: 2000,
+        });
+      }
+    }
+  }, [setViewportOffset]);
+    
   const userLandBorderColor = "rgba(255, 0, 0, 0.7)"; 
   const otherLandBorderColor = "rgba(0, 128, 255, 0.5)";
   const emptyLandFillColor = "rgba(200, 200, 200, 0.2)";
@@ -500,6 +516,10 @@ const Canvas = () => {
       };
     }
   }, [contextMenu]);
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
 
   
   const updateGridFromVisibleChunks = useCallback(() => {
@@ -2844,6 +2864,7 @@ const Canvas = () => {
         )}
 
         <ChatButton/>
+        <TpPanel onTeleport={handleTeleport} currentPosition={viewportOffset}/>
 
          <div className="text-xs">
             Viewport: ({viewportOffset.x.toFixed(2)}, {viewportOffset.y.toFixed(2)})
