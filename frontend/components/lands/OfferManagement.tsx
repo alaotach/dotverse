@@ -54,7 +54,6 @@ const OfferManagement: React.FC = () => {
       if (!result.success) {
         alert(result.message);
       } else if (result.landSaleCompleted) {
-        // Refresh current user's profile since they just sold their land
         await refreshProfile();
       }
     } catch (error) {

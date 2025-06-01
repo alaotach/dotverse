@@ -459,6 +459,7 @@ export const getUserLands = async (userId: string): Promise<UserLandInfo[]> => {
       return [];
     }
     
+    console.log(`🎬 [Service] getUserLands for ${userId} found ${querySnapshot.docs.length} documents.`);
     return querySnapshot.docs
       .filter(docSnap => {
         const data = docSnap.data();
@@ -467,7 +468,7 @@ export const getUserLands = async (userId: string): Promise<UserLandInfo[]> => {
       .map(docSnap => {
         const data = docSnap.data();
         const [xStr, yStr] = docSnap.id.split(',');
-        return {
+        const land = {
           id: docSnap.id,
           centerX: Number(xStr),
           centerY: Number(yStr),
@@ -476,12 +477,54 @@ export const getUserLands = async (userId: string): Promise<UserLandInfo[]> => {
           displayName: data.displayName,
           createdAt: data.claimedAt || Date.now(),
           isAuctioned: data.isAuctioned || false,
-          auctionId: data.auctionId
+          auctionId: data.auctionId,
+          hasAnimation: data.hasAnimation || false,
+          animationSettings: data.animationSettings
         } as UserLandInfo;
+        console.log(`🎬 [Service] getUserLands mapping land ${land.id}. AnimationSettings:`, JSON.stringify(land.animationSettings));
+        return land;
       });
   } catch (error) {
     console.error('Error fetching user lands:', error);
     return [];
+  }
+};
+
+export const getLandById = async (landId: string): Promise<UserLandInfo | null> => {
+  try {
+    console.log(`🎬 [Service] getLandById attempting to fetch land: ${landId}`);
+    const landDocRef = doc(fs, 'lands', landId);
+    const docSnap = await getDoc(landDocRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data.isBorder) {
+        console.log(`🎬 [Service] getLandById found land ${landId}, but it's a border.`);
+        return null;
+      }
+      const [xStr, yStr] = docSnap.id.split(',');
+      const land = {
+        id: docSnap.id,
+        centerX: Number(xStr),
+        centerY: Number(yStr),
+        ownedSize: data.ownedSize || data.size || DEFAULT_LAND_SIZE,
+        owner: data.owner,
+        displayName: data.displayName,
+        createdAt: data.claimedAt || Date.now(),
+        isAuctioned: data.isAuctioned || false,
+        auctionId: data.auctionId,
+        hasAnimation: data.hasAnimation || false,
+        animationSettings: data.animationSettings
+      } as UserLandInfo;
+      console.log(`🎬 [Service] getLandById successfully fetched land ${landId}. AnimationSettings:`, JSON.stringify(land.animationSettings));
+      return land;
+    } else {
+      console.log(`🎬 [Service] getLandById: No such document for land ${landId}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`Error fetching land by ID ${landId}:`, error);
+    return null;
   }
 };
 
@@ -559,14 +602,19 @@ export const updateLandAnimationSettings = async (
   hasAnimation: boolean
 ): Promise<void> => {
   try {
+    const dataToUpdate = {
+      hasAnimation,
+      animationSettings: {
+        fps: settings?.fps || 5,
+        loop: settings?.loop !== false,
+      },
+    };
+    console.log(`🎬 [Service] Updating land ${landId} with data:`, JSON.stringify(dataToUpdate));
     const landRef = doc(fs, 'lands', landId);
-    await updateDoc(landRef, {
-      hasAnimation: hasAnimation,
-      animationSettings: settings,
-    });
-    console.log(`[LandService] Updated animation settings for land ${landId}`);
+    await updateDoc(landRef, dataToUpdate);
+    console.log('🎬 [Service] Animation settings updated successfully for land:', landId);
   } catch (error) {
-    console.error(`[LandService] Error updating animation settings for land ${landId}:`, error);
+    console.error('Error updating animation settings:', error);
     throw error;
   }
 };

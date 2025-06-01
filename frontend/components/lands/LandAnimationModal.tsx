@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FiX, FiPlay, FiPause, FiPlus, FiTrash2, FiEdit3, FiSave, FiRefreshCw, FiEye } from 'react-icons/fi';
+import { useAuth } from '../../src/context/AuthContext';
 import { 
   getLandFrames, 
   addLandFrame, 
@@ -7,6 +8,7 @@ import {
   updateLandFramePixelData, 
   deleteLandFrame, 
   updateLandAnimationSettings,
+  getUserLands,
   type LandFrame,
   type LandFramePixelData,
   type UserLandInfo
@@ -31,6 +33,7 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
   onPreviewAnimation,
   onStopAnimation
 }) => {
+  const { currentUser } = useAuth();
   const [frames, setFrames] = useState<LandFrame[]>([]);
   const [fps, setFps] = useState<number>(land.animationSettings?.fps || 5);
   const [loop, setLoop] = useState<boolean>(land.animationSettings?.loop !== false);
@@ -141,18 +144,29 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
       </div>
     );
   };
-
   const loadAnimationData = useCallback(async () => {
-    if (!land.id) return;
+    if (!land.id || !currentUser) return;
     setIsLoading(true);
     setError(null);
     try {
+      const userLands = await getUserLands(currentUser.uid);
+      const latestLandData = userLands.find(l => l.id === land.id);
+      
+      const effectiveAnimationSettings = latestLandData?.animationSettings || land.animationSettings;
+      
+      console.log(`🎬 [Modal] loadAnimationData for ${land.id}. Effective animationSettings:`, JSON.stringify(effectiveAnimationSettings));
+
       const fetchedFrames = await getLandFrames(land.id);
       const sortedFrames = fetchedFrames.sort((a, b) => a.frameIndex - b.frameIndex);
       setFrames(sortedFrames);
-      if (land.animationSettings) {
-        setFps(land.animationSettings.fps || 5);
-        setLoop(land.animationSettings.loop !== false);
+      
+      if (effectiveAnimationSettings) {
+        setFps(effectiveAnimationSettings.fps || 5);
+        setLoop(effectiveAnimationSettings.loop !== false);
+      } else {
+        console.log(`🎬 [Modal] No animation settings found for ${land.id} during load, using defaults (5 FPS, loop true)`);
+        setFps(5);
+        setLoop(true);
       }
     } catch (err) {
       console.error('Error loading animation data:', err);
@@ -160,13 +174,24 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [land.id, land.animationSettings]);
+  }, [land.id, currentUser, land.animationSettings]);
 
   useEffect(() => {
     if (isOpen && land.id) {
       loadAnimationData();
     }
   }, [isOpen, land.id, loadAnimationData]);
+  
+  useEffect(() => {
+    if (land.animationSettings?.fps) {
+      console.log(`🎬 [Modal] Land prop updated. land.animationSettings.fps: ${land.animationSettings.fps}. Updating local FPS state.`);
+      setFps(land.animationSettings.fps);
+    }
+     if (land.animationSettings?.loop !== undefined) {
+      console.log(`🎬 [Modal] Land prop updated. land.animationSettings.loop: ${land.animationSettings.loop}. Updating local loop state.`);
+      setLoop(land.animationSettings.loop);
+    }
+  }, [land.animationSettings]);
 
   useEffect(() => {
     if (!isPlaying || frames.length <= 1) return;
@@ -184,24 +209,53 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
 
     return () => clearInterval(interval);
   }, [isPlaying, frames.length, fps, loop]);
-
   const handleSaveSettings = async () => {
+    if (!currentUser || !land.id) {
+      setError('Unable to save settings: missing user or land information');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+    
     try {
+      const validatedFps = Math.max(1, Math.min(30, fps));
+      const settingsToSave = { 
+        fps: validatedFps, 
+        loop: loop 
+      };
+      
+      console.log(`🎬 [Modal] Saving animation settings for ${land.id}:`, settingsToSave);
+      
       await updateLandAnimationSettings(
         land.id, 
-        { fps: Math.max(1, Math.min(30, fps)), loop }, 
+        settingsToSave, 
         frames.length > 0
       );
-      onSuccess?.();
+      
+      console.log(`🎬 [Modal] Successfully saved animation settings for ${land.id}`);
+      
+      setFps(validatedFps);
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      const successMessage = 'Animation settings saved successfully!';
+      setError(null);
+      
+      setTimeout(() => {
+        console.log('Settings saved successfully');
+      }, 100);
+      
     } catch (err) {
-      console.error('Error saving settings:', err);
-      setError('Failed to save animation settings.');
+      console.error('Error saving animation settings:', err);
+      setError('Failed to save animation settings. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
   const handleAddFrame = async () => {
     setIsLoading(true);
     setError(null);
@@ -398,16 +452,39 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                     min="1"
                     max="20"
                     value={fps}
-                    onChange={(e) => setFps(parseInt(e.target.value))}
-                    className="w-full"
+                    onChange={(e) => {
+                      const newFps = parseInt(e.target.value);
+                      console.log('FPS slider changed to:', newFps);
+                      setFps(newFps);
+                    }}
+                    onInput={(e) => {
+                      const newFps = parseInt((e.target as HTMLInputElement).value);
+                      console.log('FPS slider onInput:', newFps);
+                      setFps(newFps);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                    className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-track"
+                    style={{
+                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((fps - 1) / 19) * 100}%, #4b5563 ${((fps - 1) / 19) * 100}%, #4b5563 100%)`
+                    }}
                   />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>1 FPS</span>
+                    <span>20 FPS</span>
+                  </div>
                 </div>
+                
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="loop"
                     checked={loop}
-                    onChange={(e) => setLoop(e.target.checked)}
+                    onChange={(e) => {
+                      console.log('Loop checkbox changed to:', e.target.checked);
+                      setLoop(e.target.checked);
+                    }}
                     className="mr-2"
                   />
                   <label htmlFor="loop" className="text-gray-300">
@@ -418,9 +495,16 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                 <button
                   onClick={handleSaveSettings}
                   disabled={isLoading}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded"
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors flex items-center justify-center"
                 >
-                  {isLoading ? 'Saving...' : 'Save Settings'}
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Settings'
+                  )}
                 </button>
               </div>
             </div>

@@ -254,9 +254,9 @@ const Canvas = () => {
 
       const currentFrame = animatedLand.frames[animatedLand.currentFrameIndex];
       if (!currentFrame) return;
-
       const fps = animatedLand.settings?.fps || 5;
-      const frameDuration = currentFrame.duration || (1000 / fps);
+      console.log(`🎬 [Canvas] Using FPS for animation: ${fps} (land ${landId})`);
+      const frameDuration = 1000/fps;
       
       const timeSinceLastChange = now - animatedLand.lastFrameChangeTime;
 
@@ -310,11 +310,37 @@ const Canvas = () => {
       if (animationId) {
         cancelAnimationFrame(animationId);
       }
-    };
-  }, [animatedLands.size, updateAnimatedLandFrames]);
+    };  }, [animatedLands.size, updateAnimatedLandFrames]);
+
+    const updateAnimatedLandSettings = useCallback((land: UserLandInfo) => {
+    if (!land.hasAnimation || !animatedLands.has(land.id)) return;
+    
+    console.log(`🎬 [Canvas] Updating animated land settings for ${land.id}:`, land.animationSettings);
+    
+    setAnimatedLands(prev => {
+      const updated = new Map(prev);
+      const existingState = updated.get(land.id);
+      
+      if (existingState) {
+        const newSettings = land.animationSettings || { fps: 5, loop: true };
+        updated.set(land.id, {
+          ...existingState,
+          settings: newSettings
+        });
+        console.log(`🎬 [Canvas] Updated animated land settings for ${land.id} - New FPS: ${newSettings.fps}, Loop: ${newSettings.loop}`);
+      }
+      
+      return updated;
+    });
+  }, [animatedLands]);
 
 const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
-    if (!land.hasAnimation || animatedLands.has(land.id)) return;
+    if (!land.hasAnimation) return;
+
+    if (animatedLands.has(land.id)) {
+      updateAnimatedLandSettings(land);
+      return;
+    }
 
     try {
       console.log(`🎬 Loading animated land data for ${land.id}`);
@@ -340,11 +366,10 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         console.log(`🎬 Set animated land state for ${land.id} with ${frames.length} frames`);
       } else {
         console.log(`🎬 No frames found for land ${land.id}`);
-      }
-    } catch (error) {
+      }    } catch (error) {
       console.error('Error loading animated land data:', error);
     }
-  }, [animatedLands]);
+  }, [animatedLands, updateAnimatedLandSettings]);
   
 
   useEffect(() => {
@@ -551,15 +576,27 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         document.removeEventListener('click', handleClickOutside);
       };
     }
-  }, [contextMenu]);
-  const startAnimationPreview = useCallback(async (landId: string) => {
+  }, [contextMenu]);  const startAnimationPreview = useCallback(async (landId: string) => {
     console.log('Starting animation preview for land:', landId);
     
     try {
-      const land = allLands.find(l => l.id === landId);
+      let land = allLands.find(l => l.id === landId);
       if (!land) {
         console.error('Land not found for animation preview:', landId);
         return;
+      }
+      
+      if (currentUser) {
+        try {
+          const userLands = await getUserLands(currentUser.uid);
+          const latestLandData = userLands.find(l => l.id === landId);
+          if (latestLandData) {
+            console.log('🎬 [Canvas] Got latest land data for animation:', latestLandData);
+            land = latestLandData;
+          }
+        } catch (error) {
+          console.error('Error fetching latest land data for animation:', error);
+        }
       }
 
       const halfSize = Math.floor(land.ownedSize / 2);
@@ -654,13 +691,11 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
           console.log(`[Canvas] Navigating to animated land at (${centerX}, ${centerY}). Setting viewport to (${newOffsetX}, ${newOffsetY})`);
           setViewportOffset({ x: newOffsetX, y: newOffsetY });
         }
-      }
-
-      console.log('Animation preview started for land:', landId);
+      }      console.log('Animation preview started for land:', landId);
     } catch (error) {
       console.error('Error starting animation preview:', error);
       toast.error('Failed to start animation preview');
-    }  }, [allLands, animatedLands, getLandFrames, grid, currentTheme.defaultPixelColor, effectiveCellSize]);
+    }  }, [allLands, animatedLands, getLandFrames, grid, currentTheme.defaultPixelColor, effectiveCellSize, currentUser, getUserLands]);
 
 
   const toggleDebugMode = useCallback(() => {
@@ -1109,18 +1144,21 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       }
     }
     
-    // console.log('[Canvas] Drawing blocked - not on owned land at point:', worldX, worldY);
     return false;
   }, [currentUser, userProfile, allLands]);
-    const getAllLands = useCallback(async () => {
-    try {
+    const getAllLands = useCallback(async () => {    try {
       const lands = await getAllLandsWithAuctionStatus();
       setAllLands(lands);
       
-    } catch (error) {
+      lands.forEach(land => {
+        if (land.hasAnimation && animatedLands.has(land.id)) {
+          console.log(`🎬 [Canvas] Updating animation settings for land ${land.id} from getAllLands`);
+          updateAnimatedLandSettings(land);
+        }
+      });    } catch (error) {
       console.error("Error fetching all lands:", error);
     }
-  }, []);
+  }, [animatedLands, updateAnimatedLandSettings]);
   const handleLandClick = useCallback(async (land: UserLandInfo, event: React.MouseEvent) => {
     event.stopPropagation();
     
@@ -1131,7 +1169,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setShowLandInfoPanel(true);
     }
   }, [navigate]);
-
   const loadUserLands = useCallback(async () => {
     if (!currentUser) return;
     
@@ -1139,13 +1176,17 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     try {
       const lands = await getUserLands(currentUser.uid);
       setUserLands(lands);
+      
+      lands.forEach(land => {
+        updateAnimatedLandSettings(land);
+      });
     } catch (error) {
       console.error("Error fetching user lands:", error);
       setUserLands([]);
     } finally {
       setLoadingUserLands(false);
     }
-  }, [currentUser]);
+  }, [currentUser, updateAnimatedLandSettings]);
 
   const toggleLandsDropdown = useCallback(() => {
     if (!isLandsDropdownOpen && currentUser) {
@@ -3862,10 +3903,21 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
           land={showAnimationModalForLand}
           onCaptureCurrentPixels={captureCurrentLandPixels}
           onPreviewAnimation={startAnimationPreview}
-          onStopAnimation={stopAnimationPreview}
-          onSuccess={() => {
+          onStopAnimation={stopAnimationPreview}          onSuccess={() => {
             loadUserLands();
             getAllLands();
+            
+            if (currentUser) {
+              getUserLands(currentUser.uid).then(lands => {
+                const updatedLand = lands.find(l => l.id === showAnimationModalForLand?.id);
+                if (updatedLand) {
+                  console.log('🎬 [Canvas] Updating modal with fresh land data:', updatedLand.animationSettings);
+                  setShowAnimationModalForLand(updatedLand);
+                }
+              }).catch(err => {
+                console.error('Failed to refresh land data for modal:', err);
+              });
+            }
           }}
         />
       )}{showLandSelectionModal && currentUser && (
