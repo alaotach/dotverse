@@ -239,8 +239,13 @@ const Canvas = () => {
   const [showAnimationModalForLand, setShowAnimationModalForLand] = useState<UserLandInfo | null>(null);
   const [animatedLands, setAnimatedLands] = useState<Map<string, AnimatedLandState>>(new Map());
   const [showLandSelectionModal, setShowLandSelectionModal] = useState(false);
+  const animatedPixelCache = useRef<Map<string, Map<string, string>>>(new Map());
+  const lastAnimationUpdate = useRef<Map<string, number>>(new Map());
+
   const updateAnimatedLandFrames = useCallback(() => {
     const now = Date.now();
+    const activeAnimations = Array.from(animatedLands.values()).filter(land => land.isActive);
+    if (activeAnimations.length === 0) return;
     const updatedAnimatedLands = new Map(animatedLands);
     let hasUpdates = false;
 
@@ -278,31 +283,37 @@ const Canvas = () => {
     if (hasUpdates) {
       setAnimatedLands(updatedAnimatedLands);
     }
-  }, [animatedLands]);  useEffect(() => {
-    if (animatedLands.size === 0) {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = undefined;
-      }
-      return;
-    }
+  }, [animatedLands]);  
+  
+  useEffect(() => {
+    let animationId: number | null = null;
+    let lastUpdate = 0;
+    const targetFPS = 30;
+    const frameInterval = 1000 / targetFPS;
 
-    const animationFrame = () => {
-      updateAnimatedLandFrames();
-      animationFrameRef.current = requestAnimationFrame(animationFrame);
+    const animationLoop = (currentTime: number) => {
+      if (currentTime - lastUpdate >= frameInterval) {
+        updateAnimatedLandFrames();
+        lastUpdate = currentTime;
+      }
+      
+      if (animatedLands.size > 0) {
+        animationId = requestAnimationFrame(animationLoop);
+      }
     };
 
-    if (!animationFrameRef.current) {
-      animationFrameRef.current = requestAnimationFrame(animationFrame);
+    if (animatedLands.size > 0) {
+      animationId = requestAnimationFrame(animationLoop);
     }
 
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = undefined;
+      if (animationId) {
+        cancelAnimationFrame(animationId);
       }
     };
-  }, [animatedLands.size, updateAnimatedLandFrames]);const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
+  }, [animatedLands.size, updateAnimatedLandFrames]);
+
+const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     if (!land.hasAnimation || animatedLands.has(land.id)) return;
 
     try {
@@ -342,43 +353,50 @@ const Canvas = () => {
         loadAnimatedLandData(land);
       }
     });
-  }, [allLands, loadAnimatedLandData]);  const lastLoggedFrameRef = useRef<string>('');
-    const getAnimatedLandPixels = useCallback((land: UserLandInfo, animatedLandState: AnimatedLandState) => {
-    if (!animatedLandState.frames.length) {
+  }, [allLands, loadAnimatedLandData]);  
+  
+  const getAnimatedLandPixels = useCallback((land: UserLandInfo, animatedLandState: AnimatedLandState) => {
+    if (!animatedLandState.frames.length || !animatedLandState.isActive) {
       return new Map<string, string>();
     }
 
-    if (!animatedLandState.isActive) {
-      return new Map<string, string>();
+    const cacheKey = `${land.id}-${animatedLandState.currentFrameIndex}`;
+    const lastUpdate = lastAnimationUpdate.current.get(land.id) || 0;
+    const currentUpdate = animatedLandState.lastFrameChangeTime;
+
+    if (currentUpdate === lastUpdate && animatedPixelCache.current.has(cacheKey)) {
+      return animatedPixelCache.current.get(cacheKey)!;
     }
 
     const currentFrame = animatedLandState.frames[animatedLandState.currentFrameIndex];
-    if (!currentFrame || !currentFrame.pixelData) {
+    if (!currentFrame?.pixelData) {
       return new Map<string, string>();
-    }
-
-    const frameKey = `${land.id}-${animatedLandState.currentFrameIndex}`;
-    if (lastLoggedFrameRef.current !== frameKey) {
-      console.log(`🎬 [${land.id}] Showing frame ${animatedLandState.currentFrameIndex}/${animatedLandState.frames.length - 1} with ${Object.keys(currentFrame.pixelData).length} pixels`);
-      lastLoggedFrameRef.current = frameKey;
     }
 
     const pixelMap = new Map<string, string>();
     const halfSize = Math.floor(land.ownedSize / 2);
-    const landStartX = land.centerX - halfSize;
-    const landStartY = land.centerY - halfSize;
     
     Object.entries(currentFrame.pixelData).forEach(([relativeCoord, color]) => {
       const [relX, relY] = relativeCoord.split(':').map(Number);
-      const absoluteX = landStartX + relX;
-      const absoluteY = landStartY + relY;
-      const pixelKey = `${absoluteX}:${absoluteY}`;
-      pixelMap.set(pixelKey, color);
+      if (!isNaN(relX) && !isNaN(relY)) {
+        const absoluteX = land.centerX - halfSize + relX;
+        const absoluteY = land.centerY - halfSize + relY;
+        const absoluteKey = `${absoluteX}:${absoluteY}`;
+        pixelMap.set(absoluteKey, color);
+      }
     });
-    
+    animatedPixelCache.current.set(cacheKey, pixelMap);
+    lastAnimationUpdate.current.set(land.id, currentUpdate);
+
+    if (animatedPixelCache.current.size > 50) {
+      const oldestKey = animatedPixelCache.current.keys().next().value;
+      animatedPixelCache.current.delete(oldestKey);
+    }
+
     return pixelMap;
   }, []);
 
+  
   const allStickersMap = useMemo(() => {
     const map = new Map<string, Sticker>();
     stickerPacks.forEach(pack => {
@@ -644,26 +662,6 @@ const Canvas = () => {
       toast.error('Failed to start animation preview');
     }  }, [allLands, animatedLands, getLandFrames, grid, currentTheme.defaultPixelColor, effectiveCellSize]);
 
-  const stopAnimationPreview = useCallback((landId: string) => {
-    console.log('Stopping animation preview for land:', landId);
-    
-    setAnimatedLands(prev => {
-      const updated = new Map(prev);
-      const animState = updated.get(landId);
-      if (animState) {
-        updated.set(landId, {
-          ...animState,
-          isActive: false
-        });
-        
-        const land = allLands.find(l => l.id === landId);
-        if (land) {
-          toast.info(`Stopped animation for ${land.displayName || 'Land'} - showing latest canvas state`);
-        }
-      }
-      return updated;
-    });
-  }, [allLands]);
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -2611,7 +2609,7 @@ const Canvas = () => {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isLandsDropdownOpen]);  
+  }, [isLandsDropdownOpen]);
   
   const cellLandMap = useMemo(() => {
     console.log('[Canvas] Recalculating cellLandMap - allLands count:', allLands.length, 'userProfile.landInfo:', userProfile?.landInfo);
@@ -2684,179 +2682,212 @@ const Canvas = () => {
 
   const showGridLines = SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD;
 
-  const gridCells = useMemo(() => {
+    const landBorderOverlays = useMemo(() => {
     if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
-      return []; 
+      return [];
     }
-      const cells: JSX.Element[] = [];
+
+    const overlays: JSX.Element[] = [];
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
-    
-    if (animatedLands.size > 0) {
-      console.log(`[Canvas] Rendering viewport: x=${startWorldX} to ${startWorldX + viewportCellWidth}, y=${startWorldY} to ${startWorldY + viewportCellHeight}`);
-    }
-    
     const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
     const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
-      for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
-      for (let screenX = 0; screenX < viewportCellWidth; screenX++) {        const worldX = screenX + startWorldX;
-        const worldY = screenY + startWorldY;
-        const pixelKey = getPixelKey(worldX, worldY);
-        
-        let pixelData = grid.get(pixelKey);
-        let color = currentTheme.defaultPixelColor;
-        let isAnimated = false;
-        let debugInfo = '';
-        animatedLands.forEach((animatedLandState, landId) => {
-          const land = allLands.find(l => l.id === landId);
-          if (land) {
-            const animatedPixels = getAnimatedLandPixels(land, animatedLandState);
-            const animatedColor = animatedPixels.get(pixelKey);
-            if (animatedColor) {
-              color = animatedColor;
-              isAnimated = true;
-              debugInfo = `Found animated pixel at ${pixelKey} with color ${animatedColor}`;
-            }
-          }
-        });
-        
-        if (debugInfo && screenX === 0 && screenY === 0) {
-          console.log(`[Canvas] ${debugInfo}`);
-        }
-        
-        if (!isAnimated && pixelData) {
-          try {
-            if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
-              const parsed = JSON.parse(pixelData);
-              color = parsed.color; 
-            } else {
-              color = pixelData;
-            }
-          } catch (e) {
-            color = pixelData;
-          }
-        }
-        
-        const isDrawableHere = !!currentUser && !!userProfile && canDrawAtPoint(worldX, worldY);
-        
-        const cellStyle: React.CSSProperties = {
-          position: 'absolute',
-          left: `${(screenX * effectiveCellSize) - offsetX}px`,
-          top: `${(screenY * effectiveCellSize) - offsetY}px`,
-          width: `${effectiveCellSize}px`,
-          height: `${effectiveCellSize}px`,
-          backgroundColor: color,
-          boxSizing: 'border-box',
-        };
-        
-        let borderTop = '';
-        let borderBottom = '';
-        let borderLeft = '';
-        let borderRight = '';
-        
-        if (showGridLines) {
-          const gridBorder = `1px solid ${currentTheme.gridLineColor}`;
-          borderTop = gridBorder;
-          borderBottom = gridBorder;
-          borderLeft = gridBorder;
-          borderRight = gridBorder;
-        }
-        
-        const landMapEntry = cellLandMap.get(pixelKey);
-        if (landMapEntry) {          const { landInfo: land, isCurrentUserLand } = landMapEntry;
-          const { centerX, centerY, ownedSize, shape } = land;
 
-          const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
-          const borderWidth = "3px";
-          
-          if (shape === 'irregular') {
-            const irregularBorder = `${borderWidth} dashed ${borderColor}`;
-            borderTop = irregularBorder;
-            borderBottom = irregularBorder;
-            borderLeft = irregularBorder;
-            borderRight = irregularBorder;
-            
-            if (color === currentTheme.defaultPixelColor) {
-              cellStyle.backgroundColor = isCurrentUserLand ? 
-                "rgba(255, 0, 0, 0.05)" : 
-                "rgba(0, 128, 255, 0.05)";
-            }
-          } else {
-            const halfSize = Math.floor(ownedSize / 2);
-            
-            if (worldX === centerX - halfSize) {
-              borderLeft = `${borderWidth} solid ${borderColor}`;
-            }
-            if (worldX === centerX + halfSize) {
-              borderRight = `${borderWidth} solid ${borderColor}`;
-            }
-            if (worldY === centerY - halfSize) {
-              borderTop = `${borderWidth} solid ${borderColor}`;
-            }
-            if (worldY === centerY + halfSize) {
-              borderBottom = `${borderWidth} solid ${borderColor}`;
-            }
-          }
-        }
-        
-        if (borderTop) cellStyle.borderTop = borderTop;
-        if (borderBottom) cellStyle.borderBottom = borderBottom;
-        if (borderLeft) cellStyle.borderLeft = borderLeft;
-        if (borderRight) cellStyle.borderRight = borderRight;
-          
-        if (debugMode && !isDrawableHere && currentUser && userProfile) {
-          cellStyle.backgroundColor = color === currentTheme.defaultPixelColor ? 
-            "rgba(255, 0, 0, 0.1)" : 
-            color;
-          cellStyle.opacity = 0.7;
-        }
-        if (debugMode) {
-          cellStyle.border = '1px solid rgba(255, 0, 0, 0.3)';
-        }
-        
-        const cellElement = (
-          <div
-            key={pixelKey}
-            style={cellStyle}
-            className={isPanning ? 'cursor-move' : (isDrawableHere ? 'cursor-crosshair' : 'cursor-not-allowed')}
-            data-world-coords={`${worldX},${worldY}`}            onContextMenu={landMapEntry ? (e) => {
-              const userLandInfo: UserLandInfo = {
-                ...landMapEntry.landInfo,
-                id: `${landMapEntry.landInfo.centerX},${landMapEntry.landInfo.centerY}`,
-                createdAt: Date.now()
-              };
-              handleLandRightClick(e, userLandInfo);
-            } : undefined}
-          />
-        );
-        
-        cells.push(cellElement);
+    allLands.forEach((land, index) => {
+      const halfSize = Math.floor(land.ownedSize / 2);
+      const landMinX = land.centerX - halfSize;
+      const landMaxX = land.centerX + halfSize;
+      const landMinY = land.centerY - halfSize;
+      const landMaxY = land.centerY + halfSize;
+
+      const viewMinX = startWorldX;
+      const viewMaxX = startWorldX + viewportCellWidth;
+      const viewMinY = startWorldY;
+      const viewMaxY = startWorldY + viewportCellHeight;
+
+      if (landMaxX < viewMinX || landMinX > viewMaxX || landMaxY < viewMinY || landMinY > viewMaxY) {
+        return;
       }
-    }
 
-    return cells;  }, [
-    grid,
+      const screenLeft = (landMinX - startWorldX) * effectiveCellSize - offsetX;
+      const screenTop = (landMinY - startWorldY) * effectiveCellSize - offsetY;
+      const screenWidth = land.ownedSize * effectiveCellSize;
+      const screenHeight = land.ownedSize * effectiveCellSize;
+      const isCurrentUserLand = currentUser && currentUser.uid === land.owner;
+      const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
+      const borderWidth = 2;
+
+      overlays.push(
+        <div
+          key={`land-border-${land.centerX}-${land.centerY}`}
+          style={{
+            position: 'absolute',
+            left: screenLeft,
+            top: screenTop,
+            width: screenWidth,
+            height: screenHeight,
+            border: `${borderWidth}px solid ${borderColor}`,
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+            zIndex: 10
+          }}
+        />
+      );
+    });
+
+    return overlays;
+  }, [
+    allLands,
     viewportOffset,
     viewportCellWidth,
     viewportCellHeight,
     effectiveCellSize,
-    cellLandMap,
+    initialDataLoaded,
+    currentUser,
+    userLandBorderColor,
+    otherLandBorderColor
+  ]);
+
+  const gridCells = useMemo(() => {
+    if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
+      return []; 
+    }
+    const cells: JSX.Element[] = [];
+    const startWorldX = Math.floor(viewportOffset.x);
+    const startWorldY = Math.floor(viewportOffset.y);
+    
+    const activeAnimatedPixels = new Map<string, string>();
+    const animatedLandAreas = new Set<string>(); 
+    
+    animatedLands.forEach((animatedLandState, landId) => {
+      if (!animatedLandState.isActive) return;
+      
+      const land = allLands.find(l => l.id === landId);
+      if (!land) return;
+
+      const animatedPixels = getAnimatedLandPixels(land, animatedLandState);
+      animatedPixels.forEach((color, pixelKey) => {
+        activeAnimatedPixels.set(pixelKey, color);
+      });
+
+      const halfSize = Math.floor(land.ownedSize / 2);
+      for (let y = land.centerY - halfSize; y <= land.centerY + halfSize; y++) {
+        for (let x = land.centerX - halfSize; x <= land.centerX + halfSize; x++) {
+          animatedLandAreas.add(`${x}:${y}`);
+        }
+      }
+    });
+    
+    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
+    for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
+      for (let screenX = 0; screenX < viewportCellWidth; screenX++) {
+        const worldX = screenX + startWorldX;
+        const worldY = screenY + startWorldY;
+        const pixelKey = getPixelKey(worldX, worldY);
+        
+        let color = currentTheme.defaultPixelColor;
+        let isAnimated = false;
+        
+        const isInAnimatedArea = animatedLandAreas.has(pixelKey);
+        
+        const animatedColor = activeAnimatedPixels.get(pixelKey);
+        if (animatedColor) {
+          color = animatedColor;
+          isAnimated = true;
+        } 
+        else if (isInAnimatedArea) {
+          color = currentTheme.defaultPixelColor;
+          isAnimated = true;
+        }
+        else {
+          const pixelData = grid.get(pixelKey);
+          if (pixelData) {
+            try {
+              if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
+                const parsed = JSON.parse(pixelData);
+                color = parsed.color; 
+              } else {
+                color = pixelData;
+              }
+            } catch (e) {
+              color = pixelData;
+            }
+          }
+        }
+        const isDrawableHere = !!currentUser && !!userProfile && canDrawAtPoint(worldX, worldY);
+        
+        const cellStyle: React.CSSProperties = {
+          position: 'absolute',
+          left: screenX * effectiveCellSize - offsetX,
+          top: screenY * effectiveCellSize - offsetY,
+          width: effectiveCellSize,
+          height: effectiveCellSize,
+          backgroundColor: color,
+          boxSizing: 'border-box',
+          cursor: isDrawableHere ? 'crosshair' : 'default',
+        };
+
+        if (SHOW_GRID_LINES && zoomLevel > GRID_LINE_THRESHOLD) {
+          cellStyle.border = `1px solid ${currentTheme.gridLineColor}`;
+        }
+        
+        cells.push(
+          <div
+            key={pixelKey}
+            style={cellStyle}
+            className="pixel-cell"
+            data-x={worldX}
+            data-y={worldY}
+          />
+        );
+      }
+    }
+
+    return cells;
+  }, [
+    viewportOffset,
+    viewportCellWidth,
+    viewportCellHeight,
+    effectiveCellSize,
+    grid,
+    animatedLands,
+    allLands,
+    getAnimatedLandPixels,
+    currentTheme,
+    zoomLevel,
+    initialDataLoaded,
     currentUser,
     userProfile,
     canDrawAtPoint,
-    debugMode,
-    isPanning,
-    zoomLevel,
-    initialDataLoaded,
-    getPixelKey,
-    showGridLines,
-    currentTheme,
-    animatedLands,
-    allLands,
-    getAnimatedLandPixels
+    getPixelKey
   ]);
 
-  
+
+  const stopAnimationPreview = useCallback((landId: string) => {
+    console.log('Stopping animation preview for land:', landId);
+    
+    setAnimatedLands(prev => {
+      const updated = new Map(prev);
+      const animState = updated.get(landId);
+      if (animState) {
+        updated.set(landId, {
+          ...animState,
+          isActive: false
+        });
+      }
+      return updated;
+    });
+
+    animatedPixelCache.current.forEach((_, key) => {
+      if (key.startsWith(`${landId}-`)) {
+        animatedPixelCache.current.delete(key);
+      }
+    });
+    lastAnimationUpdate.current.delete(landId);
+  }, []);
+
+
   if (!initialDataLoaded) {
     console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
     
@@ -3675,6 +3706,7 @@ const Canvas = () => {
         }}
       >
         {gridCells}
+        {landBorderOverlays}
         {renderStickerOverlays()}
         {auctionOverlays}
       </div>

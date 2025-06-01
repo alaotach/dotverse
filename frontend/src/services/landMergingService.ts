@@ -382,4 +382,4 @@ class LandMergingService {
   }
 }
 
-export const landMergingService = new LandMergingService();
+export const landMergingService = new LandMergingService(); 

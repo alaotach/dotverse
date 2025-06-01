@@ -106,12 +106,12 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
           >
             Reset
           </button>
-            {/* New Preview on Canvas Button */}
+
           {onPreviewAnimation && frames.length > 0 && (
             <button
               onClick={() => {
                 onPreviewAnimation(land.id);
-                onClose(); // Close modal to see canvas animation
+                onClose();
               }}
               className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
               title="Preview animation on canvas"
