@@ -256,7 +256,7 @@ const Canvas = () => {
       if (!currentFrame) return;
       const fps = animatedLand.settings?.fps || 5;
       console.log(`🎬 [Canvas] Using FPS for animation: ${fps} (land ${landId})`);
-      const frameDuration = 1000/fps;
+      const frameDuration = currentFrame.duration || (1000 / fps);
       
       const timeSinceLastChange = now - animatedLand.lastFrameChangeTime;
 
@@ -311,8 +311,7 @@ const Canvas = () => {
         cancelAnimationFrame(animationId);
       }
     };  }, [animatedLands.size, updateAnimatedLandFrames]);
-
-    const updateAnimatedLandSettings = useCallback((land: UserLandInfo) => {
+  const updateAnimatedLandSettings = useCallback((land: UserLandInfo) => {
     if (!land.hasAnimation || !animatedLands.has(land.id)) return;
     
     console.log(`🎬 [Canvas] Updating animated land settings for ${land.id}:`, land.animationSettings);
@@ -411,11 +410,11 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       }
     });
     animatedPixelCache.current.set(cacheKey, pixelMap);
-    lastAnimationUpdate.current.set(land.id, currentUpdate);
-
-    if (animatedPixelCache.current.size > 50) {
+    lastAnimationUpdate.current.set(land.id, currentUpdate);    if (animatedPixelCache.current.size > 50) {
       const oldestKey = animatedPixelCache.current.keys().next().value;
-      animatedPixelCache.current.delete(oldestKey);
+      if (oldestKey) {
+        animatedPixelCache.current.delete(oldestKey);
+      }
     }
 
     return pixelMap;
@@ -917,16 +916,14 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     if (!targetLand) {
       console.warn('Land not found for ID:', landId);
       return {};
-    }
-
-    const { centerX, centerY, ownedSize } = targetLand;
+    }    const { centerX, centerY, ownedSize } = targetLand;
     const halfSize = Math.floor(ownedSize / 2);
     const pixelData: LandFramePixelData = {};
 
     let pixelsCaptured = 0;
 
-    for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
-      for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
+    for (let y = centerY - halfSize; y <= centerY + halfSize - (ownedSize % 2 === 0 ? 1 : 0); y++) {
+      for (let x = centerX - halfSize; x <= centerX + halfSize - (ownedSize % 2 === 0 ? 1 : 0); x++) {
         const pixelKey = getPixelKey(x, y);
         const color = grid.get(pixelKey);
         
@@ -1100,13 +1097,12 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     }
     
     for (const land of allLands) {
-      if (land.owner === currentUser.uid) {
-        const halfSize = Math.floor(land.ownedSize / 2);
+      if (land.owner === currentUser.uid) {        const halfSize = Math.floor(land.ownedSize / 2);
         const isWithinLand = (
           worldX >= land.centerX - halfSize &&
-          worldX <= land.centerX + halfSize &&
+          worldX <= land.centerX + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0) &&
           worldY >= land.centerY - halfSize &&
-          worldY <= land.centerY + halfSize
+          worldY <= land.centerY + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0)
         );
         
         if (isWithinLand) {
@@ -1118,15 +1114,14 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         }
       }
     }
-    if (userProfile?.landInfo) {
-      const { centerX, centerY, ownedSize } = userProfile.landInfo;
+    if (userProfile?.landInfo) {      const { centerX, centerY, ownedSize } = userProfile.landInfo;
       const halfSize = Math.floor(ownedSize / 2);
       
       const isWithinProfileLand = (
         worldX >= centerX - halfSize &&
-        worldX <= centerX + halfSize &&
+        worldX <= centerX + halfSize - (ownedSize % 2 === 0 ? 1 : 0) &&
         worldY >= centerY - halfSize &&
-        worldY <= centerY + halfSize
+        worldY <= centerY + halfSize - (ownedSize % 2 === 0 ? 1 : 0)
       );
       
       if (isWithinProfileLand) {
@@ -2732,14 +2727,12 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
     const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
-    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
-
-    allLands.forEach((land, index) => {
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;    allLands.forEach((land) => {
       const halfSize = Math.floor(land.ownedSize / 2);
       const landMinX = land.centerX - halfSize;
-      const landMaxX = land.centerX + halfSize;
+      const landMaxX = land.centerX + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
       const landMinY = land.centerY - halfSize;
-      const landMaxY = land.centerY + halfSize;
+      const landMaxY = land.centerY + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
 
       const viewMinX = startWorldX;
       const viewMaxX = startWorldX + viewportCellWidth;

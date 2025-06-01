@@ -75,8 +75,7 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
+    if (file) {      if (file.size > 5 * 1024 * 1024) {
         setError('Image size must be less than 5MB');
         return;
       }
@@ -85,10 +84,7 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
       reader.onload = (e) => {
         const result = e.target?.result as string;
         setImagePreview(result);
-        setFormData(prev => ({
-          ...prev,
-          imageUrl: result
-        }));
+        setFormData(prev => ({ ...prev, imageUrl: result }));
       };
       reader.readAsDataURL(file);
     }
@@ -96,8 +92,29 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !selectedLand) {
+    
+    if (!currentUser || !userProfile) {
+      setError('Please log in to create an auction');
+      return;
+    }
+
+    if (!selectedLand) {
       setError('Please select a land to auction');
+      return;
+    }
+
+    if (selectedLand.isAuctioned) {
+      setError('This land is already being auctioned');
+      return;
+    }
+
+    if (formData.startingPrice <= 0) {
+      setError('Starting price must be greater than 0');
+      return;
+    }
+
+    if (enableBuyNow && (!formData.buyNowPrice || formData.buyNowPrice <= formData.startingPrice)) {
+      setError('Buy now price must be higher than starting price');
       return;
     }
 
@@ -107,184 +124,228 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
     try {
       const auctionData: CreateAuctionData = {
         ...formData,
-        landCenterX: selectedLand.centerX,
-        landCenterY: selectedLand.centerY,
-        landSize: selectedLand.ownedSize,
         buyNowPrice: enableBuyNow ? formData.buyNowPrice : undefined
-      };
+      };      await auctionService.createAuction(
+        currentUser.uid,
+        userProfile.displayName || userProfile.email || 'Anonymous',
+        auctionData
+      );
 
-      const result = await auctionService.createAuction(currentUser.uid, auctionData);
-      
-      if (result.success) {
-        onSuccess();
-      } else {
-        setError(result.message || 'Failed to create auction');
-      }
-    } catch (error) {
-      console.error('Error creating auction:', error);
-      setError('Failed to create auction. Please try again.');
+      console.log('[CreateAuctionModal] Auction created successfully for user:', currentUser.uid);
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create auction');
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? parseFloat(value) || 0 : value
-    }));
-  };
-
-  if (!currentUser) return null;
+  const durationOptions = [
+    { value: 1, label: '1 Hour' },
+    { value: 3, label: '3 Hours' },
+    { value: 12, label: '12 Hours' },
+    { value: 24, label: '1 Day' },
+    { value: 72, label: '3 Days' },
+    { value: 168, label: '1 Week' }
+  ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold">Create Auction</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            ×
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {loadingLands ? (
-            <div className="text-center py-4">Loading your lands...</div>
-          ) : userLands.length === 0 ? (
-            <div className="text-center py-4 text-gray-500">
-              No available lands to auction
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Land
-                </label>
-                <select
-                  value={selectedLand?.id || ''}
-                  onChange={(e) => {
-                    const land = userLands.find(l => l.id === e.target.value);
-                    setSelectedLand(land || null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Choose a land...</option>
-                  {userLands.map(land => (
-                    <option key={land.id} value={land.id}>
-                      {land.displayName || `Land at (${land.centerX}, ${land.centerY})`} - {land.ownedSize}×{land.ownedSize}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Starting Price (🪙)
-                </label>
-                <input
-                  type="number"
-                  name="startingPrice"
-                  value={formData.startingPrice}
-                  onChange={handleInputChange}
-                  min="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Duration (hours)
-                </label>
-                <input
-                  type="number"
-                  name="duration"
-                  value={formData.duration}
-                  onChange={handleInputChange}
-                  min="1"
-                  max="168"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="enableBuyNow"
-                  checked={enableBuyNow}
-                  onChange={(e) => setEnableBuyNow(e.target.checked)}
-                  className="mr-2"
-                />
-                <label htmlFor="enableBuyNow" className="text-sm font-medium text-gray-700">
-                  Enable Buy Now option
-                </label>
-              </div>
-
-              {enableBuyNow && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Buy Now Price (🪙)
-                  </label>
-                  <input
-                    type="number"
-                    name="buyNowPrice"
-                    value={formData.buyNowPrice || ''}
-                    onChange={handleInputChange}
-                    min={formData.startingPrice + 1}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-white">Create Land Auction</h2>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white text-2xl"
+            >
+              ×
+            </button>
+          </div>          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Land Selection */}
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-white mb-3">Select Land to Auction</h3>
+              
+              {loadingLands ? (
+                <div className="text-gray-300 flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500"></div>
+                  Loading your lands...
                 </div>
-              )}
+              ) : userLands.length === 0 ? (
+                <div className="text-gray-400">
+                  <p>No lands available for auction.</p>
+                  <p className="text-sm mt-1">You need to own land that isn't already being auctioned.</p>
+                </div>
+              ) : (                <div className="space-y-2">
+                  {userLands.map((land, index) => (
+                    <div
+                      key={`${land.centerX}-${land.centerY}`}
+                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                        selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY
+                          ? 'border-blue-500 bg-blue-900/30'
+                          : 'border-gray-600 hover:border-gray-500 bg-gray-800'
+                      }`}
+                      onClick={() => setSelectedLand(land)}
+                    >                      <div className="flex items-center gap-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-16 h-16 rounded border border-gray-600 bg-gray-700 flex items-center justify-center">
+                            <div className="text-center text-xs text-gray-400">
+                              <div>{land.ownedSize}×{land.ownedSize}</div>
+                              <div>Land</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-white font-medium">
+                            Land #{index + 1}
+                          </div>
+                          <div className="text-gray-300 text-sm">
+                            Location: ({land.centerX}, {land.centerY})
+                          </div>
+                          <div className="text-gray-300 text-sm">
+                            Size: {land.ownedSize}×{land.ownedSize} pixels
+                          </div>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
+                          selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-gray-500'
+                        }`}>
+                          {selectedLand?.centerX === land.centerX && selectedLand?.centerY === land.centerY && (
+                            <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Auction Image (Optional)
-                </label>
+            {/* Image Upload */}
+            <div>
+              <label className="block text-white font-medium mb-2">
+                Land Screenshot (Optional)
+              </label>
+              <div className="space-y-3">
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleImageUpload}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none file:mr-4 file:py-1 file:px-2 file:rounded file:border-0 file:text-sm file:bg-blue-600 file:text-white hover:file:bg-blue-700"
                 />
                 {imagePreview && (
-                  <div className="mt-2">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-full h-32 object-cover rounded-md"
+                  <div className="relative">
+                    <img 
+                      src={imagePreview} 
+                      alt="Land preview" 
+                      className="w-full h-32 object-cover rounded border border-gray-600"
                     />
+                    <button
+                      type="button"                      onClick={() => {
+                        setImagePreview(null);
+                        setFormData(prev => ({ ...prev, imageUrl: undefined }));
+                      }}
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-700"
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
-              </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
-                  {error}
+                <div className="text-xs text-gray-400">
+                  Upload a screenshot of your land to help potential bidders see what they're buying.
                 </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreating || !selectedLand}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isCreating ? 'Creating...' : 'Create Auction'}
-                </button>
               </div>
-            </>
-          )}
-        </form>
+            </div>
+
+            {/* Starting Price */}
+            <div>
+              <label className="block text-white font-medium mb-2">
+                Starting Price 🪙
+              </label>
+              <input
+                type="number"
+                value={formData.startingPrice}
+                onChange={(e) => setFormData(prev => ({ ...prev, startingPrice: Number(e.target.value) }))}
+                min="1"
+                className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                required
+              />
+            </div>
+
+            {/* Duration */}
+            <div>
+              <label className="block text-white font-medium mb-2">
+                Auction Duration
+              </label>
+              <select
+                value={formData.duration}
+                onChange={(e) => setFormData(prev => ({ ...prev, duration: Number(e.target.value) }))}
+                className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                required
+              >
+                {durationOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Buy Now Option */}
+            <div>
+              <label className="flex items-center text-white mb-2">
+                <input
+                  type="checkbox"
+                  checked={enableBuyNow}
+                  onChange={(e) => setEnableBuyNow(e.target.checked)}
+                  className="mr-2"
+                />
+                Enable "Buy Now" option
+              </label>
+              {enableBuyNow && (
+                <input
+                  type="number"
+                  value={formData.buyNowPrice || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, buyNowPrice: Number(e.target.value) }))}
+                  placeholder="Buy now price"
+                  min={formData.startingPrice + 1}
+                  className="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+              )}
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-900 border border-red-600 text-red-200 px-3 py-2 rounded text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>              <button
+                type="submit"
+                disabled={isCreating || !selectedLand || loadingLands}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreating ? 'Creating...' : 'Create Auction'}
+              </button>
+            </div>
+          </form>
+
+          {/* Info */}
+          <div className="mt-6 text-xs text-gray-400 space-y-1">
+            <p>• You can only cancel auctions with no bids</p>
+            <p>• Auctions automatically extend if bids are placed near the end</p>
+            <p>• You'll receive payment when the auction ends</p>
+          </div>
+        </div>
       </div>
     </div>
   );
