@@ -24,6 +24,10 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
     }
   }, [isOpen]);
 
+
+
+
+
   const loadCheckInData = () => {
     setRewards(dailyCheckInService.getRewards());
     setCurrentStreak(dailyCheckInService.getCurrentStreak());

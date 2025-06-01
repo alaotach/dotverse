@@ -5,7 +5,7 @@ import { PixelBatchManager } from '../src/services/pixelBatchManager';
 import { useAnalytics } from '../src/services/AnalyticsService';
 import { useGesture } from '@use-gesture/react';
 import { toPng } from 'html-to-image';
-import { getAllLandsWithAuctionStatus, getUserLands, type UserLandInfo } from '../src/services/landService';
+import { getAllLandsWithAuctionStatus, getUserLands, getLandFrames, type UserLandInfo } from '../src/services/landService';
 import { useNavigate } from 'react-router-dom';
 import LandExpansionModal from '../components/lands/LandExpansionModal';
 import LandInfoPanel from '../components/lands/LandInfoPanel';
@@ -19,6 +19,20 @@ import { stickerService, type Sticker, type StickerPack } from '../src/services/
 import { FiGrid } from 'react-icons/fi';
 import { dailyCheckInService } from '../src/services/dailyLoginRewardService';
 import { DailyCheckInModal } from './dailylogin/DailyLoginModal';
+import LandAnimationModal from "./lands/LandAnimationModal";
+import type { LandFramePixelData, LandFrame } from "../src/services/landService";
+import LandSelectionModal from './lands/LandSelectionModal';
+
+interface AnimatedLandState {
+  landId: string;
+  currentFrameIndex: number;
+  lastFrameChangeTime: number;
+  frames: LandFrame[];
+  settings: UserLandInfo['animationSettings'];
+  isLoadingFrames: boolean;
+  isActive: boolean;
+  originalGridPixels?: Map<string, string>;
+}
 
 interface Theme {
   id: string;
@@ -91,12 +105,13 @@ const ZOOM_SENSITIVITY = 0.1;
 const CHUNK_SIZE = 25;
 
 const debounce = (func: Function, delay: number) => {
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: ReturnType<typeof setTimeout>;
   return (...args: any[]) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       func(...args);
-    }, delay);  };
+    }, delay);
+  };
 };
 
 const LOCAL_STORAGE_VIEWPORT_X_KEY = 'dotverse_viewport_x';
@@ -221,6 +236,148 @@ const Canvas = () => {
     return DEFAULT_THEME_ID;
   });
   const [showDailyCheckIn, setShowDailyCheckIn] = useState(false);
+  const [showAnimationModalForLand, setShowAnimationModalForLand] = useState<UserLandInfo | null>(null);
+  const [animatedLands, setAnimatedLands] = useState<Map<string, AnimatedLandState>>(new Map());
+  const [showLandSelectionModal, setShowLandSelectionModal] = useState(false);
+  const updateAnimatedLandFrames = useCallback(() => {
+    const now = Date.now();
+    const updatedAnimatedLands = new Map(animatedLands);
+    let hasUpdates = false;
+
+    updatedAnimatedLands.forEach((animatedLand, landId) => {
+      if (animatedLand.frames.length <= 1) return;
+
+      const currentFrame = animatedLand.frames[animatedLand.currentFrameIndex];
+      if (!currentFrame) return;
+
+      const fps = animatedLand.settings?.fps || 5;
+      const frameDuration = currentFrame.duration || (1000 / fps);
+      
+      const timeSinceLastChange = now - animatedLand.lastFrameChangeTime;
+
+      if (timeSinceLastChange >= frameDuration) {
+        let nextFrameIndex = animatedLand.currentFrameIndex + 1;
+        
+        if (nextFrameIndex >= animatedLand.frames.length) {
+          if (animatedLand.settings?.loop !== false) {
+            nextFrameIndex = 0;
+          } else {
+            nextFrameIndex = animatedLand.frames.length - 1;
+            return;
+          }
+        }        updatedAnimatedLands.set(landId, {
+          ...animatedLand,
+          currentFrameIndex: nextFrameIndex,
+          lastFrameChangeTime: now
+        });
+        hasUpdates = true;
+        console.log(`[Canvas] Animation frame updated for land ${landId}: frame ${nextFrameIndex}/${animatedLand.frames.length - 1}`);
+      }
+    });
+
+    if (hasUpdates) {
+      setAnimatedLands(updatedAnimatedLands);
+    }
+  }, [animatedLands]);  useEffect(() => {
+    if (animatedLands.size === 0) {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+      return;
+    }
+
+    const animationFrame = () => {
+      updateAnimatedLandFrames();
+      animationFrameRef.current = requestAnimationFrame(animationFrame);
+    };
+
+    if (!animationFrameRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animationFrame);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+    };
+  }, [animatedLands.size, updateAnimatedLandFrames]);const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
+    if (!land.hasAnimation || animatedLands.has(land.id)) return;
+
+    try {
+      console.log(`🎬 Loading animated land data for ${land.id}`);
+      const frames = await getLandFrames(land.id);
+      console.log(`🎬 Loaded ${frames.length} frames for land ${land.id}:`, frames);
+      
+      frames.forEach((frame, index) => {
+        const pixelCount = Object.keys(frame.pixelData || {}).length;
+        console.log(`🎬 Frame ${index} (ID: ${frame.id}): ${pixelCount} pixels`, frame.pixelData);
+      });
+      
+      if (frames.length > 0) {
+        setAnimatedLands(prev => new Map(prev.set(land.id, {
+          landId: land.id,
+          currentFrameIndex: 0,
+          lastFrameChangeTime: Date.now(),
+          frames: frames.sort((a, b) => a.frameIndex - b.frameIndex),
+          settings: land.animationSettings || { fps: 5, loop: true },
+          isLoadingFrames: false,
+          isActive: false,
+          originalGridPixels: new Map()
+        })));
+        console.log(`🎬 Set animated land state for ${land.id} with ${frames.length} frames`);
+      } else {
+        console.log(`🎬 No frames found for land ${land.id}`);
+      }
+    } catch (error) {
+      console.error('Error loading animated land data:', error);
+    }
+  }, [animatedLands]);
+  
+
+  useEffect(() => {
+    allLands.forEach(land => {
+      if (land.hasAnimation && !animatedLands.has(land.id)) {
+        loadAnimatedLandData(land);
+      }
+    });
+  }, [allLands, loadAnimatedLandData]);  const lastLoggedFrameRef = useRef<string>('');
+    const getAnimatedLandPixels = useCallback((land: UserLandInfo, animatedLandState: AnimatedLandState) => {
+    if (!animatedLandState.frames.length) {
+      return new Map<string, string>();
+    }
+
+    if (!animatedLandState.isActive) {
+      return new Map<string, string>();
+    }
+
+    const currentFrame = animatedLandState.frames[animatedLandState.currentFrameIndex];
+    if (!currentFrame || !currentFrame.pixelData) {
+      return new Map<string, string>();
+    }
+
+    const frameKey = `${land.id}-${animatedLandState.currentFrameIndex}`;
+    if (lastLoggedFrameRef.current !== frameKey) {
+      console.log(`🎬 [${land.id}] Showing frame ${animatedLandState.currentFrameIndex}/${animatedLandState.frames.length - 1} with ${Object.keys(currentFrame.pixelData).length} pixels`);
+      lastLoggedFrameRef.current = frameKey;
+    }
+
+    const pixelMap = new Map<string, string>();
+    const halfSize = Math.floor(land.ownedSize / 2);
+    const landStartX = land.centerX - halfSize;
+    const landStartY = land.centerY - halfSize;
+    
+    Object.entries(currentFrame.pixelData).forEach(([relativeCoord, color]) => {
+      const [relX, relY] = relativeCoord.split(':').map(Number);
+      const absoluteX = landStartX + relX;
+      const absoluteY = landStartY + relY;
+      const pixelKey = `${absoluteX}:${absoluteY}`;
+      pixelMap.set(pixelKey, color);
+    });
+    
+    return pixelMap;
+  }, []);
 
   const allStickersMap = useMemo(() => {
     const map = new Map<string, Sticker>();
@@ -332,10 +489,10 @@ const Canvas = () => {
   const optimisticUpdatesMapRef = useRef<Map<string, {timestamp: number, color: string}>>(new Map());
   const canvasContainerRef = useRef<HTMLDivElement>(null); 
   const panStartMousePositionRef = useRef<{ x: number, y: number } | null>(null);
-  const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);  const isSpacebarHeldRef = useRef<boolean>(false);
-  const latestViewportOffsetTargetRef = useRef(viewportOffset);
+  const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);  const isSpacebarHeldRef = useRef<boolean>(false);  const latestViewportOffsetTargetRef = useRef(viewportOffset);
   const latestZoomLevelTargetRef = useRef(zoomLevel);
   const animationFrameRequestRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number>();
   const [mousePosition, setMousePosition] = useState<{x: number, y: number}>({x: 0, y: 0});
   const [brushSize, setBrushSize] = useState<number>(1);
   const [isFillActive, setIsFillActive] = useState<boolean>(false);
@@ -377,6 +534,136 @@ const Canvas = () => {
       };
     }
   }, [contextMenu]);
+  const startAnimationPreview = useCallback(async (landId: string) => {
+    console.log('Starting animation preview for land:', landId);
+    
+    try {
+      const land = allLands.find(l => l.id === landId);
+      if (!land) {
+        console.error('Land not found for animation preview:', landId);
+        return;
+      }
+
+      const halfSize = Math.floor(land.ownedSize / 2);
+      const landStartX = land.centerX - halfSize;
+      const landStartY = land.centerY - halfSize;
+      const originalPixels = new Map<string, string>();
+      
+      for (let relX = 0; relX < land.ownedSize; relX++) {
+        for (let relY = 0; relY < land.ownedSize; relY++) {
+          const absoluteX = landStartX + relX;
+          const absoluteY = landStartY + relY;
+          const pixelKey = `${absoluteX}:${absoluteY}`;
+          const currentPixel = grid.get(pixelKey);
+          if (currentPixel && currentPixel !== currentTheme.defaultPixelColor) {
+            originalPixels.set(pixelKey, currentPixel);
+          }
+        }
+      }
+      
+      console.log(`🎬 Captured ${originalPixels.size} original pixels for land ${landId}`);
+
+      if (!animatedLands.has(landId)) {
+        console.log(`🎬 Loading frames for animation preview of land ${landId}`);
+        const frames = await getLandFrames(landId);
+        console.log(`🎬 Retrieved ${frames.length} frames for preview:`, frames);
+        
+        frames.forEach((frame, index) => {
+          const pixelCount = Object.keys(frame.pixelData || {}).length;
+          console.log(`🎬 Preview Frame ${index} (ID: ${frame.id}): ${pixelCount} pixels`, frame.pixelData);
+        });
+        
+        if (frames.length > 0) {
+          const sortedFrames = frames.sort((a, b) => a.frameIndex - b.frameIndex);
+          const animationSettings = land.animationSettings || { fps: 5, loop: true };
+          
+          console.log(`Setting up animation for land ${landId}:`, {
+            frameCount: sortedFrames.length,
+            fps: animationSettings.fps,
+            loop: animationSettings.loop
+          });
+          
+          setAnimatedLands(prev => new Map(prev.set(landId, {
+            landId: landId,
+            currentFrameIndex: 0,
+            lastFrameChangeTime: Date.now(),
+            frames: sortedFrames,
+            settings: animationSettings,
+            isLoadingFrames: false,
+            isActive: true,
+            originalGridPixels: originalPixels          })));
+          
+          toast.success(`Started animation preview for ${land.displayName || 'Land'} (${sortedFrames.length} frames, ${animationSettings.fps} FPS, Loop: ${animationSettings.loop})`);
+        } else {
+          toast.error('No animation frames found for this land');
+        }
+      } else {
+        setAnimatedLands(prev => {
+          const updated = new Map(prev);
+          const animState = updated.get(landId);
+          if (animState) {
+            console.log(`Restarting animation for land ${landId} with ${animState.frames.length} frames`);
+            updated.set(landId, {
+              ...animState,
+              currentFrameIndex: 0,
+              lastFrameChangeTime: Date.now(),
+              isActive: true,
+              originalGridPixels: originalPixels
+            });
+          }
+          return updated;
+        });
+        
+        const existingState = animatedLands.get(landId);
+        if (existingState) {
+          toast.success(`Restarted animation for ${land.displayName || 'Land'} (${existingState.frames.length} frames)`);
+        }
+      }
+
+      if (land.centerX !== undefined && land.centerY !== undefined) {
+        const { centerX, centerY } = land;
+        
+        if (canvasContainerRef.current) {
+          const containerWidth = canvasContainerRef.current.clientWidth;
+          const containerHeight = canvasContainerRef.current.clientHeight;
+          
+          const cellsWide = containerWidth / effectiveCellSize;
+          const cellsHigh = containerHeight / effectiveCellSize;
+          
+          const newOffsetX = centerX - (cellsWide / 2);
+          const newOffsetY = centerY - (cellsHigh / 2);
+          
+          console.log(`[Canvas] Navigating to animated land at (${centerX}, ${centerY}). Setting viewport to (${newOffsetX}, ${newOffsetY})`);
+          setViewportOffset({ x: newOffsetX, y: newOffsetY });
+        }
+      }
+
+      console.log('Animation preview started for land:', landId);
+    } catch (error) {
+      console.error('Error starting animation preview:', error);
+      toast.error('Failed to start animation preview');
+    }  }, [allLands, animatedLands, getLandFrames, grid, currentTheme.defaultPixelColor, effectiveCellSize]);
+
+  const stopAnimationPreview = useCallback((landId: string) => {
+    console.log('Stopping animation preview for land:', landId);
+    
+    setAnimatedLands(prev => {
+      const updated = new Map(prev);
+      const animState = updated.get(landId);
+      if (animState) {
+        updated.set(landId, {
+          ...animState,
+          isActive: false
+        });
+        
+        const land = allLands.find(l => l.id === landId);
+        if (land) {
+          toast.info(`Stopped animation for ${land.displayName || 'Land'} - showing latest canvas state`);
+        }
+      }
+      return updated;
+    });
+  }, [allLands]);
 
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
@@ -589,7 +876,39 @@ const Canvas = () => {
 
   const closeContextMenu = () => {
     setContextMenu(null);
-  };
+  };  const captureCurrentLandPixels = useCallback((landId: string): LandFramePixelData => {
+    console.log('🎬 Capturing pixels for land:', landId);
+    
+    const targetLand = allLands.find(land => land.id === landId);
+    
+    if (!targetLand) {
+      console.warn('Land not found for ID:', landId);
+      return {};
+    }
+
+    const { centerX, centerY, ownedSize } = targetLand;
+    const halfSize = Math.floor(ownedSize / 2);
+    const pixelData: LandFramePixelData = {};
+
+    let pixelsCaptured = 0;
+
+    for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
+      for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
+        const pixelKey = getPixelKey(x, y);
+        const color = grid.get(pixelKey);
+        
+        if (color && color !== currentTheme.defaultPixelColor) {
+          const relativeX = x - (centerX - halfSize);
+          const relativeY = y - (centerY - halfSize);
+          pixelData[`${relativeX}:${relativeY}`] = color;
+          pixelsCaptured++;
+        }
+      }
+    }
+
+    console.log(`🎬 Captured ${pixelsCaptured} pixels for land ${landId}`);
+    return pixelData;
+  }, [allLands, grid, getPixelKey, currentTheme.defaultPixelColor]);
 
   
   const updateGridFromVisibleChunks = useCallback(() => {
@@ -1642,9 +1961,8 @@ const Canvas = () => {
     lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
   }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel, isStickerMode, selectedStickerPack, getPixelKey, currentTheme]);
-
   const clearCanvas = useCallback(async () => {
-    if (!currentUser || !userProfile?.landInfo) {
+    if (!currentUser) {
       setShowAuthWarning(true);
       setTimeout(() => setShowAuthWarning(false), 3000);
       return;
@@ -1652,7 +1970,51 @@ const Canvas = () => {
     
     setIsClearing(true);
     try {
-      const { centerX, centerY, ownedSize } = userProfile.landInfo;
+      const canvasContainer = canvasContainerRef.current;
+      if (!canvasContainer) {
+        console.warn('Canvas container not found');
+        setIsClearing(false);
+        return;
+      }
+      
+      const canvasRect = canvasContainer.getBoundingClientRect();
+      const viewportCenterX = viewportOffset.x + (canvasRect.width / 2) / effectiveCellSize;
+      const viewportCenterY = viewportOffset.y + (canvasRect.height / 2) / effectiveCellSize;
+      
+      console.log(`Viewport center: (${viewportCenterX}, ${viewportCenterY})`);
+      
+      let nearestLand: UserLandInfo | null = null;
+      let minDistance = Infinity;
+      
+      for (const land of allLands) {
+        const distance = Math.sqrt(
+          Math.pow(land.centerX - viewportCenterX, 2) + 
+          Math.pow(land.centerY - viewportCenterY, 2)
+        );
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestLand = land;
+        }
+      }
+      
+      if (!nearestLand) {
+        console.warn('No lands found to reset');
+        setIsClearing(false);
+        return;
+      }
+      
+      console.log(`Nearest land found: ${nearestLand.id} at (${nearestLand.centerX}, ${nearestLand.centerY}), distance: ${minDistance.toFixed(2)}`);
+      const isOwner = nearestLand.owner === currentUser.uid;
+      const isAdmin = userProfile?.role === 'admin' || userProfile?.email === 'admin@dotverse.com';
+      
+      if (!isOwner && !isAdmin) {
+        console.warn('User does not have permission to reset this land');
+        setIsClearing(false);
+        return;
+      }
+      
+      const { centerX, centerY, ownedSize } = nearestLand;
       const halfSize = Math.floor(ownedSize / 2);
       
       const actionPixels: { x: number; y: number; oldColor: string; newColor: string }[] = [];
@@ -1667,10 +2029,10 @@ const Canvas = () => {
           }
         }
       }
-      
-      const resetData = {
+        const resetData = {
         type: 'land_clear',
         userId: currentUser.uid,
+        targetLandId: nearestLand.id,
         landArea: {
           centerX,
           centerY,
@@ -1681,7 +2043,7 @@ const Canvas = () => {
       };
       
       websocketService.send('canvas_reset', resetData);
-      
+        
       const updatedGrid = new Map(grid);
       for (let y = centerY - halfSize; y <= centerY + halfSize; y++) {
         for (let x = centerX - halfSize; x <= centerX + halfSize; x++) {
@@ -1711,14 +2073,14 @@ const Canvas = () => {
         });
       }
       
-      console.log(`[Canvas] Sent canvas reset for land area ${ownedSize}x${ownedSize} at (${centerX}, ${centerY})`);
+      console.log(`[Canvas] Sent canvas reset for nearest land ${nearestLand.id} area ${ownedSize}x${ownedSize} at (${centerX}, ${centerY})`);
       
     } catch (error) {
       console.error("Error clearing canvas:", error);
     } finally {
       setIsClearing(false);
     }
-  }, [currentUser, userProfile, getPixelKey, grid, addToHistory, currentTheme.defaultPixelColor]);  
+  }, [currentUser, userProfile, allLands, viewportOffset, effectiveCellSize, canvasContainerRef, getPixelKey, grid, addToHistory, currentTheme.defaultPixelColor]);
   
   const bind = useGesture(
     {
@@ -2326,23 +2688,43 @@ const Canvas = () => {
     if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
       return []; 
     }
-    
-    const cells = [];
+      const cells: JSX.Element[] = [];
     const startWorldX = Math.floor(viewportOffset.x);
     const startWorldY = Math.floor(viewportOffset.y);
     
+    if (animatedLands.size > 0) {
+      console.log(`[Canvas] Rendering viewport: x=${startWorldX} to ${startWorldX + viewportCellWidth}, y=${startWorldY} to ${startWorldY + viewportCellHeight}`);
+    }
+    
     const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
     const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
-    
-    for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
+      for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
       for (let screenX = 0; screenX < viewportCellWidth; screenX++) {        const worldX = screenX + startWorldX;
         const worldY = screenY + startWorldY;
         const pixelKey = getPixelKey(worldX, worldY);
         
         let pixelData = grid.get(pixelKey);
         let color = currentTheme.defaultPixelColor;
+        let isAnimated = false;
+        let debugInfo = '';
+        animatedLands.forEach((animatedLandState, landId) => {
+          const land = allLands.find(l => l.id === landId);
+          if (land) {
+            const animatedPixels = getAnimatedLandPixels(land, animatedLandState);
+            const animatedColor = animatedPixels.get(pixelKey);
+            if (animatedColor) {
+              color = animatedColor;
+              isAnimated = true;
+              debugInfo = `Found animated pixel at ${pixelKey} with color ${animatedColor}`;
+            }
+          }
+        });
         
-        if (pixelData) {
+        if (debugInfo && screenX === 0 && screenY === 0) {
+          console.log(`[Canvas] ${debugInfo}`);
+        }
+        
+        if (!isAnimated && pixelData) {
           try {
             if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
               const parsed = JSON.parse(pixelData);
@@ -2451,14 +2833,13 @@ const Canvas = () => {
         cells.push(cellElement);
       }
     }
-    return cells;
-  }, [
+
+    return cells;  }, [
     grid,
     viewportOffset,
     viewportCellWidth,
     viewportCellHeight,
     effectiveCellSize,
-
     cellLandMap,
     currentUser,
     userProfile,
@@ -2469,7 +2850,10 @@ const Canvas = () => {
     initialDataLoaded,
     getPixelKey,
     showGridLines,
-    currentTheme
+    currentTheme,
+    animatedLands,
+    allLands,
+    getAnimatedLandPixels
   ]);
 
   
@@ -3129,6 +3513,20 @@ const Canvas = () => {
 
         <ChatButton/>
         <TpPanel onTeleport={handleTeleport} currentPosition={viewportOffset}/>
+        {currentUser && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setShowLandSelectionModal(true);
+            }}
+            className="bg-purple-500 hover:bg-purple-600 text-white font-xs py-1 px-2 rounded text-xs"
+            title="Create land animation"
+          >
+            🎬 Animate
+          </button>
+        )}
+
 
         <button 
           onClick={(e) => {
@@ -3311,6 +3709,27 @@ const Canvas = () => {
               Land at ({contextMenu.landInfo.centerX}, {contextMenu.landInfo.centerY})
             </div>
             
+            <div className="border-b border-gray-600">
+              <button
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center"
+                onClick={() => {
+                  const userLandInfo: UserLandInfo = {
+                    ...contextMenu.landInfo,
+                    id: `${contextMenu.landInfo.centerX},${contextMenu.landInfo.centerY}`,
+                    createdAt: Date.now()
+                  };
+                  setSelectedLandInfo(userLandInfo);
+                  setShowLandInfoPanel(true);
+                  closeContextMenu();
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="mr-2">
+                  <path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/>
+                </svg>
+                Land Info
+              </button>
+            </div>
+            
             {contextMenu.mergeCandidates.length > 0 && (
               <>
                 <div className="px-4 py-2 text-gray-400 text-xs">
@@ -3347,15 +3766,17 @@ const Canvas = () => {
                 No adjacent lands to merge
               </div>
             )}
-            
             <div className="border-t border-gray-600 mt-2">
               <button
-                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm"
+                className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center"
                 onClick={() => {
                   navigate(`/profile`);
                   closeContextMenu();
                 }}
               >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="mr-2">
+                  <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/>
+                </svg>
                 Manage Land
               </button>
             </div>
@@ -3401,6 +3822,29 @@ const Canvas = () => {
             setTimeout(() => setInitialDataLoaded(true), 100);
           }}
           selectedLand={selectedLandForExpansion}
+        />
+      )}      {showAnimationModalForLand && (
+        <LandAnimationModal
+          isOpen={true}
+          onClose={() => setShowAnimationModalForLand(null)}
+          land={showAnimationModalForLand}
+          onCaptureCurrentPixels={captureCurrentLandPixels}
+          onPreviewAnimation={startAnimationPreview}
+          onStopAnimation={stopAnimationPreview}
+          onSuccess={() => {
+            loadUserLands();
+            getAllLands();
+          }}
+        />
+      )}{showLandSelectionModal && currentUser && (
+        <LandSelectionModal
+          isOpen={showLandSelectionModal}
+          onClose={() => setShowLandSelectionModal(false)}
+          onLandSelect={(land) => {
+            setShowAnimationModalForLand(land);
+            setShowLandSelectionModal(false);
+          }}
+          userId={currentUser.uid}
         />
       )}
       

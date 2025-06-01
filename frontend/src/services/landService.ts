@@ -8,21 +8,43 @@ import {
   where,
   getDocs,
   writeBatch,
-  limit
+  limit,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  deleteDoc
 } from "firebase/firestore";
 import { fs } from "../firebaseClient"; 
+
+export interface LandFramePixelData {
+  [relativeCoord: string]: string;
+}
+
+export interface LandFrame {
+  id: string;
+  frameIndex: number;
+  duration: number;
+  pixelData: LandFramePixelData;
+  createdAt: number;
+}
 
 interface LandInfo {
   centerX: number;
   centerY: number;
   ownedSize: number;
-  owner: string
+  owner?: string
   displayName?: string;
   isEmpty?: boolean;
   isAuctioned?: boolean;
   auctionId?: string;
   shape?: 'rectangle' | 'irregular';
   occupiedCells?: string[];
+  hasAnimation?: boolean;
+  animationSettings?: {
+    fps: number;
+    loop: boolean;
+  };
 }
 
 interface LandTile {
@@ -42,6 +64,11 @@ export interface UserLandInfo {
   auctionId?: string;
   shape?: 'rectangle' | 'irregular';
   occupiedCells?: string[];
+  hasAnimation?: boolean;
+  animationSettings?: {
+    fps: number;
+    loop: boolean;
+  };
 }
 
 const DEFAULT_LAND_SIZE = 50;
@@ -521,6 +548,123 @@ export const unmarkLandAsAuctioned = async (landId: string): Promise<void> => {
     });
   } catch (error) {
     console.error('Error unmarking land as auctioned:', error);
+    throw error;
+  }
+};
+
+
+export const updateLandAnimationSettings = async (
+  landId: string,
+  settings: UserLandInfo['animationSettings'],
+  hasAnimation: boolean
+): Promise<void> => {
+  try {
+    const landRef = doc(fs, 'lands', landId);
+    await updateDoc(landRef, {
+      hasAnimation: hasAnimation,
+      animationSettings: settings,
+    });
+    console.log(`[LandService] Updated animation settings for land ${landId}`);
+  } catch (error) {
+    console.error(`[LandService] Error updating animation settings for land ${landId}:`, error);
+    throw error;
+  }
+};
+
+export const addLandFrame = async (
+  landId: string,
+  frameData: Omit<LandFrame, 'id' | 'createdAt'>
+): Promise<string> => {
+  try {
+    console.log(`🎬 [LandService] Adding frame to land ${landId}:`, frameData);
+    console.log(`🎬 [LandService] Frame pixel data:`, frameData.pixelData);
+    console.log(`🎬 [LandService] Pixel count: ${Object.keys(frameData.pixelData || {}).length}`);
+    
+    const framesCollectionRef = collection(fs, 'lands', landId, 'frames');
+    const newFrameDoc = await addDoc(framesCollectionRef, {
+      ...frameData,
+      createdAt: serverTimestamp(),
+    });
+    console.log(`🎬 [LandService] Added frame ${newFrameDoc.id} to land ${landId} successfully`);
+    return newFrameDoc.id;
+  } catch (error) {
+    console.error(`[LandService] Error adding frame to land ${landId}:`, error);
+    throw error;
+  }
+};
+
+export const getLandFrames = async (landId: string): Promise<LandFrame[]> => {
+  try {
+    console.log(`🎬 [LandService] Fetching frames for land ${landId}`);
+    const framesCollectionRef = collection(fs, 'lands', landId, 'frames');
+    const q = query(framesCollectionRef, orderBy('frameIndex', 'asc'));
+    const snapshot = await getDocs(q);
+    
+    console.log(`🎬 [LandService] Found ${snapshot.docs.length} frame documents for land ${landId}`);
+    
+    const frames = snapshot.docs.map(docSnap => {
+      const docData = docSnap.data();
+      console.log(`🎬 [LandService] Processing frame doc ${docSnap.id}:`, docData);
+      
+      const frame = {
+        id: docSnap.id,
+        ...docData,
+        pixelData: docData.pixelData || {},
+      } as LandFrame;
+      
+      console.log(`🎬 [LandService] Processed frame ${docSnap.id}: ${Object.keys(frame.pixelData).length} pixels`);
+      return frame;
+    });
+    
+    console.log(`🎬 [LandService] Returning ${frames.length} frames for land ${landId}`);
+    frames.forEach((frame, index) => {
+      console.log(`🎬 [LandService] Frame ${index}: ID=${frame.id}, FrameIndex=${frame.frameIndex}, Pixels=${Object.keys(frame.pixelData).length}`);
+    });
+    
+    return frames;
+  } catch (error) {
+    console.error(`[LandService] Error fetching frames for land ${landId}:`, error);
+    return [];
+  }
+};
+
+export const updateLandFrame = async (
+  landId: string,
+  frameId: string,
+  updates: Partial<Omit<LandFrame, 'id' | 'landId' | 'createdAt' | 'pixelData'>> 
+): Promise<void> => {
+  try {
+    const frameRef = doc(fs, 'lands', landId, 'frames', frameId);
+    await updateDoc(frameRef, updates);
+    console.log(`[LandService] Updated frame ${frameId} for land ${landId}`);
+  } catch (error) {
+    console.error(`[LandService] Error updating frame ${frameId} for land ${landId}:`, error);
+    throw error;
+  }
+};
+
+export const updateLandFramePixelData = async (
+  landId: string,
+  frameId: string,
+  pixelData: LandFramePixelData
+): Promise<void> => {
+   try {
+    const frameRef = doc(fs, 'lands', landId, 'frames', frameId);
+    await updateDoc(frameRef, { pixelData });
+    console.log(`[LandService] Updated pixelData for frame ${frameId} on land ${landId}`);
+  } catch (error) {
+    console.error(`[LandService] Error updating pixelData for frame ${frameId} on land ${landId}:`, error);
+    throw error;
+  }
+};
+
+export const deleteLandFrame = async (landId: string, frameId: string): Promise<void> => {
+  try {
+    const frameRef = doc(fs, 'lands', landId, 'frames', frameId);
+    await deleteDoc(frameRef);
+    console.log(`[LandService] Deleted frame ${frameId} from land ${landId}`);
+  } catch (error) {
+    console.error(`[LandService] Error deleting frame ${frameId} from land ${landId}:`, error);
     throw error;
   }
 };

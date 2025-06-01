@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import type { UserLandInfo } from '../../src/services/landService';
 import type { LandAuction } from '../../src/services/auctionService';
 import MakeOfferModal from './MakeOfferModal';
-import { FiMapPin, FiMaximize, FiDollarSign, FiClock, FiUser, FiEye } from 'react-icons/fi';
+import { FiMapPin, FiMaximize, FiDollarSign, FiClock, FiUser, FiEye, FiFilm } from 'react-icons/fi';
 import { landMergingService, type MergeCandidate } from '../../src/services/landMergingService';
 import LandMergeModal from './LandMergeModal';
+import LandAnimationModal from './LandAnimationModal';
+import type { LandFramePixelData } from '../../src/services/landService';
 
 interface LandInfoPanelProps {
   land: UserLandInfo;
@@ -16,6 +18,7 @@ interface LandInfoPanelProps {
   onClose: () => void;
   onExpand?: () => void;
   onCreateAuction?: () => void;
+  onCaptureCurrentPixels?: (landId: string) => LandFramePixelData;
 }
 
 const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
@@ -24,7 +27,8 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
   isOwner,
   onClose,
   onExpand,
-  onCreateAuction
+  onCreateAuction,
+  onCaptureCurrentPixels
 }) => {
   const { currentUser, userProfile } = useAuth();
   const { userEconomy } = useEconomy();
@@ -33,6 +37,7 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
   const [mergeCandidates, setMergeCandidates] = useState<MergeCandidate[]>([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
+  const [showAnimationModal, setShowAnimationModal] = useState(false);9
 
   useEffect(() => {
     const loadMergeCandidates = async () => {
@@ -259,6 +264,26 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
                     ))}
                   </div>
                 </div>
+              )}
+
+              {isOwner && (
+                <button
+                  onClick={() => setShowAnimationModal(true)}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition-colors"
+                >
+                  <FiFilm />
+                  {land.hasAnimation ? 'Edit Animation' : 'Create Animation'}
+                </button>
+              )}
+
+              {showAnimationModal && (
+                <LandAnimationModal
+                  isOpen={showAnimationModal}
+                  onClose={() => setShowAnimationModal(false)}
+                  land={land}
+                  onCaptureCurrentPixels={onCaptureCurrentPixels || (() => ({}))}
+                  onSuccess={() => setShowAnimationModal(false)}
+                />
               )}
 
               {isOwner && (
