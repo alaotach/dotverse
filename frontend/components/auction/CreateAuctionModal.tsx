@@ -3,13 +3,15 @@ import { useAuth } from '../../src/context/AuthContext';
 import { auctionService } from '../../src/services/auctionService';
 import type { CreateAuctionData } from '../../src/services/auctionService';
 import { getUserLands, type UserLandInfo } from '../../src/services/landService';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface CreateAuctionModalProps {
+  isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSuccess }) => {
+const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { currentUser, userProfile } = useAuth();
   
   const [userLands, setUserLands] = useState<UserLandInfo[]>([]);
@@ -148,20 +150,24 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
     { value: 72, label: '3 Days' },
     { value: 168, label: '1 Week' }
   ];
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-white">Create Land Auction</h2>
             <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white text-2xl"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              className="text-gray-400 hover:text-white text-2xl modal-close-button ui-element"
+              style={{ touchAction: 'manipulation' }}
             >
               ×
             </button>
-          </div>          <form onSubmit={handleSubmit} className="space-y-4">
+          </div><form onSubmit={handleSubmit} className="space-y-4">
             {/* Land Selection */}
             <div className="bg-gray-700 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-white mb-3">Select Land to Auction</h3>
@@ -239,13 +245,21 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
                       src={imagePreview} 
                       alt="Land preview" 
                       className="w-full h-32 object-cover rounded border border-gray-600"
-                    />
-                    <button
-                      type="button"                      onClick={() => {
+                    />                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setImagePreview(null);
                         setFormData(prev => ({ ...prev, imageUrl: undefined }));
                       }}
-                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-700"
+                      className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm hover:bg-red-700 active:bg-red-800 ui-element"
+                      style={{ 
+                        minHeight: '32px',
+                        minWidth: '32px',
+                        touchAction: 'manipulation',
+                        WebkitTapHighlightColor: 'transparent'
+                      }}
                     >
                       ×
                     </button>
@@ -319,20 +333,33 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
               <div className="bg-red-900 border border-red-600 text-red-200 px-3 py-2 rounded text-sm">
                 {error}
               </div>
-            )}
-
-            {/* Actions */}
+            )}            {/* Actions */}
             <div className="flex gap-3 pt-4">
               <button
                 type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg transition-colors"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white py-2 px-4 rounded-lg transition-colors ui-element"
+                style={{ 
+                  minHeight: '48px',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
               >
                 Cancel
-              </button>              <button
+              </button>
+              <button
                 type="submit"
                 disabled={isCreating || !selectedLand || loadingLands}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ui-element"
+                style={{ 
+                  minHeight: '48px',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
               >
                 {isCreating ? 'Creating...' : 'Create Auction'}
               </button>
@@ -340,14 +367,13 @@ const CreateAuctionModal: React.FC<CreateAuctionModalProps> = ({ onClose, onSucc
           </form>
 
           {/* Info */}
-          <div className="mt-6 text-xs text-gray-400 space-y-1">
-            <p>• You can only cancel auctions with no bids</p>
+          <div className="mt-6 text-xs text-gray-400 space-y-1">            <p>• You can only cancel auctions with no bids</p>
             <p>• Auctions automatically extend if bids are placed near the end</p>
             <p>• You'll receive payment when the auction ends</p>
           </div>
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

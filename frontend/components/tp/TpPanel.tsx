@@ -104,7 +104,18 @@ const TpPanel: React.FC<TpPanelProps> = ({ onTeleport, currentPosition }) => {
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed top-32 right-4 bg-indigo-600 text-white rounded-full p-3 shadow-lg hover:bg-indigo-700 transition-colors z-40"
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(true);
+          }}
+          className="fixed top-32 right-4 bg-indigo-600 text-white rounded-full p-3 shadow-lg hover:bg-indigo-700 transition-colors z-40 ui-element"
+          style={{
+            minHeight: '48px',
+            minWidth: '48px',
+            touchAction: 'manipulation'
+          }}
           title="Teleport"
         >
           <FiMap size={24} />
@@ -132,7 +143,21 @@ const TpPanel: React.FC<TpPanelProps> = ({ onTeleport, currentPosition }) => {
                   e.stopPropagation();
                   setIsMinimized(!isMinimized);
                 }}
-                className="text-gray-300 hover:text-white mr-2"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsMinimized(!isMinimized);
+                }}
+                className="text-gray-300 hover:text-white mr-2 ui-element"
+                style={{
+                  minHeight: '44px',
+                  minWidth: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  touchAction: 'manipulation'
+                }}
               >
                 <FiChevronDown 
                   size={18} 
@@ -144,7 +169,21 @@ const TpPanel: React.FC<TpPanelProps> = ({ onTeleport, currentPosition }) => {
                   e.stopPropagation();
                   setIsOpen(false);
                 }}
-                className="text-gray-300 hover:text-white"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsOpen(false);
+                }}
+                className="text-gray-300 hover:text-white ui-element"
+                style={{
+                  minHeight: '44px',
+                  minWidth: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  touchAction: 'manipulation'
+                }}
               >
                 <FiX size={18} />
               </button>

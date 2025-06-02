@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiX } from 'react-icons/fi';
 import { UserLandInfo, getUserLands } from '../../src/services/landService';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface LandSelectionModalProps {
   isOpen: boolean;
@@ -35,17 +36,34 @@ const LandSelectionModal: React.FC<LandSelectionModalProps> = ({
       setLoading(false);
     }
   };
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">Select Land to Animate</h2>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white transition-colors modal-close-button ui-element"
+            style={{
+              minWidth: '44px',
+              minHeight: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation'
+            }}
           >
             <FiX size={24} />
           </button>
@@ -61,11 +79,24 @@ const LandSelectionModal: React.FC<LandSelectionModalProps> = ({
               {lands.map((land) => (
                 <button
                   key={land.id}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     onLandSelect(land);
                     onClose();
                   }}
-                  className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-left transition-colors"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onLandSelect(land);
+                    onClose();
+                  }}
+                  className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-left transition-colors ui-element"
+                  style={{
+                    minHeight: '48px',
+                    touchAction: 'manipulation'
+                  }}
                 >
                   <div className="text-white font-medium">
                     {land.displayName || `Land #${land.id}`}
@@ -84,7 +115,7 @@ const LandSelectionModal: React.FC<LandSelectionModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

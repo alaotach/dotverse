@@ -3,6 +3,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { landExpansionService } from '../../src/services/landExpansionService';
 import { getUserLands, type UserLandInfo } from '../../src/services/landService';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface LandExpansionModalProps {
   isOpen: boolean;
@@ -204,15 +205,19 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
 
   const displaySize = latestLandSize || 
     (selectedLand?.ownedSize || userProfile?.landInfo?.ownedSize || 50);
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-white">Expand Land</h2>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white text-2xl modal-close-button ui-element"
+            style={{ touchAction: 'manipulation' }}
           >
             ×
           </button>
@@ -293,7 +298,11 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
           </div>
 
           <button
-            onClick={triggerManualRefresh}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              triggerManualRefresh();
+            }}
             disabled={isRefreshing}
             className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-700 disabled:opacity-50 transition-colors mb-2 flex items-center justify-center gap-2"
           >
@@ -323,22 +332,34 @@ const LandExpansionModal: React.FC<LandExpansionModalProps> = ({
 
           <div className="flex gap-3 pt-4">
             <button
-              onClick={onClose}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
               className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
               Cancel
             </button>
             <button
-              onClick={handleExpansion}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleExpansion();              }}
               disabled={!canAfford || isExpanding || previewData.isAtMaxSize || isRefreshing || displaySize >= 200}
-              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors ui-element"
+              style={{ 
+                touchAction: 'manipulation', 
+                minHeight: '48px',
+                WebkitTapHighlightColor: 'transparent'
+              }}
             >
               {isExpanding ? 'Expanding...' : `Expand for ${previewData.cost.toLocaleString()} 🪙`}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

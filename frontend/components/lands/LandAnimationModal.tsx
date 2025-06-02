@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FiX, FiPlay, FiPause, FiPlus, FiTrash2, FiEdit3, FiSave, FiRefreshCw, FiEye } from 'react-icons/fi';
 import { useAuth } from '../../src/context/AuthContext';
+import ModalWrapper from '../common/ModalWrapper';
 import { 
   getLandFrames, 
   addLandFrame, 
@@ -94,30 +95,70 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
           })}
         </div>
         
-        <div className="flex justify-center items-center gap-2 mt-3">
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+        <div className="flex justify-center items-center gap-2 mt-3">          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsPlaying(!isPlaying);
+            }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsPlaying(!isPlaying);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm ui-element"
+            style={{ 
+              minHeight: '44px',
+              minWidth: '44px',
+              touchAction: 'manipulation'
+            }}
           >
             {isPlaying ? 'Pause' : 'Play'}
           </button>
           
           <button
-            onClick={() => setCurrentPreviewFrame(0)}
-            className="bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded text-sm"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCurrentPreviewFrame(0);
+            }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCurrentPreviewFrame(0);
+            }}
+            className="bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded text-sm ui-element"
             disabled={isPlaying}
+            style={{ 
+              minHeight: '44px',
+              minWidth: '44px',
+              touchAction: 'manipulation'
+            }}
           >
             Reset
-          </button>
-
-          {onPreviewAnimation && frames.length > 0 && (
+          </button>          {onPreviewAnimation && frames.length > 0 && (
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 onPreviewAnimation(land.id);
                 onClose();
               }}
-              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onPreviewAnimation(land.id);
+                onClose();
+              }}
+              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1 ui-element"
               title="Preview animation on canvas"
+              style={{ 
+                minHeight: '44px',
+                touchAction: 'manipulation'
+              }}
             >
               <FiEye size={14} />
               Preview on Canvas
@@ -126,11 +167,23 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
           
           {onStopAnimation && (
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 onStopAnimation(land.id);
               }}
-              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onStopAnimation(land.id);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1 ui-element"
               title="Stop animation and restore latest canvas"
+              style={{ 
+                minHeight: '44px',
+                touchAction: 'manipulation'
+              }}
             >
               <FiPause size={14} />
               Stop Animation
@@ -210,21 +263,10 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
     return () => clearInterval(interval);
   }, [isPlaying, frames.length, fps, loop]);
   const handleSaveSettings = async () => {
-    if (!currentUser || !land.id) {
-      setError('Unable to save settings: missing user or land information');
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
-    
     try {
-      const validatedFps = Math.max(1, Math.min(30, fps));
-      const settingsToSave = { 
-        fps: validatedFps, 
-        loop: loop 
-      };
-      
+      const settingsToSave = { fps: Math.max(1, Math.min(30, fps)), loop };
       console.log(`🎬 [Modal] Saving animation settings for ${land.id}:`, settingsToSave);
       
       await updateLandAnimationSettings(
@@ -234,23 +276,10 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
       );
       
       console.log(`🎬 [Modal] Successfully saved animation settings for ${land.id}`);
-      
-      setFps(validatedFps);
-      
-      if (onSuccess) {
-        onSuccess();
-      }
-      
-      const successMessage = 'Animation settings saved successfully!';
-      setError(null);
-      
-      setTimeout(() => {
-        console.log('Settings saved successfully');
-      }, 100);
-      
+      onSuccess?.();
     } catch (err) {
-      console.error('Error saving animation settings:', err);
-      setError('Failed to save animation settings. Please try again.');
+      console.error('Error saving settings:', err);
+      setError('Failed to save animation settings.');
     } finally {
       setIsLoading(false);
     }
@@ -347,22 +376,39 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
           border rounded-lg p-3 transition-all cursor-pointer
           ${isCurrentFrame ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 hover:border-gray-500'}
         `}
-        onClick={() => setCurrentPreviewFrame(index)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setCurrentPreviewFrame(index);
+        }}
       >
         <div className="flex justify-between items-start mb-2">
           <div>
             <div className="text-white font-medium">Frame {index + 1}</div>
             <div className="text-gray-400 text-sm">{pixelCount} pixels</div>
-          </div>
-          <div className="flex gap-1">
+          </div>          <div className="flex gap-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleUpdateFramePixels(frame.id);
               }}
-              className="text-yellow-400 hover:text-yellow-300 p-1"
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleUpdateFramePixels(frame.id);
+              }}
+              className="text-yellow-400 hover:text-yellow-300 p-1 ui-element"
               title="Update with current pixels"
               disabled={isLoading}
+              style={{ 
+                minHeight: '44px',
+                minWidth: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                touchAction: 'manipulation'
+              }}
             >
               <FiRefreshCw size={14} />
             </button>
@@ -371,9 +417,23 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                 e.stopPropagation();
                 handleDeleteFrame(frame.id);
               }}
-              className="text-red-400 hover:text-red-300 p-1"
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteFrame(frame.id);
+              }}
+              className="text-red-400 hover:text-red-300 p-1 ui-element"
               title="Delete frame"
               disabled={isLoading}
+              style={{ 
+                minHeight: '44px',
+                minWidth: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                touchAction: 'manipulation'
+              }}
             >
               <FiTrash2 size={14} />
             </button>
@@ -391,10 +451,27 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                 min="100"
                 max="10000"
                 step="100"
-              />
-              <button
-                onClick={() => handleUpdateFrameDuration(frame.id, editingDuration)}
-                className="text-green-400 hover:text-green-300"
+              />              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleUpdateFrameDuration(frame.id, editingDuration);
+                }}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleUpdateFrameDuration(frame.id, editingDuration);
+                }}
+                className="text-green-400 hover:text-green-300 ui-element"
+                style={{ 
+                  minHeight: '44px',
+                  minWidth: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  touchAction: 'manipulation'
+                }}
               >
                 <FiSave size={12} />
               </button>
@@ -408,7 +485,22 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                   setEditingFrameId(frame.id);
                   setEditingDuration(frame.duration);
                 }}
-                className="text-gray-400 hover:text-gray-300"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setEditingFrameId(frame.id);
+                  setEditingDuration(frame.duration);
+                }}
+                className="text-gray-400 hover:text-gray-300 ui-element"
+                style={{ 
+                  minHeight: '44px',
+                  minWidth: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  touchAction: 'manipulation'
+                }}
               >
                 <FiEdit3 size={12} />
               </button>
@@ -418,17 +510,37 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
       </div>
     );
   };
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white">
             Land Animation - {land.displayName || `Land ${land.id}`}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }} 
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white modal-close-button ui-element"
+            style={{
+              minWidth: '44px',
+              minHeight: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation'
+            }}
+          >
             <FiX size={24} />
           </button>
         </div>
@@ -475,36 +587,55 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                     <span>20 FPS</span>
                   </div>
                 </div>
-                
-                <div className="flex items-center">
+                  <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="loop"
                     checked={loop}
-                    onChange={(e) => {
-                      console.log('Loop checkbox changed to:', e.target.checked);
-                      setLoop(e.target.checked);
+                    onChange={(e) => setLoop(e.target.checked)}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                    className="mr-2 ui-element"
+                    style={{
+                      minHeight: '20px',
+                      minWidth: '20px',
+                      touchAction: 'manipulation'
                     }}
-                    className="mr-2"
                   />
-                  <label htmlFor="loop" className="text-gray-300">
+                  <label 
+                    htmlFor="loop" 
+                    className="text-gray-300 ui-element cursor-pointer"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    style={{
+                      minHeight: '44px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      touchAction: 'manipulation'
+                    }}
+                  >
                     Loop animation
                   </label>
                 </div>
-                
-                <button
-                  onClick={handleSaveSettings}
+                  <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSaveSettings();
+                  }}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSaveSettings();
+                  }}
                   disabled={isLoading}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded transition-colors flex items-center justify-center"
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded ui-element"
+                  style={{ 
+                    minHeight: '48px',
+                    touchAction: 'manipulation'
+                  }}
                 >
-                  {isLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Settings'
-                  )}
+                  {isLoading ? 'Saving...' : 'Save Settings'}
                 </button>
               </div>
             </div>
@@ -512,11 +643,24 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-white">
                   Frames ({frames.length})
-                </h3>
-                <button
-                  onClick={handleAddFrame}
+                </h3>                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleAddFrame();
+                  }}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleAddFrame();
+                  }}
                   disabled={isLoading}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 py-2 rounded text-sm"
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 py-2 rounded text-sm ui-element"
+                  style={{ 
+                    minHeight: '48px',
+                    touchAction: 'manipulation'
+                  }}
                 >
                   Add Current Canvas
                 </button>
@@ -526,15 +670,13 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
               </div>
             </div>
           </div>
-        </div>
-
-        {error && (
+        </div>        {error && (
           <div className="mx-6 mb-6 p-3 bg-red-900/50 border border-red-700 rounded text-red-200">
             {error}
           </div>
         )}
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

@@ -3,6 +3,7 @@ import { landOfferService, CreateOfferData } from '../../src/services/landOfferS
 import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { FiX, FiSend } from 'react-icons/fi';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface MakeOfferModalProps {
   isOpen: boolean;
@@ -94,15 +95,19 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
   const suggestedAmounts = [100, 500, 1000, 2500, 5000];
 
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-white">Make Land Offer</h2>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white transition-colors modal-close-button ui-element"
+            style={{ touchAction: 'manipulation' }}
           >
             <FiX size={24} />
           </button>
@@ -190,20 +195,32 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
             <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg">
               <p className="text-red-300 text-sm">{error}</p>
             </div>
-          )}
-
-          <div className="flex gap-3">
+          )}          <div className="flex gap-3">
             <button
               type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white rounded-lg transition-colors ui-element"
+              style={{ 
+                minHeight: '48px',
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent'
+              }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || offerAmount <= 0 || !userEconomy || userEconomy.balance < offerAmount}
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2 ui-element"
+              style={{ 
+                minHeight: '48px',
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent'
+              }}
             >
               {isSubmitting ? (
                 <>
@@ -216,11 +233,10 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
                   Send Offer
                 </>
               )}
-            </button>
-          </div>
+            </button></div>
         </form>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

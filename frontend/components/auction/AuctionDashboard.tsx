@@ -274,10 +274,9 @@ const AuctionDashboard: React.FC = () => {
             )}
           </div>
         )}
-      </div>
-
-      {showCreateModal && (
+      </div>      {showCreateModal && (
         <CreateAuctionModal
+          isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);

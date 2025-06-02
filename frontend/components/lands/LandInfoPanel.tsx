@@ -10,6 +10,7 @@ import { landMergingService, type MergeCandidate } from '../../src/services/land
 import LandMergeModal from './LandMergeModal';
 import LandAnimationModal from './LandAnimationModal';
 import type { LandFramePixelData } from '../../src/services/landService';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface LandInfoPanelProps {
   land: UserLandInfo;
@@ -84,18 +85,35 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
   };
-
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <ModalWrapper isOpen={true} onClose={onClose}>
         <div className="bg-gray-800 rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
           <div className="flex justify-between items-center p-6 border-b border-gray-700">
             <h2 className="text-xl font-bold text-white">
               {land.displayName || `Land #${land.id.substring(0, 8)}`}
             </h2>
             <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              className="text-gray-400 hover:text-white transition-colors modal-close-button ui-element"
+              style={{
+                minWidth: '44px',
+                minHeight: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                touchAction: 'manipulation'
+              }}
             >
               ×
             </button>
@@ -367,13 +385,12 @@ const LandInfoPanel: React.FC<LandInfoPanelProps> = ({
                   <p>• Large canvas area for creative projects</p>
                   <p>• Strategic location at ({land.centerX}, {land.centerY})</p>
                   <p>• {land.ownedSize * land.ownedSize} pixels of creative space</p>
-                  <p>• Expandable with future updates</p>
-                </div>
+                  <p>• Expandable with future updates</p>                </div>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </ModalWrapper>
 
       {showOfferModal && !isOwner && currentUser && (
         <MakeOfferModal

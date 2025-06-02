@@ -3,6 +3,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { landMergingService, type MergeCandidate } from '../../src/services/landMergingService';
 import { FiX, FiArrowRight, FiDollarSign, FiAlertTriangle } from 'react-icons/fi';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface LandMergeModalProps {
   isOpen: boolean;
@@ -62,15 +63,19 @@ const LandMergeModal: React.FC<LandMergeModalProps> = ({
   const canAfford = userEconomy && (userEconomy.balance || 0) >= mergeCandidate.cost;
 
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-white">Merge Lands</h2>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white transition-colors modal-close-button ui-element"
+            style={{ touchAction: 'manipulation' }}
           >
             <FiX size={24} />
           </button>
@@ -164,13 +169,21 @@ const LandMergeModal: React.FC<LandMergeModalProps> = ({
 
         <div className="flex gap-3">
           <button
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleMerge}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             disabled={isMerging || !canAfford}
             className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center"
           >
@@ -185,10 +198,9 @@ const LandMergeModal: React.FC<LandMergeModalProps> = ({
                 Merge for {mergeCandidate.cost} 🪙
               </>
             )}
-          </button>
-        </div>
+          </button>        </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
 

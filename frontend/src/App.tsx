@@ -59,7 +59,6 @@ function AppContent() {
   if (isCanvasPage) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
         <main className="flex-1">
           <Routes>
             <Route path="/canvas" element={<Canvas />} />

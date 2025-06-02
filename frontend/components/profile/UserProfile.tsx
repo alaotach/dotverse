@@ -307,10 +307,9 @@ const UserProfile: React.FC = () => {
           onSuccess={handleExpansionSuccess}
           selectedLand={selectedLand}
         />
-      )}
-
-      {showCreateAuctionModal && selectedLand && (
+      )}      {showCreateAuctionModal && selectedLand && (
         <CreateAuctionModal
+          isOpen={showCreateAuctionModal}
           onClose={() => {
             setShowCreateAuctionModal(false);
             setSelectedLand(null);

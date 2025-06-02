@@ -69,12 +69,29 @@ const StickerPicker: React.FC<StickerPickerProps> = ({
 
   return (
     <div className="absolute bottom-12 right-0 bg-gray-800 rounded-lg shadow-xl border border-gray-700 w-80 h-96 flex flex-col">
-      {/* Header */}
-      <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+      {/* Header */}      <div className="p-3 border-b border-gray-700 flex justify-between items-center">
         <h3 className="text-white font-medium">Stickers</h3>
         <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-white"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          className="text-gray-400 hover:text-white ui-element"
+          style={{
+            minHeight: '44px',
+            minWidth: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            touchAction: 'manipulation'
+          }}
         >
           <FiX size={18} />
         </button>

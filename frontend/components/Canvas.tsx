@@ -1267,7 +1267,11 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             <div
               key={`auction-${land.id || `${land.centerX}-${land.centerY}`}`}
               style={overlayStyle}
-              onClick={(event) => handleLandClick(land, event)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleLandClick(land, event);
+              }}
               title={`Land auction: ${land.displayName || 'Unnamed Land'} - Click to view auction`}
             >              <div
                 style={{
@@ -2115,10 +2119,26 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setIsClearing(false);
     }
   }, [currentUser, userProfile, allLands, viewportOffset, effectiveCellSize, canvasContainerRef, getPixelKey, grid, addToHistory, currentTheme.defaultPixelColor]);
-  
-  const bind = useGesture(
+    const bind = useGesture(
     {
       onDrag: ({ active, movement: [dx, dy], event, first, last, touches, memo }) => {
+        const target = event?.target as HTMLElement;
+        if (target && (
+          target.closest('[data-toolbar]') ||
+          target.closest('button') ||
+          target.closest('input') ||
+          target.closest('select') ||
+          target.closest('textarea') ||
+          target.closest('.context-menu') ||
+          target.closest('.ui-overlay') ||
+          target.tagName === 'BUTTON' ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'TEXTAREA'
+        )) {
+          return memo;
+        }
+
         if (isPanMode && (touches === 1 || touches === 2)) { 
           if (event?.target === canvasContainerRef.current || canvasContainerRef.current?.contains(event?.target as Node)) {
             if (event?.cancelable) event.preventDefault();
@@ -2153,7 +2173,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         filterTaps: true,
         threshold: 10, 
       },
-      eventOptions: { passive: false },
+      eventOptions: { passive: false, capture: false },
     }
   );
 
@@ -2176,9 +2196,25 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setViewportOffset({ x: newOffsetX, y: newOffsetY });
     }
   }, [userProfile, effectiveCellSize]);
-
   const handleCanvasMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current) return;
+    
+    const target = event.target as HTMLElement;
+    if (target && (
+      target.closest('[data-toolbar]') ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea') ||
+      target.closest('.context-menu') ||
+      target.closest('.ui-overlay') ||
+      target.tagName === 'BUTTON' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'SELECT' ||
+      target.tagName === 'TEXTAREA'
+    )) {
+      return;
+    }
     
     event.preventDefault();
     event.stopPropagation();
@@ -2196,9 +2232,44 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     } else if (event.button === 0) {
       setIsPanning(false);
       lastDrawnPositionRef.current = null;
-      handleDrawing(event);
-    }
+      handleDrawing(event);    }
   }, [viewportOffset, handleDrawing]);
+
+  const handleCanvasTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (!canvasContainerRef.current) return;
+    
+    const target = event.target as HTMLElement;
+    if (target && (
+      target.closest('[data-toolbar]') ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea') ||
+      target.closest('.context-menu') ||
+      target.closest('.ui-overlay') ||
+      target.tagName === 'BUTTON' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'SELECT' ||
+      target.tagName === 'TEXTAREA'
+    )) {
+      return;
+    }
+    
+    if (event.touches.length === 1 && !isPanMode) {
+      const touch = event.touches[0];
+      const mouseEvent = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        preventDefault: () => event.preventDefault(),
+        stopPropagation: () => event.stopPropagation(),
+        target: event.target,
+        currentTarget: event.currentTarget
+      } as React.MouseEvent<HTMLDivElement>;
+      
+      handleDrawing(mouseEvent);
+    }
+  }, [handleDrawing, isPanMode]);
 
   const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current || !isMouseDown) return;
@@ -2937,7 +3008,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
           </div>
           <div className="flex space-x-4">
             <button 
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 setInitialDataLoaded(true);
                 setGrid(new Map());
               }}
@@ -2946,7 +3019,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               Skip Loading
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 requestFullSync();
               }}
               className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
@@ -2981,6 +3056,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         zIndex: 0
       }} 
       onMouseDown={handleCanvasMouseDown}
+      onTouchStart={handleCanvasTouchStart}
       onMouseMove={handleMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
@@ -2988,36 +3064,21 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}    >
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          toggleToolbar();
-        }}
-        id = 'toggle-toolbar'
-        onMouseDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
-        className="toggle-toolbar absolute top-4 right-4 z-40 bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-colors"
-        title={isToolbarVisible ? "Hide Toolbar" : "Show Toolbar"}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          {isToolbarVisible ? (
-            <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.76,7.13 11.37,7 12,7Z"/>
-          ) : (
-            <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
-          )}
-        </svg>
-      </button>
 
-      {isToolbarVisible && (
-      <div data-toolbar className="absolute top-4 left-4 z-30 bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar"
+
+      {isToolbarVisible && (      <div data-toolbar className="absolute top-4 left-4 toolbar-element bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar ui-overlay"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchEnd={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
       id = "data-toolbar"
-      style={{ backgroundColor: currentTheme.toolbarBgColor, color: currentTheme.toolbarTextColor }}
+      style={{ 
+        backgroundColor: currentTheme.toolbarBgColor, 
+        color: currentTheme.toolbarTextColor,
+        touchAction: 'manipulation',
+        pointerEvents: 'auto'
+      }}
       >
         <label htmlFor="colorPicker" className="mr-1" style={{ color: currentTheme.toolbarTextColor }}>Color:</label>
         <input
@@ -3305,11 +3366,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               Set to 10
             </button>
           </div>
-        )}
-
-        {isEraserActive && eraserSize > 0 && mousePosition.x > 0 && mousePosition.y > 0 && (
+        )}        {isEraserActive && eraserSize > 0 && mousePosition.x > 0 && mousePosition.y > 0 && (
           <div
-            className="fixed pointer-events-none z-50"
+            className="fixed pointer-events-none cursor-preview"
             style={{
               left: `${mousePosition.x - (eraserSize * effectiveCellSize) / 2}px`,
               top: `${mousePosition.y - (eraserSize * effectiveCellSize) / 2}px`,
@@ -3332,11 +3391,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               {eraserSize}×{eraserSize}
             </div>
           </div>
-        )}
-
-        {!isEraserActive && brushSize > 1 && mousePosition.x > 0 && mousePosition.y > 0 && (
+        )}        {!isEraserActive && brushSize > 1 && mousePosition.x > 0 && mousePosition.y > 0 && (
           <div
-            className="fixed pointer-events-none z-50"
+            className="fixed pointer-events-none cursor-preview"
             style={{
               left: `${mousePosition.x - (brushSize * effectiveCellSize) / 2}px`,
               top: `${mousePosition.y - (brushSize * effectiveCellSize) / 2}px`,
@@ -3463,7 +3520,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
 
             {isLandsDropdownOpen && (
               <div 
-                className="absolute top-full left-0 mt-1 min-w-48 bg-white border border-gray-300 rounded-md shadow-lg z-50"
+                className="absolute top-full left-0 mt-1 min-w-48 bg-white border border-gray-300 rounded-md shadow-lg context-menu"
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >
@@ -3530,7 +3587,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             </button>
 
             {showLandsExpansionDropdown && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-48">
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg context-menu min-w-48">
                 {userLands.map((land, index) => (
                   <button
                     key={`${land.centerX}-${land.centerY}-${index}`}
@@ -3711,7 +3768,11 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         </button>
 
         <button
-          onClick={captureScreenshot}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            captureScreenshot();
+          }}
           disabled={isCapturing}
           className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
             isCapturing
@@ -3759,17 +3820,23 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       </div>
 
       {contextMenu && (
-        <>
-          <div 
-            className="fixed inset-0 z-40" 
-            onClick={closeContextMenu}
-          />
-          <div
-            className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 py-2 min-w-48"
+        <>          <div 
+            className="fixed inset-0 context-menu-backdrop" 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              closeContextMenu();
+            }}
+          />          <div
+            className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg context-menu py-2 min-w-48"
             style={{
               left: `${Math.min(contextMenu.x, window.innerWidth - 200)}px`,
               top: `${Math.min(contextMenu.y, window.innerHeight - 150)}px`,
             }}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-2 text-gray-300 text-sm font-medium border-b border-gray-600">
               Land at ({contextMenu.landInfo.centerX}, {contextMenu.landInfo.centerY})
@@ -3778,7 +3845,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             <div className="border-b border-gray-600">
               <button
                 className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   const userLandInfo: UserLandInfo = {
                     ...contextMenu.landInfo,
                     id: `${contextMenu.landInfo.centerX},${contextMenu.landInfo.centerY}`,
@@ -3805,7 +3874,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
                   <button
                     key={index}
                     className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center justify-between"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setSelectedMergeCandidate(candidate);
                       setShowMergeModal(true);
                       closeContextMenu();
@@ -3835,7 +3906,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             <div className="border-t border-gray-600 mt-2">
               <button
                 className="w-full px-4 py-2 text-left text-gray-300 hover:bg-gray-700 text-sm flex items-center"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   navigate(`/profile`);
                   closeContextMenu();
                 }}
@@ -3849,6 +3922,27 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
           </div>
         </>
       )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          toggleToolbar();
+        }}
+        id = 'toggle-toolbar'
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        className="toggle-toolbar absolute top-4 right-4 toolbar-element bg-gray-800 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-colors"
+        title={isToolbarVisible ? "Hide Toolbar" : "Show Toolbar"}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          {isToolbarVisible ? (
+            <path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.76,7.13 11.37,7 12,7Z"/>
+          ) : (
+            <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
+          )}
+        </svg>
+      </button>
 
       <DailyCheckInModal 
         isOpen={showDailyCheckIn} 
@@ -3889,7 +3983,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
           }}
           selectedLand={selectedLandForExpansion}
         />
-      )}      {showAnimationModalForLand && (
+      )}      
+      
+      {showAnimationModalForLand && (
         <LandAnimationModal
           isOpen={true}
           onClose={() => setShowAnimationModalForLand(null)}
@@ -3913,7 +4009,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             }
           }}
         />
-      )}{showLandSelectionModal && currentUser && (
+      )}
+      
+      {showLandSelectionModal && currentUser && (
         <LandSelectionModal
           isOpen={showLandSelectionModal}
           onClose={() => setShowLandSelectionModal(false)}

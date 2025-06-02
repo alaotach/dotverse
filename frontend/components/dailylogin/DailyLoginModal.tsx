@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dailyCheckInService, type DailyCheckInReward } from '../../src/services/dailyLoginRewardService';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { FiX, FiGift, FiCalendar, FiTrendingUp } from 'react-icons/fi';
+import ModalWrapper from '../common/ModalWrapper';
 
 interface DailyCheckInModalProps {
   isOpen: boolean;
@@ -55,27 +56,29 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
 
     setIsChecking(false);
   };
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <ModalWrapper isOpen={isOpen} onClose={onClose}>
       <div className="bg-gray-900 rounded-lg border border-gray-700 max-w-md w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="flex items-center gap-2">
             <FiCalendar className="text-yellow-400" />
             <h2 className="text-xl font-bold text-white">Daily Check-In</h2>
           </div>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="text-gray-400 hover:text-white transition-colors p-2 touch-action-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+            style={{ touchAction: 'manipulation' }}
           >
             <FiX size={24} />
           </button>
         </div>
 
-        {/* Stats */}
         <div className="p-4 border-b border-gray-700">
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-gray-800 rounded-lg p-3 text-center">
@@ -91,7 +94,6 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
           </div>
         </div>
 
-        {/* Success Message */}
         {showSuccess && (
           <div className="p-4 bg-green-900 border-l-4 border-green-400 m-4 rounded">
             <div className="flex items-center">
@@ -104,7 +106,6 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
           </div>
         )}
 
-        {/* Rewards Grid */}
         <div className="p-4">
           <h3 className="text-lg font-semibold text-white mb-3">Weekly Rewards</h3>
           <div className="grid grid-cols-7 gap-2">
@@ -135,19 +136,26 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
           </div>
         </div>
 
-        {/* Check-in Button */}
         <div className="p-4 border-t border-gray-700">
           {canCheckIn ? (
             <button
-              onClick={handleCheckIn}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCheckIn();
+              }}
               disabled={isChecking}
               className={`
-                w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200
+                w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[48px] ui-element
                 ${isChecking
                   ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                  : 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg hover:shadow-xl'
+                  : 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl'
                 }
               `}
+              style={{ 
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent'
+              }}
             >
               {isChecking ? (
                 <div className="flex items-center justify-center gap-2">
@@ -169,6 +177,6 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
           )}
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   );
 };
