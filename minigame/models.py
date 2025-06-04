@@ -3,9 +3,11 @@ from enum import Enum
 import time
 import random
 
+DEFAULT_CANVAS_WIDTH = 800
+DEFAULT_CANVAS_HEIGHT = 600
+
 class GameStatus(Enum):
     WAITING_FOR_PLAYERS = "waiting_for_players"
-    VOTING_FOR_THEME = "voting_for_theme"
     DRAWING = "drawing"
     VOTING_FOR_DRAWINGS = "voting_for_drawings"
     SHOWCASING_RESULTS = "showcasing_results"
@@ -20,19 +22,20 @@ class Player:
         self.votes_cast_on_drawing = None
         self.score = 0
         self.is_ready = False
-        self.voted_color_theme = None
 
     def __repr__(self):
         return f"Player(id={self.player_id}, name={self.name}, score={self.score})"
     
 class Drawing:
-    def __init__(self, player_id, drawing_data, drawing_theme):
+    def __init__(self, player_id, drawing_data, drawing_theme, canvas_width, canvas_height, color_palette_used):
         self.id = uuid.uuid4()
         self.player_id = player_id
         self.drawing_data = drawing_data
         self.drawing_theme = drawing_theme
         self.votes_received = 0
-
+        self.timestamp = time.time()
+        self.canvas_width = canvas_width
+        self.canvas_height = canvas_height
     def __repr__(self):
         return f"Drawing(id={self.id}, player_id={self.player_id}, theme={self.drawing_theme})"
     
@@ -44,9 +47,6 @@ class Lobby:
         self.max_players = max_players
         self.min_players = min_players
         self.current_game_id = None
-        self.color_theme_votes = {}
-        self.available_color_themes = []
-        self.chosen_color_theme = None
         self.drawing_themes = ["Mythical Creature", "Dream Landscape", "Futuristic City", "Abstract Emotion", "Favorite Food"]
         self.current_drawing_theme = None
         self.game_timer = 0
@@ -56,6 +56,9 @@ class Lobby:
         self.ready_check_duration = 30
         self.drawing_vote_counts = {}
         self.winners = []
+        self.canvas_width = DEFAULT_CANVAS_WIDTH
+        self.canvas_height = DEFAULT_CANVAS_HEIGHT
+        self.showcase_items = []
     
     def add_player(self, player):
         if len(self.players) < self.max_players and self.game_status == GameStatus.WAITING_FOR_PLAYERS:
@@ -71,13 +74,6 @@ class Lobby:
     def remove_player(self, player_id):
         if player_id in self.players:
             player_name = self.players[player_id].name
-            if self.players[player_id].voted_color_theme:
-                theme_voted = self.players[player_id].voted_color_theme
-                if theme_voted in self.color_theme_votes:
-                    self.color_theme_votes[theme_voted] -= 1
-                    if self.color_theme_votes[theme_voted] == 0:
-                        del self.color_theme_votes[theme_voted]
-            
             del self.players[player_id]
             print(f"Player {player_name} left lobby {self.lobby_id}")
 
@@ -91,7 +87,7 @@ class Lobby:
         if player_id in self.players and self.game_state == GameStatus.WAITING_FOR_PLAYERS:
             self.players[player_id].is_ready = is_ready
             print(f"Player {self.players[player_id].name} is {'ready' if is_ready else 'not ready'}.")
-            self.check_start_theme_voting()
+            self.check_start_drawing_phase_conditions()
             return True
         return False
     
@@ -100,71 +96,19 @@ class Lobby:
             return False
         return all(p.is_ready for p in self.players.values())
     
-    def check_start_theme_voting(self):
-        if self.game_state == GameStatus.WAITING_FOR_PLAYERS and len(self.players) >= self.min_players_to_start and self.all_players_ready():
-            self.start_color_theme_voting()
-
-    def start_color_theme_voting(self):
-        if self.game_state == GameStatus.WAITING_FOR_PLAYERS and len(self.players) >= self.min_players_to_start:
-            self.game_state = GameStatus.VOTING_FOR_THEME
-            self.color_theme_votes = {theme: 0 for theme in random.sample(self.available_color_themes, k=min(3, len(self.available_color_themes)))}
-            for player in self.players.values():
-                player.voted_color_theme = None
-            self.game_timer_start_time = time.time()
-            self.phase_duration = 30 
-            self.current_game_id = str(uuid.uuid4())
-            print(f"Lobby {self.lobby_id} (Game ID: {self.current_game_id}): Color theme voting started. Options: {list(self.color_theme_votes.keys())}")
-        else:
-            print(f"Lobby {self.lobby_id}: Cannot start theme voting. Conditions not met (State: {self.game_state}, Players: {len(self.players)}).")
-
-    def cast_color_theme_vote(self, player_id, theme_choice):
-        if self.game_state != GameStatus.VOTING_FOR_THEME:
-            print(f"Lobby {self.lobby_id}: Cannot vote for theme, not in voting state.")
-            return False
-        if player_id not in self.players:
-            print(f"Lobby {self.lobby_id}: Player {player_id} not in lobby.")
-            return False
-        player = self.players[player_id]
-        if theme_choice not in self.color_theme_votes:
-            print(f"Lobby {self.lobby_id}: Invalid theme choice '{theme_choice}'. Available: {list(self.color_theme_votes.keys())}")
-            return False
-
-        if player.voted_color_theme and player.voted_color_theme in self.color_theme_votes:
-            self.color_theme_votes[player.voted_color_theme] -=1
-        
-        self.color_theme_votes[theme_choice] += 1
-        player.voted_color_theme = theme_choice
-        print(f"Lobby {self.lobby_id}: Player {player.name} voted for color theme '{theme_choice}'. Votes: {self.color_theme_votes}")
-
-        if all(p.voted_color_theme is not None for p in self.players.values()):
-            self.end_color_theme_voting()
-        return True
-    
-    def end_color_theme_voting(self):
-        if self.game_state != GameStatus.VOTING_FOR_THEME:
-            return
-
-        if not self.color_theme_votes:
-            self.chosen_color_theme = random.choice(self.available_color_themes)
-            print(f"Lobby {self.lobby_id}: No votes cast for color theme or no options. Defaulting to {self.chosen_color_theme}.")
-        else:
-            max_votes = -1
-            top_themes = []
-            for theme, votes in self.color_theme_votes.items():
-                if votes > max_votes:
-                    max_votes = votes
-                    top_themes = [theme]
-                elif votes == max_votes:
-                    top_themes.append(theme)
-            self.chosen_color_theme = random.choice(top_themes) if top_themes else random.choice(list(self.color_theme_votes.keys()))
-        print(f"Lobby {self.lobby_id}: Color theme voting ended. Chosen theme: {self.chosen_color_theme}")
-        self.start_drawing_phase()
+    def check_start_drawing_phase_conditions(self):
+        if self.game_state == GameStatus.WAITING_FOR_PLAYERS and \
+           len(self.players) >= self.min_players_to_start and \
+           self.all_players_ready():
+            self.start_drawing_phase()
 
     def start_drawing_phase(self):
-        if self.game_state != GameStatus.VOTING_FOR_THEME or not self.chosen_color_theme:
-            print(f"Lobby {self.lobby_id}: Cannot start drawing phase. Conditions not met.")
-            return
+        if self.game_state != GameStatus.WAITING_FOR_PLAYERS or not self.all_players_ready() or len(self.players) < self.min_players_to_start :
+             print(f"Lobby {self.lobby_id}: Cannot start drawing phase. Conditions not met. State: {self.game_state}, Players Ready: {self.all_players_ready()}, Player Count: {len(self.players)}")
+             return
+
         self.game_state = GameStatus.DRAWING
+        self.current_game_id = str(uuid.uuid4())
         self.current_drawing_theme = random.choice(self.drawing_themes)
         self.drawings_submitted = {player_id: None for player_id in self.players.keys()}
         self.drawing_vote_counts = {player_id: 0 for player_id in self.players.keys()}
@@ -173,7 +117,7 @@ class Lobby:
             player.votes_cast_on_drawing = None
         self.game_timer_start_time = time.time()
         self.phase_duration = 120
-        print(f"Lobby {self.lobby_id}: Drawing phase started! Theme: '{self.current_drawing_theme}'. Color Palette: '{self.chosen_color_theme}'. Time: {self.phase_duration}s.")
+        print(f"Lobby {self.lobby_id} (Game ID: {self.current_game_id}): Drawing phase started! Theme: '{self.current_drawing_theme}'. Canvas: {self.canvas_width}x{self.canvas_height}. Time: {self.phase_duration}s.")
 
     def submit_drawing(self, player_id, drawing_data):
         if self.game_state != GameStatus.DRAWING:
@@ -186,7 +130,7 @@ class Lobby:
             print(f"Lobby {self.lobby_id}: Player {self.players[player_id].name} has already submitted a drawing.")
             return False
 
-        drawing = Drawing(player_id, drawing_data, self.current_drawing_theme)
+        drawing = Drawing(player_id, drawing_data, self.current_drawing_theme, self.canvas_width, self.canvas_height)
         self.drawings_submitted[player_id] = drawing
         self.players[player_id].drawing = drawing
         print(f"Lobby {self.lobby_id}: Player {self.players[player_id].name} submitted their drawing for '{self.current_drawing_theme}'.")
@@ -248,6 +192,7 @@ class Lobby:
 
     def calculate_results_and_showcase(self):
         self.game_state = GameStatus.SHOWCASING_RESULTS
+        self.showcase_items = []
         sorted_drawers = sorted(self.drawing_vote_counts.items(), key=lambda item: item[1], reverse=True)
         
         self.winners = []
@@ -257,6 +202,24 @@ class Lobby:
         if not sorted_drawers:
             print("No drawings were voted on.")
         else:
+            temp_showcase_list = []
+            for pid, drawing_instance in self.valid_drawings_for_voting.items():
+                if drawing_instance: # Ensure drawing exists
+                    votes = self.drawing_vote_counts.get(pid, 0)
+                    temp_showcase_list.append({
+                        "player_id": pid,
+                        "player_name": self.players[pid].name if pid in self.players else "Unknown",
+                        "drawing_id": drawing_instance.drawing_id,
+                        "drawing_data": drawing_instance.drawing_data,
+                        "drawing_theme": drawing_instance.drawing_theme,
+                        "canvas_width": drawing_instance.canvas_width,
+                        "canvas_height": drawing_instance.canvas_height,
+                        "votes": votes,
+                        "timestamp": drawing_instance.timestamp
+                    })
+            
+            self.showcase_items = sorted(temp_showcase_list, key=lambda x: (x["votes"], -x["timestamp"]), reverse=True)
+
             for i, (player_id, votes) in enumerate(sorted_drawers):
                 player_name = self.players[player_id].name if player_id in self.players else "Unknown Player"
                 score_awarded = 0
@@ -271,8 +234,9 @@ class Lobby:
                 print(f"{prize_str}: {player_name} with {votes} votes. (Awarded {score_awarded} points)")
                 if i < 3:
                     self.winners.append({"player_id": player_id, "name": player_name, "votes": votes, "rank": i + 1})
+        num_items_to_showcase = len(self.showcase_items)
         self.game_timer_start_time = time.time()
-        self.phase_duration = 15 * len(self.valid_drawings_for_voting)
+        self.phase_duration = (10 * num_items_to_showcase) if num_items_to_showcase > 0 else 10
         if not self.valid_drawings_for_voting: 
             self.phase_duration = 10
         
@@ -317,19 +281,17 @@ class Lobby:
         print(f"Lobby {self.lobby_id}: Resetting.")
         self.game_state = GameStatus.WAITING_FOR_PLAYERS
         self.current_game_id = None
-        self.color_theme_votes = {}
-        self.chosen_color_theme = None
         self.current_drawing_theme = None
         self.drawings_submitted = {}
         self.game_timer_start_time = 0
         self.phase_duration = 0
         self.valid_drawings_for_voting = {}
+        self.showcase_items = []
         for player in self.players.values():
             player.is_ready = False
             player.drawing = None
             player.votes_cast = {}
             player.score = 0
-            player.voted_color_theme = None
             player.votes_cast_on_drawing = None
     
     def get_lobby_status(self):
@@ -342,11 +304,14 @@ class Lobby:
             "game_state": self.game_state.value,
             "max_players": self.max_players,
             "min_players_to_start": self.min_players_to_start,
-            "color_theme_options": list(self.color_theme_votes.keys()) if self.game_state == GameStatus.VOTING_FOR_THEME else [],
-            "color_theme_votes": self.color_theme_votes if self.game_state == GameStatus.VOTING_FOR_THEME else {},
-            "chosen_color_theme": self.chosen_color_theme,
             "current_drawing_theme": self.current_drawing_theme,
             "time_remaining": max(0, int(self.phase_duration - (time.time() - self.game_timer_start_time))) if self.game_timer_start_time > 0 else 0,
+            "canvas_dimensions": {"width": self.canvas_width, "height": self.canvas_height} if self.game_state == GameStatus.DRAWING else {},
+            "drawings_for_voting": [{"drawer_id": pid, "drawer_name": self.players[pid].name, "drawing_id": d.drawing_id, "drawing_theme": d.drawing_theme} for pid, d in self.valid_drawings_for_voting.items()] if self.game_state == GameStatus.VOTING_FOR_DRAWINGS else [],
+            "drawing_vote_counts": self.drawing_vote_counts if self.game_state in [GameStatus.VOTING_FOR_DRAWINGS, GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else {},
+            "winners": self.winners if self.game_state in [GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else [],
+            "player_scores": {pid: p.score for pid, p in self.players.items()} if self.game_state in [GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else {},
+            "showcase_items": self.showcase_items if self.game_state == GameStatus.SHOWCASING_RESULTS else []
         }
     
     def __repr__(self):
