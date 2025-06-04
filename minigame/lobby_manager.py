@@ -1,4 +1,4 @@
-from .models import Lobby
+from .models import Lobby, GameStatus
 
 class LobbyManager:
     def __init__(self):
@@ -18,7 +18,7 @@ class LobbyManager:
     
     def find_available_lobby(self, player):
         for lobby in self.lobbies.items():
-            if len(lobby.players) < lobby.max_players and lobby.game_status == "waiting_for_players":
+            if len(lobby.players) < lobby.max_players and lobby.game_status == GameStatus.WAITING_FOR_PLAYERS:
                 return lobby
         return self.create_lobby()
     
