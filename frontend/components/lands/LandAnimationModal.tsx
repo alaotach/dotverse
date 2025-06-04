@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FiX, FiPlay, FiPause, FiPlus, FiTrash2, FiEdit3, FiSave, FiRefreshCw, FiEye } from 'react-icons/fi';
+import { FiX, FiPlay, FiPause, FiPlus, FiTrash2, FiEdit3, FiSave, FiRefreshCw, FiEye, FiShoppingCart } from 'react-icons/fi';
 import { useAuth } from '../../src/context/AuthContext';
 import ModalWrapper from '../common/ModalWrapper';
 import { 
@@ -14,6 +14,8 @@ import {
   type LandFramePixelData,
   type UserLandInfo
 } from '../../src/services/landService';
+import { userPermissionsService } from '../../src/services/userPermissionsService';
+import type { AnimationPermissions } from '../../src/services/userPermissionsService';
 
 interface LandAnimationModalProps {
   isOpen: boolean;
@@ -33,8 +35,7 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
   onSuccess,
   onPreviewAnimation,
   onStopAnimation
-}) => {
-  const { currentUser } = useAuth();
+}) => {  const { currentUser } = useAuth();
   const [frames, setFrames] = useState<LandFrame[]>([]);
   const [fps, setFps] = useState<number>(land.animationSettings?.fps || 5);
   const [loop, setLoop] = useState<boolean>(land.animationSettings?.loop !== false);
@@ -44,6 +45,22 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
   const [currentPreviewFrame, setCurrentPreviewFrame] = useState<number>(0);
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
   const [editingDuration, setEditingDuration] = useState<number>(1000);
+  const [animationPermissions, setAnimationPermissions] = useState<AnimationPermissions | null>(null);
+  const [showMarketplace, setShowMarketplace] = useState<boolean>(false);
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!currentUser) return;
+      try {
+        const permissions = await userPermissionsService.getUserPermissions(currentUser.uid);
+        setAnimationPermissions(permissions.animation);
+      } catch (error) {
+        console.error('Error loading animation permissions:', error);
+      }
+    };
+    
+    loadPermissions();
+  }, [currentUser]);
 
   const renderAnimationPreview = () => {
     if (frames.length === 0) {
@@ -284,8 +301,17 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
       setIsLoading(false);
     }
   };
-
   const handleAddFrame = async () => {
+    if (!animationPermissions?.canAnimate) {
+      setError('Animation feature not available. Please purchase animation packages.');
+      return;
+    }
+    
+    if (frames.length >= (animationPermissions?.maxFrames || 3)) {
+      setError(`Frame limit reached. Your current package allows up to ${animationPermissions?.maxFrames || 3} frames.`);
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
     try {
@@ -554,38 +580,63 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-white mb-4">Settings</h3>
-              <div className="space-y-4">
-                <div>
+              <div className="space-y-4">                <div>
                   <label className="block text-gray-300 text-sm mb-2">
-                    FPS: {fps}
+                    FPS: {fps} {animationPermissions && `(Max: ${animationPermissions.maxFps})`}
                   </label>
                   <input
                     type="range"
                     min="1"
-                    max="20"
+                    max={animationPermissions?.maxFps || 5}
                     value={fps}
                     onChange={(e) => {
                       const newFps = parseInt(e.target.value);
-                      console.log('FPS slider changed to:', newFps);
-                      setFps(newFps);
+                      const maxFps = animationPermissions?.maxFps || 5;
+                      const clampedFps = Math.min(newFps, maxFps);
+                      console.log('FPS slider changed to:', clampedFps);
+                      setFps(clampedFps);
                     }}
                     onInput={(e) => {
                       const newFps = parseInt((e.target as HTMLInputElement).value);
-                      console.log('FPS slider onInput:', newFps);
-                      setFps(newFps);
+                      const maxFps = animationPermissions?.maxFps || 5;
+                      const clampedFps = Math.min(newFps, maxFps);
+                      console.log('FPS slider onInput:', clampedFps);
+                      setFps(clampedFps);
                     }}
+                    disabled={!animationPermissions?.canAnimate}
                     onMouseDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                     onTouchEnd={(e) => e.stopPropagation()}
-                    className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-track"
+                    className={`w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-track ${
+                      !animationPermissions?.canAnimate ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                     style={{
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((fps - 1) / 19) * 100}%, #4b5563 ${((fps - 1) / 19) * 100}%, #4b5563 100%)`
+                      background: !animationPermissions?.canAnimate 
+                        ? '#6b7280' 
+                        : `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((fps - 1) / ((animationPermissions?.maxFps || 5) - 1)) * 100}%, #4b5563 ${((fps - 1) / ((animationPermissions?.maxFps || 5) - 1)) * 100}%, #4b5563 100%)`
                     }}
                   />
                   <div className="flex justify-between text-xs text-gray-400 mt-1">
                     <span>1 FPS</span>
-                    <span>20 FPS</span>
+                    <span>{animationPermissions?.maxFps || 5} FPS</span>
                   </div>
+                  {!animationPermissions?.canAnimate && (
+                    <div className="mt-2 p-3 bg-red-900/20 border border-red-500 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-red-400 text-sm font-medium">Animation Not Available</p>
+                          <p className="text-red-300 text-xs mt-1">Purchase animation packages from the marketplace to unlock this feature.</p>
+                        </div>
+                        <button
+                          onClick={() => setShowMarketplace(true)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+                        >
+                          <FiShoppingCart size={14} />
+                          Shop
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                   <div className="flex items-center">
                   <input
@@ -639,11 +690,11 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                 </button>
               </div>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-4">
+            <div>              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-white">
-                  Frames ({frames.length})
-                </h3>                <button
+                  Frames ({frames.length}{animationPermissions ? `/${animationPermissions.maxFrames}` : ''})
+                </h3>
+                <button
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -655,12 +706,27 @@ const LandAnimationModal: React.FC<LandAnimationModalProps> = ({
                     e.stopPropagation();
                     handleAddFrame();
                   }}
-                  disabled={isLoading}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 py-2 rounded text-sm ui-element"
+                  disabled={
+                    isLoading || 
+                    !animationPermissions?.canAnimate || 
+                    frames.length >= (animationPermissions?.maxFrames || 3)
+                  }
+                  className={`px-3 py-2 rounded text-sm ui-element ${
+                    !animationPermissions?.canAnimate || frames.length >= (animationPermissions?.maxFrames || 3)
+                      ? 'bg-gray-600 cursor-not-allowed text-gray-400'
+                      : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white'
+                  }`}
                   style={{ 
                     minHeight: '48px',
                     touchAction: 'manipulation'
                   }}
+                  title={
+                    !animationPermissions?.canAnimate 
+                      ? 'Animation not available - purchase animation package'
+                      : frames.length >= (animationPermissions?.maxFrames || 3)
+                      ? `Frame limit reached (${animationPermissions?.maxFrames || 3})`
+                      : 'Add current canvas as new frame'
+                  }
                 >
                   Add Current Canvas
                 </button>

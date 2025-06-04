@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FiSmile, FiX, FiSearch } from 'react-icons/fi';
+import { FiSmile, FiX, FiSearch, FiLock, FiShoppingCart } from 'react-icons/fi';
 import { stickerService, StickerPack, Sticker } from '../../src/services/stickerService';
+import { useAuth } from '../../src/context/AuthContext';
 
 interface StickerPickerProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ const StickerPicker: React.FC<StickerPickerProps> = ({
   onClose,
   onStickerSelect
 }) => {
+  const { currentUser } = useAuth();
   const [stickerPacks, setStickerPacks] = useState<StickerPack[]>([]);
   const [selectedPackId, setSelectedPackId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,11 +34,10 @@ const StickerPicker: React.FC<StickerPickerProps> = ({
       setSearchResults([]);
     }
   }, [searchQuery]);
-
   const loadStickerPacks = async () => {
     setLoading(true);
     try {
-      const packs = await stickerService.getStickerPacks();
+      const packs = await stickerService.getStickerPacks(currentUser?.uid);
       setStickerPacks(packs);
       if (packs.length > 0 && !selectedPackId) {
         setSelectedPackId(packs[0].id);
@@ -109,32 +110,65 @@ const StickerPicker: React.FC<StickerPickerProps> = ({
             className="w-full pl-10 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
           />
         </div>
-      </div>
-
-      {/* Pack Tabs */}
+      </div>      {/* Pack Tabs */}
       {!searchQuery.trim() && (
         <div className="flex overflow-x-auto bg-gray-700 p-2 space-x-1">
           {stickerPacks.map((pack) => (
             <button
               key={pack.id}
               onClick={() => setSelectedPackId(pack.id)}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1 ${
                 selectedPackId === pack.id
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
               }`}
             >
-              {pack.name}
+              <span>{pack.name}</span>
+              {pack.isLocked && <FiLock size={12} />}
+              {pack.price === 0 && !pack.isLocked && <span className="text-xs bg-green-500 px-1 rounded">FREE</span>}
             </button>
           ))}
         </div>
-      )}
-
-      {/* Stickers Grid */}
+      )}      {/* Stickers Grid */}
       <div className="flex-1 overflow-y-auto p-3">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-gray-400">Loading stickers...</div>
+          </div>
+        ) : selectedPack?.isLocked ? (
+          <div className="flex flex-col items-center justify-center h-full text-center p-4">
+            <FiLock className="text-gray-400 mb-3" size={32} />
+            <h4 className="text-white font-medium mb-2">{selectedPack.name} is Locked</h4>
+            <p className="text-gray-400 text-sm mb-4">{selectedPack.description}</p>
+            <div className="space-y-2">
+              <div className="text-blue-400 font-medium">
+                {selectedPack.price === 0 ? 'FREE' : `${selectedPack.price} coins`}
+              </div>
+              <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors">
+                <FiShoppingCart size={14} />
+                <span>{selectedPack.price === 0 ? 'Get Free Pack' : 'Purchase Pack'}</span>
+              </button>
+            </div>
+            {displayStickers.length > 0 && (
+              <div className="mt-4 w-full">
+                <p className="text-gray-400 text-xs mb-2">Preview (first 3 stickers):</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {displayStickers.map((sticker) => (
+                    <div
+                      key={sticker.id}
+                      className="aspect-square bg-gray-700 rounded-lg p-2 flex items-center justify-center opacity-50"
+                    >
+                      <img
+                        src={sticker.url}
+                        alt={sticker.name}
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : displayStickers.length === 0 ? (
           <div className="flex items-center justify-center h-full">

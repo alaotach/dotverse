@@ -8,7 +8,8 @@ import NotificationDropdown from '../notifications/NotificationDropdown';
 import ChatButton from '../chat/ChatButton';
 import { useMusic } from '../../src/context/MusicContext';
 import { FiMusic } from 'react-icons/fi';
-import { DailyCheckInButton, LoginButton } from '../dailylogin/LoginButton';
+import { DailyCheckInButton } from '../dailylogin/LoginButton';
+import MarketplaceButton from '../marketplace/MarketplaceButton';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -75,15 +76,14 @@ const Navbar: React.FC = () => {
           <div className="md:block">
             <div className="ml-4 flex items-center md:ml-6">
               {currentUser ? (
-                <>
-
-                  {userEconomy && (
+                <>                  {userEconomy && (
                     <div className="mr-4 bg-gradient-to-r from-yellow-600 to-orange-600 px-3 py-1 rounded-lg">
                       <span className="text-sm font-semibold">
                         {userEconomy.balance?.toLocaleString() || 0} 🪙
                       </span>
                     </div>
-                  )}             
+                  )}
+                  <MarketplaceButton />             
                   <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>

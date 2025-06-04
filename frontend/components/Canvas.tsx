@@ -256,7 +256,7 @@ const Canvas = () => {
       if (!currentFrame) return;
       const fps = animatedLand.settings?.fps || 5;
       console.log(`🎬 [Canvas] Using FPS for animation: ${fps} (land ${landId})`);
-      const frameDuration = currentFrame.duration || (1000 / fps);
+      const frameDuration = (1000 / fps);
       
       const timeSinceLastChange = now - animatedLand.lastFrameChangeTime;
 
@@ -463,29 +463,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       document.documentElement.style.setProperty('--canvas-grid-line-color', currentTheme.gridLineColor);
       document.documentElement.style.setProperty('--toolbar-bg-color', currentTheme.toolbarBgColor);
       document.documentElement.style.setProperty('--toolbar-text-color', currentTheme.toolbarTextColor);
-    }
-  }, [currentThemeId, currentTheme]);
-
-  useEffect(() => {
-    const loadStickerPacks = async () => {
-      try {
-        const packs = await stickerService.getStickerPacks();
-        setStickerPacks(packs);
-        console.log('Loaded sticker packs:', packs);
-        
-        let totalStickers = 0;
-        packs.forEach(pack => {
-          console.log(`Sticker pack ${pack.id} has ${pack.stickers.length} stickers`);
-          totalStickers += pack.stickers.length;
-        });
-        console.log(`Total stickers available: ${totalStickers}`);
-      } catch (error) {
-        console.error('Error loading sticker packs:', error);
-      }
-    };
-
-    loadStickerPacks();
-  }, []);
+    }  }, [currentThemeId, currentTheme]);
 
   const debouncedSaveViewport = useCallback(
     debounce((vpOffset: { x: number; y: number }, zmLevel: number) => {
@@ -518,11 +496,37 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
 
   const [viewportCellWidth, setViewportCellWidth] = useState(100); 
   const [viewportCellHeight, setViewportCellHeight] = useState(100);
+    const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
+  const { currentUser, userProfile, refreshProfile } = useAuth(); 
   
-  const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
-    const { currentUser, userProfile, refreshProfile } = useAuth(); 
+  // Load sticker packs when user changes
+  useEffect(() => {
+    const loadStickerPacks = async () => {
+      try {
+        if (!currentUser?.uid) {
+          setStickerPacks([]);
+          return;
+        }
+        
+        const packs = await stickerService.getOwnedStickerPacks(currentUser.uid);
+        setStickerPacks(packs);
+        console.log('Loaded sticker packs:', packs);
+        
+        let totalStickers = 0;
+        packs.forEach(pack => {
+          console.log(`Sticker pack ${pack.id} has ${pack.stickers.length} stickers`);
+          totalStickers += pack.stickers.length;
+        });
+        console.log(`Total stickers available: ${totalStickers}`);
+      } catch (error) {
+        console.error('Error loading sticker packs:', error);
+      }
+    };
+
+    loadStickerPacks();
+  }, [currentUser]);
   
-  const masterGridDataRef = useRef<Map<string, string>>(new Map());  const activeChunkKeysRef = useRef<Set<string>>(new Set()); 
+  const masterGridDataRef = useRef<Map<string, string>>(new Map());const activeChunkKeysRef = useRef<Set<string>>(new Set()); 
 
   const syncInProgressRef = useRef<boolean>(false);
   const lastSyncRequestTimeRef = useRef<number>(0);

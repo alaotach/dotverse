@@ -1,5 +1,6 @@
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { fs } from '../firebaseClient';
+import { userPermissionsService } from './userPermissionsService';
 
 export interface Sticker {
   id: string;
@@ -15,6 +16,9 @@ export interface StickerPack {
   thumbnailUrl: string;
   stickers: Sticker[];
   baseColor: string;
+  isOwned?: boolean;
+  isLocked?: boolean;
+  price?: number;
 }
 
 class StickerService {
@@ -39,51 +43,78 @@ class StickerService {
       this.initialized = true;
     }
   }
-
-  async getStickerPacks(): Promise<StickerPack[]> {
+  async getStickerPacks(userId?: string): Promise<StickerPack[]> {
     try {
       await this.loadLocalStickerPacks();
+      let packs: StickerPack[] = [];
+      
       if (this.localPacks.length > 0) {
-        return this.localPacks;
-      }
-      if (this.cachedPacks.size > 0) {
-        return Array.from(this.cachedPacks.values());
-      }
+        packs = [...this.localPacks];
+      } else if (this.cachedPacks.size > 0) {
+        packs = Array.from(this.cachedPacks.values());
+      } else {
+        const packsCollection = collection(fs, 'stickerPacks');
+        const packsSnapshot = await getDocs(packsCollection);
 
-      const packsCollection = collection(fs, 'stickerPacks');
-      const packsSnapshot = await getDocs(packsCollection);
-      const packs: StickerPack[] = [];
+        for (const packDoc of packsSnapshot.docs) {
+          const packData = packDoc.data();
+          const stickersCollection = collection(fs, 'stickerPacks', packDoc.id, 'stickers');
+          const stickersSnapshot = await getDocs(stickersCollection);
 
-      for (const packDoc of packsSnapshot.docs) {
-        const packData = packDoc.data();
-        const stickersCollection = collection(fs, 'stickerPacks', packDoc.id, 'stickers');
-        const stickersSnapshot = await getDocs(stickersCollection);
+          const stickers: Sticker[] = stickersSnapshot.docs.map(stickerDoc => ({
+            id: stickerDoc.id,
+            packId: packDoc.id,
+            url: stickerDoc.data().url,
+            name: stickerDoc.data().name
+          }));
 
-        const stickers: Sticker[] = stickersSnapshot.docs.map(stickerDoc => ({
-          id: stickerDoc.id,
-          packId: packDoc.id,
-          url: stickerDoc.data().url,
-          name: stickerDoc.data().name
-        }));
-
-        packs.push({
-          id: packDoc.id,
-          name: packData.name,
-          description: packData.description,
-          thumbnailUrl: packData.thumbnailUrl,
-          baseColor: packData.baseColor || '#3b82f6',
-          stickers
+          packs.push({
+            id: packDoc.id,
+            name: packData.name,
+            description: packData.description,
+            thumbnailUrl: packData.thumbnailUrl,
+            baseColor: packData.baseColor || '#3b82f6',
+            stickers
+          });
+        }
+        
+        packs.forEach(pack => {
+          this.cachedPacks.set(pack.id, pack);
         });
       }
-      packs.forEach(pack => {
-        this.cachedPacks.set(pack.id, pack);
-      });
+      if (userId) {
+        const { marketplaceService } = await import('./marketplaceService');
+        const marketplaceItems = await marketplaceService.getMarketplaceItems('stickers');
+        
+        for (const pack of packs) {
+          const hasAccess = await userPermissionsService.hasStickerPackAccess(userId, pack.id);
+          const marketplaceItem = marketplaceItems.find(item => item.metadata.packId === pack.id);
+          pack.price = marketplaceItem?.price || 0;
+
+          if (pack.id === 'kawaii' && pack.price === 0) {
+            pack.isOwned = true;
+          } else {
+            pack.isOwned = hasAccess;
+          }
+          
+          pack.isLocked = !pack.isOwned;
+          
+          if (pack.isLocked && pack.stickers.length > 3) {
+            pack.stickers = pack.stickers.slice(0, 3);
+          }
+        }
+      }
 
       return packs;
     } catch (error) {
       console.error("Error fetching sticker packs:", error);
       return this.localPacks;
     }
+  }
+
+  async getOwnedStickerPacks(userId: string): Promise<StickerPack[]> {
+    const allPacks = await this.getStickerPacks(userId);
+    return allPacks.filter(pack => pack.isOwned === true);
   }
 
   async getStickerPack(packId: string): Promise<StickerPack | null> {
@@ -147,10 +178,14 @@ class StickerService {
       img.src = sticker.url;
     });
   }
-
-  async getAllStickers(): Promise<Sticker[]> {
-    const packs = await this.getStickerPacks();
+  async getAllStickers(userId?: string): Promise<Sticker[]> {
+    const packs = await this.getStickerPacks(userId);
     return packs.flatMap(pack => pack.stickers);
+  }
+
+  async getOwnedStickers(userId: string): Promise<Sticker[]> {
+    const ownedPacks = await this.getOwnedStickerPacks(userId);
+    return ownedPacks.flatMap(pack => pack.stickers);
   }
 
   async searchStickers(query: string): Promise<Sticker[]> {

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "sticker_pack_cakes",
+    "name": "Cakes Sticker Pack",
+    "description": "131 awesome stickers in the cakes pack",
+    "category": "stickers",
+    "price": 100,
+    "icon": "🧩",
+    "thumbnailUrl": "/assets/stickers/cakes/0 preview.png",
+    "isActive": true,
+    "features": [
+      "131 unique stickers",
+      "High quality images"
+    ],
+    "metadata": {
+      "packId": "cakes",
+      "stickerCount": 131
+    },
+    "rarity": "common"
+  },
+  {
+    "id": "sticker_pack_kawaii",
+    "name": "Kawaii Sticker Pack",
+    "description": "51 awesome stickers in the kawaii pack",
+    "category": "stickers",
+    "price": 0,
+    "icon": "🧩",
+    "thumbnailUrl": "/assets/stickers/kawaii/0 preview.png",
+    "isActive": true,
+    "features": [
+      "51 unique stickers",
+      "High quality images"
+    ],
+    "metadata": {
+      "packId": "kawaii",
+      "stickerCount": 51
+    },
+    "rarity": "common"
+  }
+]

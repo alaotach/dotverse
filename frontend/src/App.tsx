@@ -20,6 +20,7 @@ import { ChatProvider } from './context/ChatContext';
 import ChatPanel from '../components/chat/ChatPanel';
 import { MusicProvider, useMusic } from './context/MusicContext';
 import Controls from '../components/music/Controls';
+import { marketplaceService } from './services/marketplaceService';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -34,8 +35,8 @@ const ProtectedRoute: React.FC<{
 
 const MusicPlayerGlobalRenderer: React.FC = () => {
   const { currentUser } = useAuth();
-  const { isPlayerVisible } = useMusic(); // Use context to decide if player UI should be rendered
-  if (!currentUser || !isPlayerVisible) return null; // Only render if user logged in AND player is set to be visible
+  const { isPlayerVisible } = useMusic();
+  if (!currentUser || !isPlayerVisible) return null;
   return <Controls />;
 }
 
@@ -55,6 +56,15 @@ function AppContent() {
       document.body.classList.remove('canvas-page');
     };
   }, [isCanvasPage]);
+  useEffect(() => {
+    marketplaceService.initializeMarketplace();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.uid) {
+      marketplaceService.grantFreeStarterItems(currentUser.uid);
+    }
+  }, [currentUser?.uid]);
 
   if (isCanvasPage) {
     return (
