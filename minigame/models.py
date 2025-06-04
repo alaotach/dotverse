@@ -17,6 +17,7 @@ class Player:
         self.name = name
         self.drawing = None
         self.votes_cast = {}
+        self.votes_cast_on_drawing = None
         self.score = 0
         self.is_ready = False
         self.voted_color_theme = None
@@ -53,6 +54,8 @@ class Lobby:
         self.drawings_submitted = {}
         self.ready_check_timer = 0
         self.ready_check_duration = 30
+        self.drawing_vote_counts = {}
+        self.winners = []
     
     def add_player(self, player):
         if len(self.players) < self.max_players and self.game_status == GameStatus.WAITING_FOR_PLAYERS:
@@ -161,25 +164,154 @@ class Lobby:
         if self.game_state != GameStatus.VOTING_FOR_THEME or not self.chosen_color_theme:
             print(f"Lobby {self.lobby_id}: Cannot start drawing phase. Conditions not met.")
             return
-
         self.game_state = GameStatus.DRAWING
         self.current_drawing_theme = random.choice(self.drawing_themes)
         self.drawings_submitted = {player_id: None for player_id in self.players.keys()}
+        self.drawing_vote_counts = {player_id: 0 for player_id in self.players.keys()}
         for player in self.players.values():
             player.drawing = None
+            player.votes_cast_on_drawing = None
         self.game_timer_start_time = time.time()
         self.phase_duration = 120
         print(f"Lobby {self.lobby_id}: Drawing phase started! Theme: '{self.current_drawing_theme}'. Color Palette: '{self.chosen_color_theme}'. Time: {self.phase_duration}s.")
 
+    def submit_drawing(self, player_id, drawing_data):
+        if self.game_state != GameStatus.DRAWING:
+            print(f"Lobby {self.lobby_id}: Cannot submit drawing, not in drawing phase.")
+            return False
+        if player_id not in self.players:
+            print(f"Lobby {self.lobby_id}: Player {player_id} not in lobby.")
+            return False
+        if self.drawings_submitted.get(player_id) is not None:
+            print(f"Lobby {self.lobby_id}: Player {self.players[player_id].name} has already submitted a drawing.")
+            return False
+
+        drawing = Drawing(player_id, drawing_data, self.current_drawing_theme)
+        self.drawings_submitted[player_id] = drawing
+        self.players[player_id].drawing = drawing
+        print(f"Lobby {self.lobby_id}: Player {self.players[player_id].name} submitted their drawing for '{self.current_drawing_theme}'.")
+        if all(sub is not None for sub in self.drawings_submitted.values()):
+            print(f"Lobby {self.lobby_id}: All players have submitted drawings.")
+            self.start_drawing_voting_phase()
+        return True
+    
+    def start_drawing_voting_phase(self):
+        if self.game_state != GameStatus.DRAWING:
+            pass
+        self.valid_drawings_for_voting = {pid: d for pid, d in self.drawings_submitted.items() if d is not None}
+        if not self.valid_drawings_for_voting or len(self.valid_drawings_for_voting) < 1:
+            print(f"Lobby {self.lobby_id}: Not enough drawings submitted to start voting. Ending game.")
+            self.end_game_early()
+            return
+        self.game_state = GameStatus.VOTING_FOR_DRAWINGS
+        self.game_timer_start_time = time.time()
+        self.phase_duration = 60
+        for player in self.players.values():
+            player.votes_cast_on_drawing = None
+        self.drawing_vote_counts = {pid: 0 for pid in self.valid_drawings_for_voting.keys()}
+        print(f"Lobby {self.lobby_id}: Drawing voting phase started. Players can now vote. Time: {self.phase_duration}s.")
+
+    def cast_drawing_vote(self, voter_player_id, drawing_owner_player_id):
+        if self.game_state != GameStatus.VOTING_FOR_DRAWINGS:
+            print(f"Lobby {self.lobby_id}: Cannot vote for drawing, not in drawing voting state.")
+            return False
+        if voter_player_id not in self.players:
+            print(f"Lobby {self.lobby_id}: Voter {voter_player_id} not in lobby.")
+            return False
+        if drawing_owner_player_id not in self.valid_drawings_for_voting:
+            print(f"Lobby {self.lobby_id}: Drawing by {drawing_owner_player_id} is not available for voting or player does not exist.")
+            return False
+        if voter_player_id == drawing_owner_player_id:
+            print(f"Lobby {self.lobby_id}: Player {self.players[voter_player_id].name} cannot vote for their own drawing.")
+            return False
+        
+        voter = self.players[voter_player_id]
+        if voter.votes_cast_on_drawing is not None:
+            print(f"Lobby {self.lobby_id}: Player {voter.name} has already voted for a drawing.")
+            return False
+        self.drawing_vote_counts[drawing_owner_player_id] = self.drawing_vote_counts.get(drawing_owner_player_id, 0) + 1
+        voter.votes_cast_on_drawing = drawing_owner_player_id
+        print(f"Lobby {self.lobby_id}: Player {voter.name} voted for {self.players[drawing_owner_player_id].name}'s drawing.")
+        if all(p.votes_cast_on_drawing is not None or p.player_id not in self.valid_drawings_for_voting for p_id, p in self.players.items()):
+            votes_made = sum(1 for p in self.players.values() if p.votes_cast_on_drawing is not None)
+            if votes_made == len(self.players) or len(self.valid_drawings_for_voting) <=1 :
+                 print(f"Lobby {self.lobby_id}: All players have voted for drawings.")
+                 self.end_drawing_voting_phase()
+        return True
+    
+    def end_drawing_voting_phase(self):
+        if self.game_state != GameStatus.VOTING_FOR_DRAWINGS:
+            return
+
+        print(f"Lobby {self.lobby_id}: Drawing voting phase ended. Calculating results...")
+        self.calculate_results_and_showcase()
+
+    def calculate_results_and_showcase(self):
+        self.game_state = GameStatus.SHOWCASING_RESULTS
+        sorted_drawers = sorted(self.drawing_vote_counts.items(), key=lambda item: item[1], reverse=True)
+        
+        self.winners = []
+        prizes = {0: "1st Prize", 1: "2nd Prize", 2: "3rd Prize"}
+        
+        print(f"\n--- Lobby {self.lobby_id}: Results ---")
+        if not sorted_drawers:
+            print("No drawings were voted on.")
+        else:
+            for i, (player_id, votes) in enumerate(sorted_drawers):
+                player_name = self.players[player_id].name if player_id in self.players else "Unknown Player"
+                score_awarded = 0
+                if i == 0: score_awarded = 100
+                elif i == 1: score_awarded = 50
+                elif i == 2: score_awarded = 25
+                
+                if player_id in self.players:
+                    self.players[player_id].score += score_awarded
+                
+                prize_str = prizes.get(i, f"{i+1}th place")
+                print(f"{prize_str}: {player_name} with {votes} votes. (Awarded {score_awarded} points)")
+                if i < 3:
+                    self.winners.append({"player_id": player_id, "name": player_name, "votes": votes, "rank": i + 1})
+        self.game_timer_start_time = time.time()
+        self.phase_duration = 15 * len(self.valid_drawings_for_voting)
+        if not self.valid_drawings_for_voting: 
+            self.phase_duration = 10
+        
+        print(f"Lobby {self.lobby_id}: Showcasing results. Duration: {self.phase_duration}s")
+
+    def end_game(self):
+        self.game_state = GameStatus.ENDED
+        print(f"Lobby {self.lobby_id} (Game ID: {self.current_game_id}): Game has ended.")
+        print("Final Scores:")
+        for player_id, player in self.players.items():
+            print(f"- {player.name}: {player.score} points")
+
+    def end_game_early(self):
+        print(f"Lobby {self.lobby_id} (Game ID: {self.current_game_id}): Game ending early due to lack of participation/drawings.")
+        self.game_state = GameStatus.ENDED
+
     def update_lobby_state(self):
-        if self.game_state == GameStatus.VOTING_FOR_THEME:
-            if time.time() - self.game_timer_start_time >= self.phase_duration:
-                print(f"Lobby {self.lobby_id}: Color theme voting time up.")
-                self.end_color_theme_voting()
-        elif self.game_state == GameStatus.DRAWING:
-            if time.time() - self.game_timer_start_time >= self.phase_duration:
-                print(f"Lobby {self.lobby_id}: Drawing time up.")
-                self.start_drawing_voting_phase()
+        if not self.players and self.game_state not in [GameStatus.WAITING_FOR_PLAYERS, GameStatus.ENDED]:
+            print(f"Lobby {self.lobby_id}: All players left mid-game. Ending game.")
+            self.end_game_early()
+            return
+        current_time = time.time()
+        if self.game_timer_start_time > 0 and self.phase_duration > 0:
+            time_elapsed = current_time - self.game_timer_start_time
+            if time_elapsed >= self.phase_duration:
+                if self.game_state == GameStatus.VOTING_FOR_THEME:
+                    print(f"Lobby {self.lobby_id}: Color theme voting time up.")
+                    self.end_color_theme_voting()
+                elif self.game_state == GameStatus.DRAWING:
+                    print(f"Lobby {self.lobby_id}: Drawing time up.")
+                    self.start_drawing_voting_phase()
+                elif self.game_state == GameStatus.VOTING_FOR_DRAWINGS:
+                    print(f"Lobby {self.lobby_id}: Drawing voting time up.")
+                    self.end_drawing_voting_phase()
+                elif self.game_state == GameStatus.SHOWCASING_RESULTS:
+                    print(f"Lobby {self.lobby_id}: Results showcase time up.")
+                    self.end_game()
+                self.game_timer_start_time = 0 
+                self.phase_duration = 0
 
     def reset_lobby(self):
         print(f"Lobby {self.lobby_id}: Resetting.")
@@ -191,12 +323,14 @@ class Lobby:
         self.drawings_submitted = {}
         self.game_timer_start_time = 0
         self.phase_duration = 0
+        self.valid_drawings_for_voting = {}
         for player in self.players.values():
             player.is_ready = False
             player.drawing = None
             player.votes_cast = {}
             player.score = 0
             player.voted_color_theme = None
+            player.votes_cast_on_drawing = None
     
     def get_lobby_status(self):
         return {
