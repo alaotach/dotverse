@@ -795,6 +795,195 @@
     "baseColor": "#FF6B6B"
   },
   {
+    "id": "cutestics",
+    "name": "Cutestics",
+    "description": "30 awesome stickers in the cutestics pack",
+    "thumbnailUrl": "/assets/stickers/cutestics/01.png",
+    "stickers": [
+      {
+        "id": "cutestics_0",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/01.png",
+        "name": "01"
+      },
+      {
+        "id": "cutestics_1",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/02.png",
+        "name": "02"
+      },
+      {
+        "id": "cutestics_2",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/03.png",
+        "name": "03"
+      },
+      {
+        "id": "cutestics_3",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/04.png",
+        "name": "04"
+      },
+      {
+        "id": "cutestics_4",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/05.png",
+        "name": "05"
+      },
+      {
+        "id": "cutestics_5",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/06.png",
+        "name": "06"
+      },
+      {
+        "id": "cutestics_6",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/07.png",
+        "name": "07"
+      },
+      {
+        "id": "cutestics_7",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/08.png",
+        "name": "08"
+      },
+      {
+        "id": "cutestics_8",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/09.png",
+        "name": "09"
+      },
+      {
+        "id": "cutestics_9",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/10.png",
+        "name": "10"
+      },
+      {
+        "id": "cutestics_10",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/11.png",
+        "name": "11"
+      },
+      {
+        "id": "cutestics_11",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/12.png",
+        "name": "12"
+      },
+      {
+        "id": "cutestics_12",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/13.png",
+        "name": "13"
+      },
+      {
+        "id": "cutestics_13",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/14.png",
+        "name": "14"
+      },
+      {
+        "id": "cutestics_14",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/15.png",
+        "name": "15"
+      },
+      {
+        "id": "cutestics_15",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/16.png",
+        "name": "16"
+      },
+      {
+        "id": "cutestics_16",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/17.png",
+        "name": "17"
+      },
+      {
+        "id": "cutestics_17",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/18.png",
+        "name": "18"
+      },
+      {
+        "id": "cutestics_18",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/19.png",
+        "name": "19"
+      },
+      {
+        "id": "cutestics_19",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/20.png",
+        "name": "20"
+      },
+      {
+        "id": "cutestics_20",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/21.png",
+        "name": "21"
+      },
+      {
+        "id": "cutestics_21",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/22.png",
+        "name": "22"
+      },
+      {
+        "id": "cutestics_22",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/23.png",
+        "name": "23"
+      },
+      {
+        "id": "cutestics_23",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/24.png",
+        "name": "24"
+      },
+      {
+        "id": "cutestics_24",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/25.png",
+        "name": "25"
+      },
+      {
+        "id": "cutestics_25",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/26.png",
+        "name": "26"
+      },
+      {
+        "id": "cutestics_26",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/27.png",
+        "name": "27"
+      },
+      {
+        "id": "cutestics_27",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/28.png",
+        "name": "28"
+      },
+      {
+        "id": "cutestics_28",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/29.png",
+        "name": "29"
+      },
+      {
+        "id": "cutestics_29",
+        "packId": "cutestics",
+        "url": "/assets/stickers/cutestics/30.png",
+        "name": "30"
+      }
+    ],
+    "baseColor": "#4ECDC4"
+  },
+  {
     "id": "kawaii",
     "name": "Kawaii",
     "description": "51 awesome stickers in the kawaii pack",
@@ -1107,6 +1296,6 @@
         "name": "9"
       }
     ],
-    "baseColor": "#4ECDC4"
+    "baseColor": "#45B7D1"
   }
 ]

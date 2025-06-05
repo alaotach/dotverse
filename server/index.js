@@ -40,6 +40,9 @@ app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || '*'
 }));
 
+// Middleware for parsing JSON requests
+app.use(express.json());
+
 const pixelData = new Map();
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
 const SNAPSHOT_FILE_PATH = path.join(__dirname, 'data', 'pixel_snapshot.json');
@@ -300,5 +303,73 @@ loadSnapshot().then(() => {
   const PORT = process.env.PORT || 3001;
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT} with Socket.IO`);
+  });
+});
+
+app.post('/api/minigame/distribute-prizes', async (req, res) => {
+  try {
+    const { players, prize_amounts, game_id } = req.body;
+    
+    if (!Array.isArray(players) || !Array.isArray(prize_amounts) || players.length !== prize_amounts.length) {
+      return res.status(400).json({ 
+        error: 'Invalid request: players and prize_amounts must be arrays of equal length' 
+      });
+    }
+    
+    if (!game_id) {
+      return res.status(400).json({ error: 'Game ID is required' });
+    }
+    
+    console.log(`[Minigame] Prize distribution request for game ${game_id}:`, {
+      players,
+      prize_amounts,
+      total_prize: prize_amounts.reduce((sum, amount) => sum + amount, 0)
+    });
+    
+    const results = [];
+    for (let i = 0; i < players.length; i++) {
+      const player_id = players[i];
+      const prize_amount = prize_amounts[i];
+      
+      if (prize_amount > 0) {
+        results.push({
+          player_id,
+          prize_amount,
+          success: true,
+          message: `Awarded ${prize_amount} coins`
+        });
+        
+        console.log(`[Minigame] Awarded ${prize_amount} coins to player ${player_id}`);
+      } else {
+        results.push({
+          player_id,
+          prize_amount: 0,
+          success: true,
+          message: 'No prize awarded'
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      game_id,
+      results,
+      message: 'Prize distribution completed'
+    });
+    
+  } catch (error) {
+    console.error('[Minigame] Error distributing prizes:', error);
+    res.status(500).json({ 
+      error: 'Internal server error during prize distribution',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/api/minigame/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'dotverse-minigame-api',
+    timestamp: new Date().toISOString()
   });
 });

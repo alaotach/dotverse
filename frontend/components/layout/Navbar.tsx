@@ -10,6 +10,7 @@ import { useMusic } from '../../src/context/MusicContext';
 import { FiMusic } from 'react-icons/fi';
 import { DailyCheckInButton } from '../dailylogin/LoginButton';
 import MarketplaceButton from '../marketplace/MarketplaceButton';
+import MinigameButton from '../minigame/MinigameButton';
 
 const Navbar: React.FC = () => {
   const { currentUser, logout, userProfile } = useAuth();
@@ -81,9 +82,9 @@ const Navbar: React.FC = () => {
                       <span className="text-sm font-semibold">
                         {userEconomy.balance?.toLocaleString() || 0} 🪙
                       </span>
-                    </div>
-                  )}
-                  <MarketplaceButton />             
+                    </div>                  )}
+                  <MarketplaceButton />
+                  <MinigameButton />
                   <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>

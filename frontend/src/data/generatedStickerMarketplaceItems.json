@@ -19,6 +19,25 @@
     "rarity": "common"
   },
   {
+    "id": "sticker_pack_cutestics",
+    "name": "Cutestics Sticker Pack",
+    "description": "30 awesome stickers in the cutestics pack",
+    "category": "stickers",
+    "price": 100,
+    "icon": "🧩",
+    "thumbnailUrl": "/assets/stickers/cutestics/01.png",
+    "isActive": true,
+    "features": [
+      "30 unique stickers",
+      "High quality images"
+    ],
+    "metadata": {
+      "packId": "cutestics",
+      "stickerCount": 30
+    },
+    "rarity": "common"
+  },
+  {
     "id": "sticker_pack_kawaii",
     "name": "Kawaii Sticker Pack",
     "description": "51 awesome stickers in the kawaii pack",
