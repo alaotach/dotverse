@@ -35,9 +35,10 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
   
   const [tool, setTool] = useState<Tool>('brush');
   const [color, setColor] = useState('#000000');
-  const [brushSize, setBrushSize] = useState(1);  const [isDrawing, setIsDrawing] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
+  const [brushSize, setBrushSize] = useState(1);  const [isDrawing, setIsDrawing] = useState(false);  const [showGrid, setShowGrid] = useState(true);
   const [isPanMode, setIsPanMode] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
   
   const [viewTransform, setViewTransform] = useState({
     x: 0,
@@ -45,7 +46,6 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
     scale: 1
   });  const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
-    // Touch support state
   const [touchState, setTouchState] = useState({
     isTouch: false,
     lastTouchDistance: 0,
@@ -88,9 +88,7 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
     saveToHistory();
 
     return () => resizeObserver.disconnect();
-  }, []);
-
-  useEffect(() => {
+  }, []);  useEffect(() => {
     redrawCanvas();
   }, [pixelData, viewTransform, showGrid, canvasSize]);
 
@@ -334,7 +332,6 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
       y: mouseY - (mouseY - prev.y) * scaleChange
     }));
   }, [viewTransform]);
-
   const handleSubmit = useCallback(() => {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = DRAWING_WIDTH;
@@ -358,8 +355,24 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
     }
 
     const dataURL = exportCanvas.toDataURL('image/png');
+    setHasSubmitted(true);
     onSubmit(dataURL);
-  }, [pixelData, onSubmit]);
+  }, [pixelData, onSubmit, setHasSubmitted]);
+  useEffect(() => {
+    if (timeRemaining === 0 && !hasSubmitted) {
+      setAutoSubmitted(true);
+      handleSubmit();
+    }
+  }, [timeRemaining, hasSubmitted, handleSubmit]);
+
+  useEffect(() => {
+    if (autoSubmitted) {
+      const timer = setTimeout(() => {
+        setAutoSubmitted(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoSubmitted]);
   const resetView = useCallback(() => {
     const padding = 40;
     const availableWidth = canvasSize.width - padding * 2;
@@ -375,7 +388,6 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
       scale: optimalScale
     });
   }, [canvasSize]);
-  // Touch event helpers
   const getTouchDistance = useCallback((touch1: React.Touch, touch2: React.Touch): number => {
     const dx = touch1.clientX - touch2.clientX;
     const dy = touch1.clientY - touch2.clientY;
@@ -509,10 +521,17 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
               <div className="text-sm text-gray-600">
                 Theme: <span className="font-semibold">{theme}</span>
               </div>
-            )}
-            {timeRemaining !== undefined && (
-              <div className="text-sm text-gray-600">
-                Time: <span className="font-semibold">{timeRemaining}s</span>
+            )}            {timeRemaining !== undefined && (
+              <div className={`text-sm ${
+                timeRemaining <= 10 ? 'text-red-600 font-bold' : 
+                timeRemaining <= 30 ? 'text-orange-600 font-semibold' : 
+                'text-gray-600'
+              }`}>
+                Time: <span className="font-semibold">
+                  {timeRemaining}s
+                  {timeRemaining <= 10 && timeRemaining > 0 && ' ⚠️'}
+                  {timeRemaining === 0 && ' ⏰'}
+                </span>
               </div>
             )}
           </div>
@@ -624,13 +643,16 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
               onChange={(e) => setShowGrid(e.target.checked)}
             />
             <span className="text-sm">Grid</span>
-          </label>
-
-          <button
-            className="ml-auto px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+          </label>          <button
+            className={`ml-auto px-4 py-2 text-white rounded text-sm ${
+              hasSubmitted 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-green-500 hover:bg-green-600'
+            }`}
             onClick={handleSubmit}
+            disabled={hasSubmitted}
           >
-            📤 Submit Drawing
+            {hasSubmitted ? '✅ Submitted!' : '📤 Submit Drawing'}
           </button>
         </div>
 
@@ -674,19 +696,15 @@ export default function DrawingCanvas({ onSubmit, theme, timeRemaining }: Drawin
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             style={{ touchAction: 'none' }}
-          />
-        </div>
-        <div className="absolute bottom-4 left-4 bg-white bg-opacity-95 p-3 rounded-lg shadow-lg text-sm">
-          <div className="font-semibold mb-1">Controls:</div>
-          <div>• Left click / 1 finger: Draw/Erase {isPanMode ? '(Pan Mode: 1 finger pans)' : ''}</div>
-          <div>• Middle click/Alt+click: Pan</div>
-          <div>• 2 fingers: Pan & Pinch to zoom</div>
-          <div>• Mouse wheel: Zoom</div>
-          <div>• Toolbar: 🔍+ / 🔍- buttons for zoom</div>
-          <div>• Mobile: Toggle ✋ Pan Mode for 1-finger panning</div>
-          <div>• Canvas: {CANVAS_WIDTH}×{CANVAS_HEIGHT} pixels</div>
-        </div>
+          />       
+          </div>
 
+        {autoSubmitted && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-10 text-center">
+            <div className="text-lg font-bold">⏰ Time's Up!</div>
+            <div className="text-sm">Your drawing has been automatically submitted.</div>
+          </div>
+        )}
         <div className="absolute top-4 right-4 bg-white bg-opacity-95 p-2 rounded shadow text-sm">
           Zoom: {Math.round(viewTransform.scale * 100)}%
         </div>
