@@ -18,6 +18,9 @@ interface LobbyState {
   drawing_votes: { [key: string]: string };
   results: Array<[string, number]> | null;
   created_at: number;
+  showcase_current_index?: number;
+  showcase_total_drawings?: number;
+  showcase_time_per_drawing?: number;
 }
 
 type MinigameEventHandler = (data: any) => void;
@@ -273,24 +276,29 @@ class MinigameWebSocketService {
     });
   }
 
+  startGame(): boolean {
+    return this.send({
+      action: 'start_game',
+      data: {}
+    });
+  }
+
   voteTheme(theme: string): boolean {
     return this.send({
       action: 'vote_theme',
       data: { theme }
     });
   }
-
   submitDrawing(drawingData: string): boolean {
     return this.send({
       action: 'submit_drawing',
-      data: { drawing_data: drawingData }
+      data: { drawing: drawingData }
     });
   }
-
   voteForDrawing(targetPlayerId: string): boolean {
     return this.send({
-      action: 'vote_drawing',
-      data: { target_player_id: targetPlayerId }
+      action: 'vote_for_drawing',
+      data: { player_id: targetPlayerId }
     });
   }
 

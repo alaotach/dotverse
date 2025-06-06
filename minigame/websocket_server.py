@@ -64,9 +64,11 @@ async def process_message(client_id, message):
         elif action == 'leave_lobby':
             await leave_lobby(client_id)
         elif action == 'get_lobby_list':
-            await send_lobby_list(client_id)
+            await send_lobby_list(client_id)        
         elif action == 'player_ready':
             await set_player_ready(client_id, data)
+        elif action == 'start_game':
+            await start_game(client_id, data)
         elif action == 'vote_theme':
             await handle_theme_vote(client_id, data)
         elif action == 'submit_drawing':
@@ -241,8 +243,8 @@ async def set_player_ready(client_id, data):
     
     await broadcast_lobby_update(lobby_id)
     
-    if all(player['is_ready'] for player in lobby['players'].values()) and len(lobby['players']) >= 2:
-        await start_theme_voting(lobby_id)
+    # No longer auto-start the game when all players are ready
+    # Only the host can start the game now
 
 async def start_theme_voting(lobby_id):
     """Start the theme voting phase."""
@@ -292,7 +294,7 @@ async def handle_drawing_submission(client_id, data):
     lobby['drawings'][drawing_id] = {
         'id': drawing_id,
         'player_id': player_id,
-        'player_name': lobby['players'][player_id]['name'],
+        'player_name': lobby['players'][player_id]['display_name'], # Changed 'name' to 'display_name'
         'data': drawing_data,
         'theme': lobby['theme'],
         'votes': 0
@@ -306,24 +308,60 @@ async def handle_drawing_submission(client_id, data):
     all_submitted = len(lobby['drawings']) >= len(lobby['players'])
     
     if all_submitted:
+        # If all drawings are submitted, and the timer for drawing phase might still be running,
+        # we should ideally cancel that timer and immediately move to voting.
+        # For now, assuming the timer will naturally lead to voting or this check suffices.
         await start_voting_phase(lobby_id)
     else:
         await broadcast_lobby_update(lobby_id)
 
 async def handle_drawing_vote(client_id, data):
-    voted_player_id = data.get('data', {}).get('player_id')
+    voted_author_player_id = data.get('data', {}).get('player_id') # This is the player_id of the drawing's author
     
     client = connected_clients[client_id]
     lobby_id = client['current_lobby']
-    player_id = client['player_id']
+    voter_player_id = client['player_id']
     
-    if not lobby_id or lobby_id not in lobbies or not voted_player_id:
+    if not lobby_id or lobby_id not in lobbies or not voted_author_player_id:
+        logger.warning(f"Invalid vote attempt: lobby_id={lobby_id}, voted_author_player_id={voted_author_player_id}")
         return
     
     lobby = lobbies[lobby_id]
+
+    # If we're in showcase_voting mode, only allow votes for the currently showcased drawing
+    if lobby['game_status'] == 'showcase_voting':
+        drawings = list(lobby['drawings'].values())
+        current_index = lobby.get('showcase_current_index', 0)
+        
+        if current_index < len(drawings):
+            current_drawing = drawings[current_index]
+            if voted_author_player_id != current_drawing['player_id']:
+                logger.warning(f"Player {voter_player_id} attempted to vote for {voted_author_player_id} but current showcase is {current_drawing['player_id']}")
+                return
+
+    # Ensure player is not voting for themselves (optional, can also be frontend enforced)
+    if voter_player_id == voted_author_player_id:
+        logger.info(f"Player {voter_player_id} attempted to vote for themselves.")
+        return
+
+    # Ensure the voted_author_player_id corresponds to an actual drawing's author
+    author_exists = any(d['player_id'] == voted_author_player_id for d in lobby['drawings'].values())
+    if not author_exists:
+        logger.warning(f"Player {voter_player_id} attempted to vote for non-existent author {voted_author_player_id}")
+        return
+
+    lobby['drawing_votes'][voter_player_id] = voted_author_player_id
+    logger.info(f"Player {voter_player_id} voted for drawing by {voted_author_player_id} in lobby {lobby_id}")
     
-    lobby['drawing_votes'][player_id] = voted_player_id
-    
+    # Recalculate vote counts for all drawings in this lobby
+    current_vote_counts = {} # { author_player_id: count }
+    for author_id_in_vote_log in lobby['drawing_votes'].values():
+        current_vote_counts[author_id_in_vote_log] = current_vote_counts.get(author_id_in_vote_log, 0) + 1
+        
+    for drawing_id_key, drawing_details_val in lobby['drawings'].items():
+        author_id_of_drawing = drawing_details_val['player_id']
+        drawing_details_val['votes'] = current_vote_counts.get(author_id_of_drawing, 0)
+            
     await broadcast_lobby_update(lobby_id)
 
 async def start_voting_phase(lobby_id):
@@ -331,12 +369,53 @@ async def start_voting_phase(lobby_id):
         return
         
     lobby = lobbies[lobby_id]
-    lobby['game_status'] = 'voting'
-    lobby['phase_time_remaining'] = 45
+    lobby['game_status'] = 'showcase_voting'
+    
+    # Initialize showcase voting state
+    drawings = list(lobby['drawings'].values())
+    lobby['showcase_current_index'] = 0
+    lobby['showcase_total_drawings'] = len(drawings)
+    lobby['showcase_time_per_drawing'] = 10
+    lobby['phase_time_remaining'] = lobby['showcase_time_per_drawing']
     
     await broadcast_lobby_update(lobby_id)
     
-    asyncio.create_task(countdown_timer(lobby_id, 'voting', 45))
+    # Start the showcase timer for the first drawing
+    asyncio.create_task(showcase_timer(lobby_id))
+
+async def showcase_timer(lobby_id):
+    """Handle the showcase voting timer where each drawing is shown for 10 seconds"""
+    if lobby_id not in lobbies:
+        return
+    
+    lobby = lobbies[lobby_id]
+    
+    while (lobby_id in lobbies and 
+           lobby['game_status'] == 'showcase_voting' and 
+           lobby['showcase_current_index'] < lobby['showcase_total_drawings']):
+        
+        # Countdown for current drawing showcase
+        seconds_left = lobby['showcase_time_per_drawing']
+        
+        while seconds_left > 0 and lobby_id in lobbies and lobby['game_status'] == 'showcase_voting':
+            lobby['phase_time_remaining'] = seconds_left
+            await broadcast_lobby_update(lobby_id)
+            await asyncio.sleep(1)
+            seconds_left -= 1
+        
+        if lobby_id not in lobbies or lobby['game_status'] != 'showcase_voting':
+            return
+            
+        # Move to next drawing
+        lobby['showcase_current_index'] += 1
+        
+        if lobby['showcase_current_index'] < lobby['showcase_total_drawings']:
+            # Reset timer for next drawing
+            lobby['phase_time_remaining'] = lobby['showcase_time_per_drawing']
+            await broadcast_lobby_update(lobby_id)
+        else:
+            # All drawings showcased, move to results
+            await start_showcasing_phase(lobby_id)
 
 async def start_showcasing_phase(lobby_id):
     if lobby_id not in lobbies:
@@ -499,6 +578,55 @@ async def handle_client_disconnect(client_id):
         await leave_lobby(client_id)
     
     del connected_clients[client_id]
+
+async def start_game(client_id, data):
+    """Start the game - only the host can do this."""
+    client = connected_clients[client_id]
+    lobby_id = client['current_lobby']
+    player_id = client['player_id']
+    
+    if not lobby_id or lobby_id not in lobbies:
+        await send_message(client_id, {
+            'type': 'error',
+            'data': {'message': 'No lobby found'}
+        })
+        return
+    
+    lobby = lobbies[lobby_id]
+    
+    # Check if the player is the host
+    if lobby['host_id'] != player_id:
+        await send_message(client_id, {
+            'type': 'error',
+            'data': {'message': 'Only the host can start the game'}
+        })
+        return
+    
+    # Check if there are enough players
+    if len(lobby['players']) < 2:
+        await send_message(client_id, {
+            'type': 'error',
+            'data': {'message': 'Need at least 2 players to start the game'}
+        })
+        return
+    
+    # Check if all players are ready
+    if not all(player['is_ready'] for player in lobby['players'].values()):
+        await send_message(client_id, {
+            'type': 'error',
+            'data': {'message': 'All players must be ready before starting the game'}
+        })
+        return
+    
+    # Start the game by beginning theme voting
+    await start_theme_voting(lobby_id)
+
+async def send_message(client_id, message):
+    """Send a message to a specific client."""
+    try:
+        await connected_clients[client_id]['websocket'].send(json.dumps(message))
+    except Exception as e:
+        logger.error(f"Error sending message to {client_id}: {e}")
 
 async def start_server():    
     stop = asyncio.Future()

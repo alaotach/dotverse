@@ -21,6 +21,7 @@ import ChatPanel from '../components/chat/ChatPanel';
 import { MusicProvider, useMusic } from './context/MusicContext';
 import Controls from '../components/music/Controls';
 import { marketplaceService } from './services/marketplaceService';
+import MinigamePage from '../pages/minigame';
 
 const ProtectedRoute: React.FC<{
   element: React.ReactNode;
@@ -98,6 +99,7 @@ function AppContent() {
             path="/admin/analytics" 
             element={<ProtectedRoute element={<AdminAnalytics />} />}
           />
+          <Route path="/minigame" element={<ProtectedRoute element={<MinigamePage />} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

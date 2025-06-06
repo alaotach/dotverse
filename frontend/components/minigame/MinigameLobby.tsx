@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import minigameWebSocketService, { type LobbyState } from '../../src/services/minigameWebSocketService';
 import DrawingCanvas from './DrawingCanvas';
 import VotingInterface from './VotingInterface';
@@ -9,10 +10,11 @@ import LobbyInterface from './LobbyInterface';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 interface MinigameLobbyProps {
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
+  const navigate = useNavigate();
   const [connected, setConnected] = useState(false);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState('');
@@ -46,12 +48,16 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       setPlayerId(id);
     };    const handleLobbyUpdate = (message: any) => {
       const lobbyState = message?.data || message;
-      console.log('Received lobby update message:', message);
-      console.log('Extracted lobby state:', lobbyState);
-      
+      console.log('[MinigameLobby] Received lobby_update:', lobbyState);
+
       if (!lobbyState) {
-        console.warn('No lobby state found in update message');
+        console.warn('[MinigameLobby] No lobby state found in update message');
         return;
+      }
+
+      if (lobbyState.game_status === 'voting') {
+        console.log('[MinigameLobby] Game status is VOTING. Drawings:', lobbyState.drawings);
+        console.log('[MinigameLobby] Drawing votes:', lobbyState.drawing_votes);
       }
       
       console.log('Available players in update:', Object.keys(lobbyState?.players || {}));
@@ -140,6 +146,13 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     }
   };
 
+  const handleStartGame = () => {
+    const currentPlayerId = minigameWebSocketService.getPlayerId();
+    if (currentLobby && currentPlayerId && currentLobby.host_id === currentPlayerId) {
+      minigameWebSocketService.startGame();
+    }
+  };
+
   const handleThemeVote = useCallback((theme: string) => {
     const currentPlayerId = minigameWebSocketService.getPlayerId();
     if (currentLobby && currentPlayerId) {
@@ -196,15 +209,25 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     }
 
     const gameStatus = currentLobby.game_status || 'waiting';
+    const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
 
-    if (gameStatus === 'waiting_for_players') {      return (        <LobbyInterface
+    console.log(`[MinigameLobby] renderLobbyContent: gameStatus='${gameStatus}', currentLobby.drawings exists: ${!!currentLobby.drawings}, currentEffectivePlayerId: ${currentEffectivePlayerId}`);
+    if (currentLobby.drawings) {
+        console.log('[MinigameLobby] renderLobbyContent: currentLobby.drawings:', currentLobby.drawings);
+    }    
+    
+    if (gameStatus === 'waiting_for_players') {      
+      return (        
+      <LobbyInterface
           lobbyId={currentLobby.id || ''}
           players={currentLobby.players || {}}
           gameStatus={gameStatus}
           currentPlayerId={playerId || minigameWebSocketService.getPlayerId() || ''}
+          hostId={currentLobby.host_id || ''}
           isReady={isReady}
           maxPlayers={currentLobby.max_players || 4}
           onReadyToggle={handleReadyToggle}
+          onStartGame={handleStartGame}
           onLeaveLobby={handleLeaveLobby}
         />
       );
@@ -234,24 +257,32 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             timeRemaining={currentLobby.phase_time_remaining}
             onSubmitDrawing={handleSubmitDrawing}
           />
-        )}        {gameStatus === 'voting' && currentLobby.drawings && (playerId || minigameWebSocketService.getPlayerId()) && (
+        )}        
+        
+        {(gameStatus === 'voting' || gameStatus === 'showcase_voting') && currentLobby.drawings && (playerId || minigameWebSocketService.getPlayerId()) && (
           <VotingInterface
             drawings={Object.values(currentLobby.drawings)}
             currentPlayerVote={currentLobby.drawing_votes?.[playerId || minigameWebSocketService.getPlayerId() || ''] || null}
             onVote={handleSubmitVote}
             timeRemaining={currentLobby.phase_time_remaining}
             canVote={!!(playerId || minigameWebSocketService.getPlayerId())}
+            currentPlayerId={playerId || minigameWebSocketService.getPlayerId() || ''}
+            currentShowcaseIndex={currentLobby.showcase_current_index}
+            showcaseTimeRemaining={currentLobby.phase_time_remaining}
+            isShowcaseMode={gameStatus === 'showcase_voting'}
           />
-        )}
-
+        )}        
+        
         {(gameStatus === 'showcasing' || gameStatus === 'ended') && currentLobby.results && (
-          <ResultsDisplay
-            players={Object.entries(currentLobby.players).map(([id, player]) => ({
-              id,
-              name: player.name,
-              votes: currentLobby.results?.find(([resultId]) => resultId === id)?.[1] || 0,
-              rank: (currentLobby.results?.findIndex(([resultId]) => resultId === id) ?? -1) + 1,
-            }))}
+          <ResultsDisplay            players={currentLobby.results.map(([playerId, votes], index) => {
+              const player = currentLobby.players[playerId];
+              return {
+                id: playerId,
+                name: player?.display_name || 'Unknown',
+                votes: votes,
+                rank: index + 1,
+              };
+            })}
             drawings={Object.values(currentLobby.drawings || {})}
             currentPlayerId={playerId || ''}
             theme={currentLobby.theme || 'Unknown'}
@@ -271,28 +302,36 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       </div>
     );
   };
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto flex flex-col">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-3xl font-bold text-purple-400">Drawing Minigame</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl leading-none transform hover:scale-110 transition-transform"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {renderLobbyContent()}
-
-        {playerId && (
-          <div className="mt-auto pt-4 text-xs text-gray-500 text-center border-t border-gray-700">
-            Player ID: {playerId.slice(0,8)}...
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
+      {/* Navigation Header */}
+      <div className="sticky top-0 z-10 bg-gray-900/90 backdrop-blur-sm border-b border-purple-500/30">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-purple-400">🎮 Drawing Minigame</h1>
+            <div className="flex items-center gap-4">
+              {playerId && (
+                <div className="text-xs text-gray-400">
+                  Player ID: {playerId.slice(0,8)}...
+                </div>
+              )}
+              <button
+                onClick={() => onClose ? onClose() : navigate('/')}
+                className="text-gray-400 hover:text-white text-2xl leading-none transform hover:scale-110 transition-transform px-3 py-1 rounded-lg hover:bg-gray-800/50"
+                aria-label="Back to Home"
+              >
+                🏠
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-6xl mx-auto">
+          {renderLobbyContent()}
+        </div>
       </div>
     </div>
   );

@@ -68,7 +68,6 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
         </div>
       </div>
 
-      {/* Theme Options */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {themes.map((theme) => {
           const voteCount = voteCounts[theme.name];
@@ -92,7 +91,6 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
                 ${isLeading && voteCount > 0 ? 'ring-2 ring-yellow-400 ring-opacity-50' : ''}
               `}
             >
-              {/* Leading indicator */}
               {isLeading && voteCount > 0 && !isSelected && (
                 <div className="absolute -top-2 -right-2">
                   <div className="bg-yellow-500 text-black rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold animate-pulse">
@@ -135,14 +133,12 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
                 </div>
               )}
 
-              {/* Hover effect overlay */}
               <div className="absolute inset-0 rounded-xl bg-white/0 group-hover:bg-white/5 transition-all duration-300 pointer-events-none" />
             </button>
           );
         })}
       </div>
 
-      {/* Voting Status */}
       {selectedTheme && (
         <div className="bg-gradient-to-r from-green-800 to-green-700 border border-green-600 p-4 rounded-xl text-center shadow-lg">
           <div className="flex items-center justify-center gap-3 text-green-200 mb-2">
@@ -155,7 +151,6 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
         </div>
       )}
 
-      {/* Player Status */}
       <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-5 rounded-xl border border-gray-600">
         <h4 className="text-white font-bold mb-4 flex items-center gap-2">
           <span className="text-xl">👥</span>
@@ -201,7 +196,6 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
         </div>
       </div>
 
-      {/* Instructions */}
       <div className="bg-gradient-to-r from-indigo-900 to-purple-900 border border-indigo-700 p-4 rounded-xl">
         <div className="flex items-center gap-3">
           <span className="text-3xl">💡</span>

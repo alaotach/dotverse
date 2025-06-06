@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { LobbyState } from '../../src/services/minigameWebSocketService';
+import type { LobbyState } from '../../src/services/minigameWebSocketService';
 
 interface DrawingCanvasProps {
   lobbyState: LobbyState;
@@ -20,11 +20,10 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   onSubmitDrawing 
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const previewRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState<DrawingTool>({
     type: 'brush',
-    size: 5,
+    size: 4,
     color: '#000000',
     opacity: 1
   });
@@ -33,32 +32,41 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [customColor, setCustomColor] = useState('#000000');
   const [undoStack, setUndoStack] = useState<ImageData[]>([]);
   const [redoStack, setRedoStack] = useState<ImageData[]>([]);
+  const [showGrid, setShowGrid] = useState(true);
 
   const presetColors = [
     '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF',
     '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080',
-    '#FFC0CB', '#A52A2A', '#808080', '#90EE90', '#FFB6C1',
-    '#8B4513', '#2F4F4F', '#DC143C', '#00CED1', '#32CD32'
+    '#FFC0CB', '#A52A2A', '#808080', '#8B4513', '#2F4F4F',
+    '#DC143C', '#00CED1', '#32CD32', '#FFB6C1', '#90EE90'
   ];
 
-  const brushSizes = [1, 3, 5, 8, 12, 16, 20, 25];
-  useEffect(() => {
+  const brushSizes = [1, 2, 4, 8, 16];
+  const CANVAS_WIDTH = 640;
+  const CANVAS_HEIGHT = 480;  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = 800;
-    canvas.height = 600;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    ctx.imageSmoothingEnabled = false;
+    (ctx as any).mozImageSmoothingEnabled = false;
+    (ctx as any).webkitImageSmoothingEnabled = false;
+    (ctx as any).msImageSmoothingEnabled = false;
 
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
 
-    saveCanvasState();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    setUndoStack([imageData]); 
+    setRedoStack([]);
   }, []);
 
   const saveCanvasState = useCallback(() => {
@@ -302,8 +310,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         </div>
 
         <div className="flex gap-2">
-          <button
-            onClick={undo}
+          <button            onClick={undo}
             disabled={hasSubmitted || undoStack.length < 2}
             className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors flex items-center gap-2"
           >
@@ -323,19 +330,44 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           >
             🗑️ Clear
           </button>
+          <button
+            onClick={() => setShowGrid(!showGrid)}
+            disabled={hasSubmitted}
+            className={`${showGrid ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'} disabled:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors flex items-center gap-2`}
+          >
+            ⊞ Grid
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-4 shadow-lg">
-        <canvas
-          ref={canvasRef}
-          className="border-2 border-gray-300 cursor-crosshair w-full max-w-full rounded-lg shadow-inner"
-          style={{ aspectRatio: '4/3' }}
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-        />
+      <div className="bg-gray-900 rounded-xl p-4 shadow-lg border-2 border-gray-700">
+        <div className="relative">
+          <canvas
+            ref={canvasRef}
+            className="border-2 border-gray-600 cursor-crosshair rounded-lg shadow-inner bg-white"            style={{ 
+              width: '100%',
+              maxWidth: '800px',
+              height: 'auto',
+              imageRendering: 'pixelated'
+            }}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+          />
+          {showGrid && (
+            <div 
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                backgroundImage: `
+                  linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
+                  linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)
+                `,
+                backgroundSize: '8px 8px'
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="text-center">

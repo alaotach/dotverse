@@ -55,7 +55,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
   };
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="text-center">
         <h3 className="text-3xl font-bold text-white mb-3 flex items-center justify-center gap-2">
           � Game Results
@@ -67,7 +66,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
         </div>
       </div>
 
-      {/* Current Player's Result */}
       {currentPlayer && (
         <div className="bg-gradient-to-br from-blue-900/70 to-purple-900/70 rounded-xl p-6 border border-blue-500/50 shadow-lg">
           <div className="text-center">
@@ -98,7 +96,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
         </div>
       )}
 
-      {/* Podium for Top 3 */}
       <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-6 border border-gray-600">
         <h4 className="text-xl font-bold text-white mb-6 text-center flex items-center justify-center gap-2">
           🏆 Winner's Podium
@@ -132,7 +129,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
         </div>
       </div>
 
-      {/* Full Leaderboard */}
       <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-6 border border-gray-600">
         <h4 className="text-lg font-bold text-white mb-4 text-center flex items-center justify-center gap-2">
           📊 Full Leaderboard
@@ -176,79 +172,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
                 )}
               </div>
             </div>
-          ))}
-        </div>
+          ))}        </div>
       </div>
 
-      {/* Drawings Gallery */}
-      <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-6 border border-gray-600">
-        <h4 className="text-lg font-bold text-white mb-4 text-center flex items-center justify-center gap-2">
-          🎨 Artwork Gallery
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-80 overflow-y-auto">
-          {drawings
-            .sort((a, b) => b.votes - a.votes)
-            .map((drawing, index) => (
-              <div
-                key={drawing.id}
-                className={`bg-gray-600 rounded-lg p-4 transition-all hover:bg-gray-500 ${
-                  drawing.player_id === currentPlayerId ? 'border-2 border-blue-500/50' : ''
-                }`}
-              >
-                <div className="flex items-center space-x-4">
-                  {/* Rank badge */}
-                  {index < 3 && (
-                    <div className="flex-shrink-0">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
-                        index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : 'bg-amber-600'
-                      }`}>
-                        {index + 1}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Drawing preview */}
-                  <div className="bg-white rounded-lg p-2 flex-shrink-0">
-                    {drawing.data ? (
-                      <img
-                        src={`data:image/png;base64,${drawing.data}`}
-                        alt={`Drawing by ${drawing.player_name}`}
-                        className="w-20 h-20 object-contain rounded"
-                      />
-                    ) : (
-                      <div className="w-20 h-20 flex items-center justify-center text-gray-500 text-xs">
-                        🎨
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Drawing info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold text-lg flex items-center gap-2">
-                      <span className="text-lg">👨‍🎨</span>
-                      <span className="truncate">{drawing.player_name}</span>
-                      {drawing.player_id === currentPlayerId && (
-                        <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full">Yours</span>
-                      )}
-                    </p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-gray-300 text-sm flex items-center gap-1">
-                        <span className="text-yellow-400">⭐</span>
-                        <span className="font-semibold">{drawing.votes}</span>
-                        <span>vote{drawing.votes !== 1 ? 's' : ''}</span>
-                      </span>
-                      {index < 3 && (
-                        <span className="text-xl">{getRankEmoji(index + 1)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      </div>
-
-      {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-3">
         {onNewGame && (
           <button

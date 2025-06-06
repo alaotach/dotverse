@@ -10,9 +10,11 @@ interface LobbyInterfaceProps {
   players: Record<string, Player>;
   gameStatus: string;
   currentPlayerId: string;
+  hostId: string;
   isReady: boolean;
   maxPlayers: number;
   onReadyToggle: () => void;
+  onStartGame: () => void;
   onLeaveLobby: () => void;
 }
 
@@ -21,9 +23,11 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   players,
   gameStatus,
   currentPlayerId,
+  hostId,
   isReady,
   maxPlayers,
   onReadyToggle,
+  onStartGame,
   onLeaveLobby
 }) => {
   const safeePlayers = players || {};
@@ -97,9 +101,12 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
                     {id === currentPlayerId && (
                       <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full">You</span>
                     )}
+                    {id === hostId && (
+                      <span className="bg-yellow-500 text-black text-xs px-2 py-1 rounded-full font-bold">Host</span>
+                    )}
                   </p>
                   <p className="text-gray-300 text-sm">
-                    {id === currentPlayerId ? 'That\'s you!' : 'Fellow artist'}
+                    {id === currentPlayerId ? 'That\'s you!' : id === hostId ? 'Can start the game' : 'Fellow artist'}
                   </p>
                 </div>
               </div>
@@ -119,16 +126,52 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
             </div>
             );
           }).filter(Boolean)}
-        </div>        
-        {(gameStatus === 'waiting' || gameStatus === 'waiting_for_players') && (
+        </div>          {(gameStatus === 'waiting' || gameStatus === 'waiting_for_players') && (
           <div className="mt-6 space-y-3">
-            {allReady && playerCount >= 2 && (
+            {/* Host start game button when all players are ready */}
+            {allReady && playerCount >= 2 && currentPlayerId === hostId && (
+              <button
+                onClick={onStartGame}
+                className="w-full py-4 px-6 rounded-xl font-bold text-lg transition-all transform hover:scale-105 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+              >
+                🚀 Start Game
+              </button>
+            )}
+            
+            {/* Non-host waiting message when all players are ready */}
+            {allReady && playerCount >= 2 && currentPlayerId !== hostId && (
               <div className="bg-green-800 border border-green-600 p-4 rounded-lg text-center">
                 <div className="flex items-center justify-center gap-2 text-green-200">
                   <span className="text-2xl animate-bounce">🚀</span>
                   <div>
                     <p className="font-bold">All players ready!</p>
-                    <p className="text-green-300 text-sm">Game will start soon...</p>
+                    <p className="text-green-300 text-sm">Waiting for host to start the game...</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Host waiting message when not all players are ready */}
+            {(!allReady || playerCount < 2) && currentPlayerId === hostId && playerCount >= 2 && (
+              <div className="bg-yellow-800 border border-yellow-600 p-4 rounded-lg text-center">
+                <div className="flex items-center justify-center gap-2 text-yellow-200">
+                  <span className="text-2xl">⏳</span>
+                  <div>
+                    <p className="font-bold">Waiting for players</p>
+                    <p className="text-yellow-300 text-sm">All players must be ready to start.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Host waiting message when not enough players */}
+            {currentPlayerId === hostId && playerCount < 2 && (
+              <div className="bg-red-800 border border-red-600 p-4 rounded-lg text-center">
+                <div className="flex items-center justify-center gap-2 text-red-200">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-bold">Need More Players</p>
+                    <p className="text-red-300 text-sm">At least 2 players are needed to start.</p>
                   </div>
                 </div>
               </div>

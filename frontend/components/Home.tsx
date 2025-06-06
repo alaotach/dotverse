@@ -26,11 +26,15 @@ export default function Home() {
                 </h1>
                 <p className="mt-3 text-base text-blue-100 sm:mt-5 sm:text-lg sm:max-w-xl sm:mx-auto md:mt-5 md:text-xl lg:mx-0">
                   DotVerse is a collaborative pixel canvas where you can claim your own land, express your creativity, and connect with others in a shared universe.
-                </p>
-                <div className="mt-5 sm:mt-8 sm:flex sm:justify-center lg:justify-start">
+                </p>                <div className="mt-5 sm:mt-8 sm:flex sm:justify-center lg:justify-start space-y-3 sm:space-y-0 sm:space-x-3">
                   <div className="rounded-md shadow">
                     <Link to="/canvas" className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10">
-                      Join Canvas
+                      🎨 Join Canvas
+                    </Link>
+                  </div>
+                  <div className="rounded-md shadow">
+                    <Link to="/minigame" className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-purple-600 bg-yellow-300 hover:bg-yellow-200 md:py-4 md:text-lg md:px-10">
+                      🎮 Play Minigame
                     </Link>
                   </div>
                   {!currentUser && (
