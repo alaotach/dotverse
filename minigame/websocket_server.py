@@ -6,6 +6,7 @@ import signal
 import sys
 import websockets
 from datetime import datetime
+from models import Lobby, Player, GameStatus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +74,12 @@ async def process_message(client_id, message):
             await handle_drawing_submission(client_id, data)
         elif action == 'vote_for_drawing':
             await handle_drawing_vote(client_id, data)
+        elif action == 'kick_player':
+            await kick_player(client_id, data)
+        elif action == 'ban_player':
+            await ban_player(client_id, data)
+        elif action == 'transfer_host':
+            await transfer_host(client_id, data)
         else:
             logger.warning(f"Unknown action: {action}")
             
@@ -92,31 +99,17 @@ async def create_lobby(client_id, data):
     connected_clients[client_id]['name'] = player_name
     
     lobby_id = str(uuid.uuid4())
-    player_id = connected_clients[client_id]['player_id']    
-    lobbies[lobby_id] = {
-        'id': lobby_id,
-        'host_id': player_id,
-        'max_players': 4,
-        'players': {
-            player_id: {
-                'display_name': player_name,
-                'is_ready': False
-            }
-        },
-        'game_status': 'waiting_for_players',
-        'phase_time_remaining': 0,
-        'theme': None,
-        'theme_votes': {},
-        'drawings': {},
-        'drawing_votes': {},
-        'results': None,
-        'created_at': datetime.now().timestamp()
-    }
+    player_id = connected_clients[client_id]['player_id']
+    
+    lobby = Lobby(lobby_id, max_players=4, min_players=2)
+    player = Player(player_id, player_name)
+    lobby.add_player(player)
+    lobbies[lobby_id] = lobby
     
     connected_clients[client_id]['current_lobby'] = lobby_id
     await connected_clients[client_id]['websocket'].send(json.dumps({
         'type': 'lobby_joined',
-        'data': lobbies[lobby_id]
+        'data': lobby.get_lobby_state()
     }))
     
     await broadcast_lobby_list()
@@ -135,38 +128,158 @@ async def join_lobby(client_id, data):
         return
         
     lobby = lobbies[lobby_id]
-    if lobby['game_status'] != 'waiting_for_players':
+    player_id = connected_clients[client_id]['player_id']
+    
+    can_join, reason = lobby.can_player_join(player_id)
+    if not can_join:
         await connected_clients[client_id]['websocket'].send(json.dumps({
             'type': 'error',
-            'data': {'message': 'Cannot join lobby - game already in progress'}
-        }))
-        return
-        
-    if len(lobby['players']) >= lobby.get('max_players', 4):
-        await connected_clients[client_id]['websocket'].send(json.dumps({
-            'type': 'error',
-            'data': {'message': 'Lobby is full'}
+            'data': {'message': reason}
         }))
         return
     connected_clients[client_id]['name'] = player_name
     connected_clients[client_id]['current_lobby'] = lobby_id
-    
-    player_id = connected_clients[client_id]['player_id']
-    
-    lobby['players'][player_id] = {
-        'display_name': player_name,
-        'is_ready': False
-    }
+    player = Player(player_id, player_name)
+    lobby.add_player(player)
     
     await connected_clients[client_id]['websocket'].send(json.dumps({
         'type': 'lobby_joined',
-        'data': lobby
+        'data': lobby.get_lobby_state()
     }))
     await broadcast_lobby_update(lobby_id)
-    
     await broadcast_lobby_list()
     
     logger.info(f"Player {player_id} joined lobby {lobby_id}")
+    await broadcast_lobby_list()
+    
+    logger.info(f"Player {player_id} joined lobby {lobby_id}")
+
+async def kick_player(client_id, data):
+    target_player_id = data.get('data', {}).get('target_player_id')
+    
+    if not target_player_id:
+        await send_error(client_id, 'No target player specified')
+        return
+    
+    host_id = connected_clients[client_id]['player_id']
+    lobby_id = connected_clients[client_id]['current_lobby']
+    
+    if not lobby_id or lobby_id not in lobbies:
+        await send_error(client_id, 'Not in a lobby')
+        return
+    
+    lobby = lobbies[lobby_id]
+    success, message = lobby.kick_player(host_id, target_player_id)
+    
+    if not success:
+        await send_error(client_id, message)
+        return
+    target_client_id = None
+    for cid, client in connected_clients.items():
+        if client['player_id'] == target_player_id:
+            target_client_id = cid
+            break
+    
+    if target_client_id:
+        connected_clients[target_client_id]['current_lobby'] = None
+        await connected_clients[target_client_id]['websocket'].send(json.dumps({
+            'type': 'kicked_from_lobby',
+            'data': {'message': 'You have been kicked from the lobby'}
+        }))
+    await broadcast_to_lobby(lobby_id, {
+        'type': 'player_kicked',
+        'data': {'message': message, 'player_id': target_player_id}
+    })
+    
+    await broadcast_lobby_update(lobby_id)
+    await broadcast_lobby_list()
+
+async def ban_player(client_id, data):
+    target_player_id = data.get('data', {}).get('target_player_id')
+    
+    if not target_player_id:
+        await send_error(client_id, 'No target player specified')
+        return
+    
+    host_id = connected_clients[client_id]['player_id']
+    lobby_id = connected_clients[client_id]['current_lobby']
+    
+    if not lobby_id or lobby_id not in lobbies:
+        await send_error(client_id, 'Not in a lobby')
+        return
+    
+    lobby = lobbies[lobby_id]
+    success, message = lobby.ban_player(host_id, target_player_id)
+    
+    if not success:
+        await send_error(client_id, message)
+        return
+    target_client_id = None
+    for cid, client in connected_clients.items():
+        if client['player_id'] == target_player_id:
+            target_client_id = cid
+            break
+    
+    if target_client_id:
+        connected_clients[target_client_id]['current_lobby'] = None
+        await connected_clients[target_client_id]['websocket'].send(json.dumps({
+            'type': 'banned_from_lobby',
+            'data': {'message': 'You have been banned from the lobby'}
+        }))
+    await broadcast_to_lobby(lobby_id, {
+        'type': 'player_banned',
+        'data': {'message': message, 'player_id': target_player_id}
+    })
+      
+    await broadcast_lobby_update(lobby_id)
+    await broadcast_lobby_list()
+
+async def transfer_host(client_id, data):
+    target_player_id = data.get('data', {}).get('target_player_id')
+    
+    if not target_player_id:
+        await send_error(client_id, 'No target player specified')
+        return
+    
+    current_host_id = connected_clients[client_id]['player_id']
+    lobby_id = connected_clients[client_id]['current_lobby']
+    
+    if not lobby_id or lobby_id not in lobbies:
+        await send_error(client_id, 'Not in a lobby')
+        return
+    
+    lobby = lobbies[lobby_id]
+    success, message = lobby.transfer_host(current_host_id, target_player_id)
+    
+    if not success:
+        await send_error(client_id, message)
+        return
+    await broadcast_to_lobby(lobby_id, {
+        'type': 'host_transferred',
+        'data': {'message': message, 'new_host_id': target_player_id}
+    })
+    
+    await broadcast_lobby_update(lobby_id)
+
+async def broadcast_to_lobby(lobby_id: str, message: dict):
+    if lobby_id not in lobbies:
+        return
+    
+    for client_id, client in connected_clients.items():
+        if client['current_lobby'] == lobby_id:
+            try:
+                await client['websocket'].send(json.dumps(message))
+            except Exception as e:
+                logger.error(f"Error broadcasting to client {client_id}: {e}")
+
+async def send_error(client_id: str, message: str):
+    try:
+        await connected_clients[client_id]['websocket'].send(json.dumps({
+            'type': 'error',
+            'data': {'message': message}
+        }))
+    except Exception as e:
+        logger.error(f"Error sending error message to {client_id}: {e}")
 
 async def leave_lobby(client_id):
     client = connected_clients[client_id]
@@ -177,37 +290,44 @@ async def leave_lobby(client_id):
         return
     
     lobby = lobbies[lobby_id]
-    
-    if player_id in lobby['players']:
-        del lobby['players'][player_id]
-    
+    was_host = lobby.is_host(player_id)
+    lobby.remove_player(player_id)
     client['current_lobby'] = None
+    if was_host and lobby.players:
+        new_host = lobby.players[0]
+        await broadcast_to_lobby(lobby_id, {
+            'type': 'host_transferred',
+            'data': {
+                'new_host_id': new_host.player_id,
+                'new_host_name': new_host.display_name,
+                'message': f'{new_host.display_name} is now the lobby host (previous host left)',
+                'reason': 'host_left'
+            }
+        })
+        logger.info(f"Host reassigned from {player_id} to {new_host.player_id} in lobby {lobby_id} due to host leaving")
     
-    if not lobby['players']:
+    if not lobby.players:
         del lobbies[lobby_id]
         logger.info(f"Lobby {lobby_id} deleted - no players remaining")
     else:
-        if lobby['host_id'] == player_id:
-            lobby['host_id'] = next(iter(lobby['players'].keys()))
-            logger.info(f"New host assigned in lobby {lobby_id}: {lobby['host_id']}")
-        
+        await broadcast_lobby_update(lobby_id)
     
     await broadcast_lobby_list()
-    
     logger.info(f"Player {player_id} left lobby {lobby_id}")
 
 async def send_lobby_list(client_id):
     try:
         available_lobbies = [
             {
-                'id': lobby['id'],
-                'host_id': lobby['host_id'],
-                'player_count': len(lobby['players']),
-                'max_players': lobby.get('max_players', 4), 
-                'status': lobby['game_status'],                'created_at': lobby['created_at']
+                'id': lobby.lobby_id,
+                'host_id': lobby.host_id,
+                'player_count': len(lobby.players),
+                'max_players': lobby.max_players,
+                'status': lobby.game_status.value,
+                'created_at': datetime.now().timestamp()
             }
             for lobby in lobbies.values()
-            if lobby['game_status'] == 'waiting_for_players'
+            if lobby.game_status == GameStatus.WAITING_FOR_PLAYERS
         ]
         
         await connected_clients[client_id]['websocket'].send(json.dumps({
@@ -233,9 +353,7 @@ async def set_player_ready(client_id, data):
         return
     
     lobby = lobbies[lobby_id]
-    
-    if player_id in lobby['players']:
-        lobby['players'][player_id]['is_ready'] = is_ready
+    lobby.set_player_ready(player_id, is_ready)
     
     await broadcast_lobby_update(lobby_id)
     
@@ -523,7 +641,7 @@ async def broadcast_lobby_update(lobby_id):
             try:
                 await client['websocket'].send(json.dumps({
                     'type': 'lobby_update',
-                    'data': lobby
+                    'data': lobby.get_lobby_state()
                 }))
             except Exception as e:
                 logger.error(f"Error sending lobby update to {client_id}: {e}")
@@ -531,14 +649,15 @@ async def broadcast_lobby_update(lobby_id):
 async def broadcast_lobby_list():
     available_lobbies = [
         {
-            'id': lobby['id'],
-            'host_id': lobby['host_id'],
-            'player_count': len(lobby['players']),
-            'max_players': lobby.get('max_players', 4),
-            'status': lobby['game_status'],            'created_at': lobby['created_at']
+            'id': lobby.lobby_id,
+            'host_id': lobby.host_id,
+            'player_count': len(lobby.players),
+            'max_players': lobby.max_players,
+            'status': lobby.game_status.value,
+            'created_at': datetime.now().timestamp()
         }
         for lobby in lobbies.values()
-        if lobby['game_status'] == 'waiting_for_players'
+        if lobby.game_status == GameStatus.WAITING_FOR_PLAYERS
     ]
     
     for client_id, client in connected_clients.items():
@@ -553,12 +672,37 @@ async def broadcast_lobby_list():
 async def handle_client_disconnect(client_id):
     if client_id not in connected_clients:
         return
-        
     client = connected_clients[client_id]
     lobby_id = client['current_lobby']
+    player_id = client['player_id']
     
     if lobby_id and lobby_id in lobbies:
-        await leave_lobby(client_id)
+        lobby = lobbies[lobby_id]
+        was_host = lobby.is_host(player_id)
+        
+        lobby.remove_player(player_id)
+
+        if was_host and lobby.players:
+            new_host = lobby.players[0]
+            await broadcast_to_lobby(lobby_id, {
+                'type': 'host_transferred',
+                'data': {
+                    'new_host_id': new_host.player_id,
+                    'new_host_name': new_host.display_name,
+                    'message': f'{new_host.display_name} is now the lobby host (previous host disconnected)',
+                    'reason': 'host_disconnected'
+                }
+            })
+            logger.info(f"Host reassigned from {player_id} to {new_host.player_id} in lobby {lobby_id} due to disconnect")
+        
+        if not lobby.players:
+            del lobbies[lobby_id]
+            logger.info(f"Lobby {lobby_id} deleted - no players remaining after host disconnect")
+        else:
+            await broadcast_lobby_update(lobby_id)
+        
+        await broadcast_lobby_list()
+        logger.info(f"Player {player_id} disconnected from lobby {lobby_id}")
     
     del connected_clients[client_id]
 
@@ -576,34 +720,55 @@ async def start_game(client_id, data):
     
     lobby = lobbies[lobby_id]
     
-    if lobby['host_id'] != player_id:
+    if not lobby.is_host(player_id):
         await send_message(client_id, {
             'type': 'error',
             'data': {'message': 'Only the host can start the game'}
         })
         return
     
-    if len(lobby['players']) < 2:
+    if not lobby.can_start_game():
         await send_message(client_id, {
             'type': 'error',
-            'data': {'message': 'Need at least 2 players to start the game'}
+            'data': {'message': 'Cannot start game - need more players or not all players are ready'}
         })
         return
     
-    if not all(player['is_ready'] for player in lobby['players'].values()):
-        await send_message(client_id, {
-            'type': 'error',
-            'data': {'message': 'All players must be ready before starting the game'}
-        })
-        return
-    
-    await start_theme_voting(lobby_id)
+    lobby.start_theme_voting()
+    await broadcast_lobby_update(lobby_id)
 
 async def send_message(client_id, message):
     try:
         await connected_clients[client_id]['websocket'].send(json.dumps(message))
     except Exception as e:
         logger.error(f"Error sending message to {client_id}: {e}")
+
+async def ensure_lobby_has_host(lobby_id):
+    if lobby_id not in lobbies:
+        return
+    
+    lobby = lobbies[lobby_id]
+    current_host_id = lobby.get('host_id')
+    if current_host_id and current_host_id in lobby['players']:
+        return
+    if lobby['players']:
+        new_host_id = next(iter(lobby['players'].keys()))
+        lobby['host_id'] = new_host_id
+        for pid, player in lobby['players'].items():
+            player['is_host'] = (pid == new_host_id)
+        
+        new_host_name = lobby['players'][new_host_id].get('display_name', 'Unknown')
+        await broadcast_to_lobby(lobby_id, {
+            'type': 'host_transferred',
+            'data': {
+                'new_host_id': new_host_id,
+                'new_host_name': new_host_name,
+                'message': f'{new_host_name} is now the lobby host',
+                'reason': 'host_reassigned'
+            }
+        })
+        logger.info(f"Host reassigned to {new_host_id} in lobby {lobby_id}")
+        await broadcast_lobby_update(lobby_id)
 
 async def start_server():    
     stop = asyncio.Future()

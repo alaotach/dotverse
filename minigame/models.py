@@ -29,6 +29,7 @@ class Player:
         self.voted_for_drawing_id: Optional[str] = None
         self.color_theme_vote: Optional[str] = None
         self.drawing: Optional[Drawing] = None
+        self.is_host = False
 
     def __eq__(self, other):
         if isinstance(other, Player):
@@ -71,19 +72,92 @@ class Lobby:
             "The meaning of life",
             "A robot in love",
             "A secret garden",
-            "Time travel"
-        ]
+            "Time travel"        ]
+        self.host_id: Optional[str] = None
+        self.banned_players: set[str] = set()
+
+    def set_host(self, player_id: str):
+        self.host_id = player_id
+        for player in self.players:
+            player.is_host = (player.player_id == player_id)
+    
+    def is_host(self, player_id: str) -> bool:
+        return self.host_id == player_id
 
 
     def add_player(self, player: Player) -> bool:
-        if len(self.players) < self.max_players and self.game_status == GameStatus.WAITING_FOR_PLAYERS:
-            if player not in self.players:
-                self.players.append(player)
-                return True
+        can_join, reason = self.can_player_join(player.player_id)
+        if not can_join:
+            return False
+        if player not in self.players:
+            self.players.append(player)
+            if not self.host_id:
+                self.set_host(player.player_id)
+            return True
         return False
+    
+    def can_player_join(self, player_id: str) -> tuple[bool, str]:
+        if player_id in self.banned_players:
+            return False, "You have been banned from this lobby"
+        if len(self.players) >= self.max_players:
+            return False, "Lobby is full"
+        if self.game_status != GameStatus.WAITING_FOR_PLAYERS:
+            return False, "Game is already in progress"
+        return True, ""
+    
+    def kick_player(self, host_id: str, target_player_id: str) -> tuple[bool, str]:
+        if not self.is_host(host_id):
+            return False, "Only the host can kick players"
+        
+        if target_player_id == host_id:
+            return False, "Host cannot kick themselves"
+        player_to_kick = None
+        for player in self.players:
+            if player.player_id == target_player_id:
+                player_to_kick = player
+                break
+        
+        if not player_to_kick:
+            return False, "Player not found in lobby"
+        self.players.remove(player_to_kick)
+        
+        return True, f"Player {player_to_kick.display_name} has been kicked"
+    
+    def ban_player(self, host_id: str, target_player_id: str) -> tuple[bool, str]:
+        if not self.is_host(host_id):
+            return False, "Only the host can ban players"
+        
+        if target_player_id == host_id:
+            return False, "Host cannot ban themselves"
+        player_to_ban = None
+        for player in self.players:
+            if player.player_id == target_player_id:
+                player_to_ban = player
+                break
+        
+        if not player_to_ban:
+            return False, "Player not found in lobby"
+        self.players.remove(player_to_ban)
+        self.banned_players.add(target_player_id)
+        
+        return True, f"Player {player_to_ban.display_name} has been banned"
+    
+    def transfer_host(self, current_host_id: str, new_host_id: str) -> tuple[bool, str]:
+        if not self.is_host(current_host_id):
+            return False, "Only the host can transfer host privileges"
+        new_host_exists = any(player.player_id == new_host_id for player in self.players)
+        if not new_host_exists:
+            return False, "Target player not found in lobby"
+        
+        self.set_host(new_host_id)
+        return True, "Host privileges transferred"
 
     def remove_player(self, player_id: str):
         self.players = [p for p in self.players if p.player_id != player_id]
+        if self.host_id == player_id and self.players:
+            self.set_host(self.players[0].player_id)
+        elif not self.players:
+            self.host_id = None
         if self.game_status in [GameStatus.DRAWING, GameStatus.VOTING_FOR_DRAWINGS]:
             self.drawings = [d for d in self.drawings if d.player_id != player_id]
 
@@ -207,6 +281,7 @@ class Lobby:
         self.current_canvas_color_theme = None
         self.current_drawing_theme = None
         self.drawings = []
+
     def update(self):
         current_time = time.time()
         if self.timer_end_time and current_time >= self.timer_end_time:
@@ -218,14 +293,26 @@ class Lobby:
                 self.start_showcase_phase()
             elif self.game_status == GameStatus.SHOWCASING_RESULTS:
                 self.advance_showcase()
+        
         if (self.game_status == GameStatus.WAITING_FOR_PLAYERS and 
             self.can_start_game()):
             self.start_theme_voting()
-
+    
     def get_lobby_state(self):
         return {
+            "id": self.lobby_id,
             "lobby_id": self.lobby_id,
-            "players": {p.player_id: {"player_id": p.player_id, "display_name": p.display_name, "is_ready": p.is_ready, "score": p.score, "has_submitted_drawing": p.drawing is not None} for p in self.players},
+            "host_id": self.host_id,
+            "players": {
+                p.player_id: {
+                    "player_id": p.player_id, 
+                    "display_name": p.display_name, 
+                    "is_ready": p.is_ready, 
+                    "is_host": (p.player_id == self.host_id),
+                    "score": p.score, 
+                    "has_submitted_drawing": p.drawing is not None
+                } for p in self.players
+            },
             "game_status": self.game_status.value,
             "max_players": self.max_players,
             "min_players": self.min_players,
@@ -236,4 +323,5 @@ class Lobby:
             "color_theme_votes": self.color_theme_votes if self.game_status == GameStatus.THEME_VOTING else {},
             "drawings_for_voting": [{"drawing_id": d.drawing_id, "player_id": d.player_id, "drawing_data": d.drawing_data, "drawing_theme": d.drawing_theme} for d in self.drawings] if self.game_status == GameStatus.VOTING_FOR_DRAWINGS else [],
             "results": [{"player_id": d.player_id, "drawing_id": d.drawing_id, "drawing_data": d.drawing_data, "votes": d.votes, "player_name": self.get_player(d.player_id).display_name if self.get_player(d.player_id) else "Unknown"} for d in self.drawings] if self.game_status in [GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else [],
-            "current_showcased_drawing": self.drawings[self.current_showcased_drawing_index].drawing_id if self.game_status == GameStatus.SHOWCASING_RESULTS and self.drawings and 0 <= self.current_showcased_drawing_index < len(self.drawings) else None,        }
+            "current_showcased_drawing": self.drawings[self.current_showcased_drawing_index].drawing_id if self.game_status == GameStatus.SHOWCASING_RESULTS and self.drawings and 0 <= self.current_showcased_drawing_index < len(self.drawings) else None,
+        }

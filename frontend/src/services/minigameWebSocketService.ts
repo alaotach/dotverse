@@ -151,7 +151,9 @@ class MinigameWebSocketService {
     } catch (error) {
       console.error('[Minigame WS] Error parsing message:', error);
     }
-  }  private handleClose(event?: CloseEvent): void {
+  }  
+  
+  private handleClose(event?: CloseEvent): void {
     console.log('[Minigame WS] Connection closed', event?.code, event?.reason);
     this.emit('connected', false);
     
@@ -308,6 +310,26 @@ class MinigameWebSocketService {
 
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+  kickPlayer(targetPlayerId: string): boolean {
+    return this.send({
+      action: 'kick_player',
+      data: { target_player_id: targetPlayerId }
+    });
+  }
+
+  banPlayer(targetPlayerId: string): boolean {
+    return this.send({
+      action: 'ban_player',
+      data: { target_player_id: targetPlayerId }
+    });
+  }
+
+  transferHost(targetPlayerId: string): boolean {
+    return this.send({
+      action: 'transfer_host',
+      data: { target_player_id: targetPlayerId }
+    });
   }
 }
 

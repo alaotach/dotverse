@@ -45,8 +45,14 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     };
 
     const handlePlayerIdAssigned = (id: string) => {
+      console.log('[MinigameLobby] Player ID assigned:', id);
       setPlayerId(id);
-    };    const handleLobbyUpdate = (message: any) => {
+      if (!minigameWebSocketService.getPlayerId()) {
+        console.warn('[MinigameLobby] Service doesn\'t have player ID, this might indicate a sync issue');
+      }
+    };
+    
+    const handleLobbyUpdate = (message: any) => {
       const lobbyState = message?.data || message;
       console.log('[MinigameLobby] Received lobby_update:', lobbyState);
 
@@ -64,7 +70,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       
       setCurrentLobby(lobbyState);
       
-      const currentPlayerId = minigameWebSocketService.getPlayerId();
+      const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
       console.log('Current player ID:', currentPlayerId);
       
       if (currentPlayerId && lobbyState && lobbyState.players) {
@@ -98,6 +104,53 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       
       setErrorMessage(errorMessage);
       setTimeout(() => setErrorMessage(''), 5000);
+    };    const handleKickedFromLobby = (data: { message: string }) => {
+      setCurrentLobby(null);
+      setIsReady(false);
+      setErrorMessage(`${data.message}. You can rejoin the lobby if you want.`);
+      setTimeout(() => setErrorMessage(''), 7000);
+    };
+
+    const handleBannedFromLobby = (data: { message: string }) => {
+      setCurrentLobby(null);
+      setIsReady(false);
+      setErrorMessage(data.message);
+      setTimeout(() => setErrorMessage(''), 5000);
+    };
+    const handlePlayerKicked = (data: { kicked_player_name: string; message: string }) => {
+      console.log(`Player kicked: ${data.message}`);
+    };
+
+    const handlePlayerBanned = (data: { banned_player_name: string; message: string }) => {
+      console.log(`Player banned: ${data.message}`);
+    };
+
+    const handleHostTransferred = (data: { 
+      new_host_name: string; 
+      message: string; 
+      reason?: string;
+      new_host_id: string;
+    }) => {
+      console.log('Host transferred:', data);
+      
+      let toastMessage = data.message;
+      if (data.reason === 'host_disconnected') {
+        toastMessage = `${data.new_host_name} is now the host (previous host disconnected)`;
+      } else if (data.reason === 'host_left') {
+        toastMessage = `${data.new_host_name} is now the host (previous host left)`;
+      }
+      
+      toast.info(toastMessage, {
+        autoClose: 5000,
+        icon: '👑'
+      });
+      
+      if (playerId === data.new_host_id) {
+        toast.success('You are now the lobby host!', {
+          autoClose: 5000,
+          icon: '🎉'
+        });
+      }
     };
 
     minigameWebSocketService.on('connected', handleConnected);
@@ -106,6 +159,11 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     minigameWebSocketService.on('lobby_joined', handleLobbyJoined);
     minigameWebSocketService.on('lobby_list', handleLobbyList);
     minigameWebSocketService.on('error', handleError);
+    minigameWebSocketService.on('kicked_from_lobby', handleKickedFromLobby);
+    minigameWebSocketService.on('banned_from_lobby', handleBannedFromLobby);
+    minigameWebSocketService.on('player_kicked', handlePlayerKicked);
+    minigameWebSocketService.on('player_banned', handlePlayerBanned);
+    minigameWebSocketService.on('host_transferred', handleHostTransferred);
 
     return () => {
       minigameWebSocketService.off('connected', handleConnected);
@@ -114,13 +172,30 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       minigameWebSocketService.off('lobby_joined', handleLobbyJoined);
       minigameWebSocketService.off('lobby_list', handleLobbyList);
       minigameWebSocketService.off('error', handleError);
-      
+      minigameWebSocketService.off('kicked_from_lobby', handleKickedFromLobby);
+      minigameWebSocketService.off('banned_from_lobby', handleBannedFromLobby);
+      minigameWebSocketService.off('player_kicked', handlePlayerKicked);
+      minigameWebSocketService.off('player_banned', handlePlayerBanned);
+      minigameWebSocketService.off('host_transferred', handleHostTransferred);
+
       const currentPlayerId = minigameWebSocketService.getPlayerId();
       if (currentLobby && currentPlayerId) {
         minigameWebSocketService.leaveLobby();
       }
       minigameWebSocketService.disconnect();
     };
+  }, []);
+
+  const handleKickPlayer = useCallback((playerId: string) => {
+    minigameWebSocketService.kickPlayer(playerId);
+  }, []);
+
+  const handleBanPlayer = useCallback((playerId: string) => {
+    minigameWebSocketService.banPlayer(playerId);
+  }, []);
+
+  const handleTransferHost = useCallback((playerId: string) => {
+    minigameWebSocketService.transferHost(playerId);
   }, []);
 
   const handleCreateLobby = () => {
@@ -139,12 +214,15 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     minigameWebSocketService.joinLobby(lobbyId, playerName.trim());
   };
   const handleReadyToggle = () => {
-    const currentPlayerId = minigameWebSocketService.getPlayerId();
-    if (currentLobby && currentPlayerId) {
-      const newReadyState = !isReady;
-      minigameWebSocketService.setPlayerReady(newReadyState);
-    }
-  };
+  const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
+  const newReadyState = !isReady;
+  setIsReady(newReadyState);
+  
+  const success = minigameWebSocketService.setPlayerReady(newReadyState);
+  if (!success) {
+    setIsReady(!newReadyState);
+  }
+};
 
   const handleStartGame = () => {
     const currentPlayerId = minigameWebSocketService.getPlayerId();
@@ -238,6 +316,9 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
           onReadyToggle={handleReadyToggle}
           onStartGame={handleStartGame}
           onLeaveLobby={handleLeaveLobby}
+          onKickPlayer={handleKickPlayer}
+          onBanPlayer={handleBanPlayer}
+          onTransferHost={handleTransferHost}
         />
       );
     }
