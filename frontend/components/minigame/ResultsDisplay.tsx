@@ -23,6 +23,7 @@ interface ResultsDisplayProps {
   theme: string;
   onContinue?: () => void;
   onNewGame?: () => void;
+  onPlayAgain?: () => void;
 }
 
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
@@ -31,7 +32,8 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
   currentPlayerId,
   theme,
   onContinue,
-  onNewGame
+  onNewGame,
+  onPlayAgain
 }) => {
   const sortedPlayers = [...players].sort((a, b) => a.rank - b.rank);
   const currentPlayer = players.find(p => p.id === currentPlayerId);
@@ -172,24 +174,33 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
                 )}
               </div>
             </div>
-          ))}        </div>
+          ))}        
+          </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
+        {onPlayAgain && (
+          <button
+            onClick={onPlayAgain}
+            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white py-3 px-6 rounded-lg font-semibold transition-all transform hover:scale-105 flex items-center justify-center gap-2"
+          >
+            🎮 Play Again in Same Lobby
+          </button>
+        )}
         {onNewGame && (
           <button
             onClick={onNewGame}
-            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white py-3 px-6 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-3 px-6 rounded-lg font-semibold transition-all transform hover:scale-105 flex items-center justify-center gap-2"
           >
-            🎮 New Game
+            🆕 Find New Lobby
           </button>
         )}
         {onContinue && (
           <button
             onClick={onContinue}
-            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-3 px-6 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-gray-600 to-gray-500 hover:from-gray-700 hover:to-gray-600 text-white py-3 px-6 rounded-lg font-semibold transition-all transform hover:scale-105 flex items-center justify-center gap-2"
           >
-            ➡️ Continue
+            🚪 Leave Game
           </button>
         )}
       </div>

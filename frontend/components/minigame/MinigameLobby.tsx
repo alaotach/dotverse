@@ -182,7 +182,8 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     setCurrentLobby(null);
     setIsReady(false);
     minigameWebSocketService.getLobbyList();
-  };const renderLobbyContent = () => {
+  };
+  const renderLobbyContent = () => {
     if (!connected) {
       return (
         <div className="text-center text-gray-300 py-20">
@@ -208,6 +209,14 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       );
     }
 
+    const handlePlayAgain = () => {
+      setIsReady(false);
+      const currentPlayerId = minigameWebSocketService.getPlayerId();
+      if (currentLobby && currentPlayerId) {
+        minigameWebSocketService.setPlayerReady(false);
+      }
+    };
+
     const gameStatus = currentLobby.game_status || 'waiting';
     const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
 
@@ -216,7 +225,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
         console.log('[MinigameLobby] renderLobbyContent: currentLobby.drawings:', currentLobby.drawings);
     }    
     
-    if (gameStatus === 'waiting_for_players') {      
+    if (gameStatus === 'waiting_for_players' || gameStatus === 'waiting') {      
       return (        
       <LobbyInterface
           lobbyId={currentLobby.id || ''}
@@ -249,7 +258,8 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             onVote={handleThemeVote}
             timeRemaining={currentLobby.phase_time_remaining}
           />
-        )}        {gameStatus === 'drawing' && (
+        )}        
+        {gameStatus === 'drawing' && (
           <DrawingCanvas
             theme={currentLobby.theme || 'Unknown'}
             timeRemaining={currentLobby.phase_time_remaining}
@@ -272,7 +282,8 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
         )}        
         
         {(gameStatus === 'showcasing' || gameStatus === 'ended') && currentLobby.results && (
-          <ResultsDisplay            players={currentLobby.results.map(([playerId, votes], index) => {
+          <ResultsDisplay
+            players={currentLobby.results.map(([playerId, votes], index) => {
               const player = currentLobby.players[playerId];
               return {
                 id: playerId,
@@ -286,6 +297,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             theme={currentLobby.theme || 'Unknown'}
             onContinue={handleLeaveLobby}
             onNewGame={handleLeaveLobby}
+            onPlayAgain={gameStatus === 'ended' ? handlePlayAgain : undefined}
           />
         )}
 
@@ -302,7 +314,6 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
   };
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-      {/* Navigation Header */}
       <div className="sticky top-0 z-10 bg-gray-900/90 backdrop-blur-sm border-b border-purple-500/30">
         <div className="container mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
@@ -325,7 +336,6 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
           {renderLobbyContent()}

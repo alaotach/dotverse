@@ -1,23 +1,3 @@
-import React from 'react';
-
-interface Player {
-  display_name: string;
-  is_ready: boolean;
-}
-
-interface LobbyInterfaceProps {
-  lobbyId: string;
-  players: Record<string, Player>;
-  gameStatus: string;
-  currentPlayerId: string;
-  hostId: string;
-  isReady: boolean;
-  maxPlayers: number;
-  onReadyToggle: () => void;
-  onStartGame: () => void;
-  onLeaveLobby: () => void;
-}
-
 const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   lobbyId,
   players,
@@ -34,6 +14,7 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   const playerCount = Object.keys(safeePlayers).length;
   const readyCount = Object.values(safeePlayers).filter(p => p.is_ready).length;
   const allReady = playerCount > 1 && readyCount === playerCount;
+  
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'waiting_for_players': return 'text-yellow-400';
@@ -59,7 +40,8 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-xl text-center">
-        <h2 className="text-2xl font-bold text-white mb-2">🎮 Drawing Lobby</h2>        <div className="flex items-center justify-center gap-2 text-gray-200">
+        <h2 className="text-2xl font-bold text-white mb-2">🎮 Drawing Lobby</h2>
+        <div className="flex items-center justify-center gap-2 text-gray-200">
           <span className="font-mono">ID: {lobbyId?.slice(0, 8) || 'Unknown'}</span>
           <span>•</span>
           <span className={`font-semibold ${getStatusColor(gameStatus || 'waiting')}`}>
@@ -69,13 +51,16 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
       </div>
 
       <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-6 rounded-xl border border-gray-600">
-        <div className="flex justify-between items-center mb-4">          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
             👥 Players ({playerCount}/{maxPlayers})
           </h3>
           <div className="text-sm text-gray-300">
             {readyCount}/{playerCount} ready
           </div>
-        </div>        <div className="space-y-3">
+        </div>
+        
+        <div className="space-y-3">
           {players && Object.entries(players).map(([id, player]) => {
             if (!player || typeof player !== 'object') {
               console.warn(`Invalid player data for ID ${id}:`, player);
@@ -126,9 +111,10 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
             </div>
             );
           }).filter(Boolean)}
-        </div>          {(gameStatus === 'waiting' || gameStatus === 'waiting_for_players') && (
+        </div>
+        
+        {(gameStatus === 'waiting' || gameStatus === 'waiting_for_players') && (
           <div className="mt-6 space-y-3">
-            {/* Host start game button when all players are ready */}
             {allReady && playerCount >= 2 && currentPlayerId === hostId && (
               <button
                 onClick={onStartGame}
@@ -138,7 +124,6 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
               </button>
             )}
             
-            {/* Non-host waiting message when all players are ready */}
             {allReady && playerCount >= 2 && currentPlayerId !== hostId && (
               <div className="bg-green-800 border border-green-600 p-4 rounded-lg text-center">
                 <div className="flex items-center justify-center gap-2 text-green-200">
@@ -151,7 +136,6 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
               </div>
             )}
             
-            {/* Host waiting message when not all players are ready */}
             {(!allReady || playerCount < 2) && currentPlayerId === hostId && playerCount >= 2 && (
               <div className="bg-yellow-800 border border-yellow-600 p-4 rounded-lg text-center">
                 <div className="flex items-center justify-center gap-2 text-yellow-200">
@@ -164,7 +148,6 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
               </div>
             )}
             
-            {/* Host waiting message when not enough players */}
             {currentPlayerId === hostId && playerCount < 2 && (
               <div className="bg-red-800 border border-red-600 p-4 rounded-lg text-center">
                 <div className="flex items-center justify-center gap-2 text-red-200">
@@ -195,19 +178,19 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
         <h4 className="text-white font-bold mb-3 flex items-center gap-2">
           📝 How to Play
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-cyan-200 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-cyan-100">
           <div className="flex items-start gap-2">
             <span className="text-lg">🗳️</span>
             <div>
-              <p className="font-semibold">1. Vote for Theme</p>
-              <p>Choose what everyone will draw</p>
+              <p className="font-semibold">1. Vote Theme</p>
+              <p>Choose what everyone draws</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-lg">🎨</span>
             <div>
-              <p className="font-semibold">2. Draw Your Art</p>
-              <p>Create your masterpiece</p>
+              <p className="font-semibold">2. Draw & Create</p>
+              <p>Express your creativity</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
