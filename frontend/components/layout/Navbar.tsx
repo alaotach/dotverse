@@ -86,7 +86,6 @@ const Navbar: React.FC = () => {
                     </div>                  
                   )}
                   <MarketplaceButton />
-                  <MinigameButton />
                   <Link to="/gallery" className="text-gray-300 hover:text-white transition-colors">
                     Gallery
                   </Link>
