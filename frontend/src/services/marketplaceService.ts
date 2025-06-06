@@ -80,7 +80,7 @@ const STATIC_MARKETPLACE_ITEMS: Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>
     icon: '🎪',
     isActive: true,
     features: ['Unlimited FPS', 'Unlimited frames', 'All effects', 'Priority rendering'],
-    metadata: { maxFps: 60, frameLimit: 100 }, // Example: Master gives 60 FPS, 100 frames
+    metadata: { maxFps: 60, frameLimit: 100 },
     rarity: 'legendary',
   },
   {
@@ -107,19 +107,6 @@ const STATIC_MARKETPLACE_ITEMS: Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>
     metadata: { maxFps: 40 },
     rarity: 'rare',
   },
-  // Kawaii pack is now generated, remove static entry if it exists or ensure IDs don't clash
-  // {
-  //   id: 'sticker_pack_kawaii',
-  //   name: 'Kawaii Sticker Pack',
-  //   description: '51 adorable kawaii stickers to express yourself',
-  //   category: 'stickers',
-  //   price: 0, // Free starter pack
-  //   icon: '🥺',
-  //   isActive: true,
-  //   features: ['51 unique kawaii stickers', 'High quality PNG format', 'Perfect for expressions'],
-  //   metadata: { packId: 'kawaii', stickerCount: 51 },
-  //   rarity: 'common',
-  // },
   {
     id: 'premium_weekly',
     name: 'Weekly Premium',
@@ -161,14 +148,10 @@ class MarketplaceService {
       const marketplaceRef = collection(fs, 'marketplace');
       const existingItemsSnapshot = await getDocs(marketplaceRef);
 
-      // Combine static items with generated sticker items
-      // Ensure generatedStickerItems are correctly typed or cast to Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>[]
       const allMarketplaceSeedItems: Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>[] = [
         ...STATIC_MARKETPLACE_ITEMS,
         ...(generatedStickerItems as Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>[]).map(item => ({
           ...item,
-          // Ensure any transformations needed for generated items are done here
-          // For example, if generated items don't have a rarity, assign a default
           rarity: item.rarity || 'common',
         }))
       ];
@@ -185,12 +168,7 @@ class MarketplaceService {
         }
         console.log(`Initialized marketplace with ${allMarketplaceSeedItems.length} items`);
       } else {
-        // Optional: Logic to update existing items or add new ones if marketplace is not empty
-        // This could involve checking for new IDs in allMarketplaceSeedItems and adding them,
-        // or updating existing items if their properties have changed.
-        // For simplicity, this example only initializes if empty.
         console.log('Marketplace already initialized. Skipping seed.');
-        // Example: Add new items not present in Firestore
         const existingItemIds = new Set(existingItemsSnapshot.docs.map(d => d.id));
         let itemsAdded = 0;
         for (const itemData of allMarketplaceSeedItems) {
@@ -328,7 +306,7 @@ class MarketplaceService {
           isActive: true,
           expiresAt: item.metadata.duration ? 
             new Date(Date.now() + item.metadata.duration * 24 * 60 * 60 * 1000) : 
-            null // Changed undefined to null
+            null
         };
         
         const purchaseRef = doc(fs, 'purchases', purchaseId);
@@ -375,7 +353,6 @@ class MarketplaceService {
         };
       });
       
-      // Clear permissions cache after successful purchase
       const { userPermissionsService } = await import('./userPermissionsService');
       userPermissionsService.clearUserCache(userId);
       
@@ -527,7 +504,6 @@ class MarketplaceService {
   }
   async grantFreeStarterItems(userId: string): Promise<void> {
     try {
-      // Grant kawaii sticker pack as free starter
       const items = await this.getMarketplaceItems();
       const kawaiiItem = items.find(item => item.id === 'sticker_pack_kawaii');
       

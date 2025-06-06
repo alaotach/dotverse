@@ -499,7 +499,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
   const { currentUser, userProfile, refreshProfile } = useAuth(); 
   
-  // Load sticker packs when user changes
   useEffect(() => {
     const loadStickerPacks = async () => {
       try {

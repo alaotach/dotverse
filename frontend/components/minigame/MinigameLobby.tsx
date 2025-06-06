@@ -249,15 +249,13 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             onVote={handleThemeVote}
             timeRemaining={currentLobby.phase_time_remaining}
           />
-        )}
-
-        {gameStatus === 'drawing' && (
+        )}        {gameStatus === 'drawing' && (
           <DrawingCanvas
-            lobbyState={currentLobby}
+            theme={currentLobby.theme || 'Unknown'}
             timeRemaining={currentLobby.phase_time_remaining}
-            onSubmitDrawing={handleSubmitDrawing}
+            onSubmit={handleSubmitDrawing}
           />
-        )}        
+        )}
         
         {(gameStatus === 'voting' || gameStatus === 'showcase_voting') && currentLobby.drawings && (playerId || minigameWebSocketService.getPlayerId()) && (
           <VotingInterface
