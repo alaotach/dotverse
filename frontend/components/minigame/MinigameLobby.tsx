@@ -29,6 +29,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
   }>>([]);
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [currentPlayerId, setCurrentPlayerId] = useState<string>('');
   useEffect(() => {
     const connect = async () => {
       try {
@@ -66,11 +67,12 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       if (!lobbyState) {
         console.warn('[MinigameLobby] No lobby state found in update message');
         return;
-      }
-
-      if (lobbyState.game_status === 'voting') {
+      }      if (lobbyState.game_status === 'voting_for_drawings' || lobbyState.game_status === 'voting') {
         console.log('[MinigameLobby] Game status is VOTING. Drawings:', lobbyState.drawings);
         console.log('[MinigameLobby] Drawing votes:', lobbyState.drawing_votes);
+        console.log('[MinigameLobby] Current voting drawing:', lobbyState.current_voting_drawing);
+        console.log('[MinigameLobby] Voting display time remaining:', lobbyState.voting_display_time_remaining);
+        console.log('[MinigameLobby] Current voters:', lobbyState.current_voters);
       }
       
       console.log('Available players in update:', Object.keys(lobbyState?.players || {}));
@@ -78,11 +80,11 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       setCurrentLobby(lobbyState);
       
       const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
-      console.log('Current player ID:', currentPlayerId);
+      console.log('Current player ID:', currentEffectivePlayerId);
       
-      if (currentPlayerId && lobbyState && lobbyState.players) {
-        if (lobbyState.players[currentPlayerId]) {
-          setIsReady(lobbyState.players[currentPlayerId].is_ready);
+      if (currentEffectivePlayerId && lobbyState && lobbyState.players) {
+        if (lobbyState.players[currentEffectivePlayerId]) {
+          setIsReady(lobbyState.players[currentEffectivePlayerId].is_ready);
         } else {
           setCurrentLobby(null);
           setIsReady(false);
@@ -289,11 +291,10 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       minigameWebSocketService.submitDrawing(drawingData);
     }
   }, [currentLobby]);
-
-  const handleSubmitVote = useCallback((votedPlayerId: string) => {
+  const handleSubmitVote = useCallback((drawingId: string) => {
     const currentPlayerId = minigameWebSocketService.getPlayerId();
     if (currentLobby && currentPlayerId) {
-      minigameWebSocketService.voteForDrawing(votedPlayerId);
+      minigameWebSocketService.voteForDrawing(drawingId);
     }
   }, [currentLobby]);
 
@@ -313,6 +314,26 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       console.error('Failed to update lobby settings');
     }
   }, []);
+
+  // Add a helper function to format time values safely
+const formatTimeValue = (timeValue: any): string => {
+  if (!timeValue) return '--:--';
+  
+  try {
+    const endTime = new Date(timeValue).getTime();
+    const now = new Date().getTime();
+    const diff = Math.max(0, endTime - now);
+    
+    if (isNaN(diff) || diff <= 0) return '00:00';
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  } catch (error) {
+    console.error('Error formatting time:', error);
+    return '--:--';
+  }
+};
 
   const renderLobbyContent = () => {
     if (!connected) {
@@ -346,15 +367,23 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       if (currentLobby && currentPlayerId) {
         minigameWebSocketService.setPlayerReady(false);
       }
-    };
-
-    const gameStatus = currentLobby.game_status || 'waiting';
+    };    const gameStatus = currentLobby.game_status || 'waiting';
     const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
+
+    // Debug logging for results data
+    console.log(`[MinigameLobby] renderLobbyContent: gameStatus='${gameStatus}'`);
+    console.log('[MinigameLobby] results debug:', {
+      resultsExists: !!currentLobby.results,
+      resultsType: typeof currentLobby.results,
+      resultsIsArray: Array.isArray(currentLobby.results),
+      resultsLength: Array.isArray(currentLobby.results) ? currentLobby.results.length : 'N/A',
+      results: currentLobby.results
+    });
 
     console.log(`[MinigameLobby] renderLobbyContent: gameStatus='${gameStatus}', currentLobby.drawings exists: ${!!currentLobby.drawings}, currentEffectivePlayerId: ${currentEffectivePlayerId}`);
     if (currentLobby.drawings) {
         console.log('[MinigameLobby] renderLobbyContent: currentLobby.drawings:', currentLobby.drawings);
-    }    
+    }
     
     if (gameStatus === 'waiting_for_players' || gameStatus === 'waiting') {      
       return (        
@@ -386,9 +415,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             <p className="text-sm text-gray-300">Phase</p>
             <p className="text-lg font-bold text-yellow-400 capitalize">{gameStatus?.replace('_', ' ') || 'Waiting'}</p>
           </div>
-        </div>
-
-        {gameStatus === 'theme_voting' && (
+        </div>        {gameStatus === 'theme_voting' && (
           <ThemeVoting
             lobbyState={currentLobby}
             onVote={handleThemeVote}
@@ -401,33 +428,72 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
             timeRemaining={currentLobby.phase_time_remaining}
             onSubmit={handleSubmitDrawing}
           />
-        )}
-        
-        {(gameStatus === 'voting' || gameStatus === 'showcase_voting') && currentLobby.drawings && (playerId || minigameWebSocketService.getPlayerId()) && (
-          <VotingInterface
-            drawings={Object.values(currentLobby.drawings)}
-            currentPlayerVote={currentLobby.drawing_votes?.[playerId || minigameWebSocketService.getPlayerId() || ''] || null}
-            onVote={handleSubmitVote}
-            timeRemaining={currentLobby.phase_time_remaining}
-            canVote={!!(playerId || minigameWebSocketService.getPlayerId())}
-            currentPlayerId={playerId || minigameWebSocketService.getPlayerId() || ''}
-            currentShowcaseIndex={currentLobby.showcase_current_index}
-            showcaseTimeRemaining={currentLobby.phase_time_remaining}
-            isShowcaseMode={gameStatus === 'showcase_voting'}
-          />
-        )}        
-        
-        {(gameStatus === 'showcasing' || gameStatus === 'ended') && currentLobby.results && (
+        )}          {(() => {
+            // Determine if we have drawings to show
+            const hasDrawings = (currentLobby.drawings && Object.keys(currentLobby.drawings).length > 0);
+            const hasDrawingsForVoting = (gameStatus === 'voting_for_drawings' && currentLobby.drawings_for_voting && currentLobby.drawings_for_voting.length > 0);
+            
+            console.log('[MinigameLobby] Voting logic:', {
+              gameStatus,
+              hasDrawings,
+              hasDrawingsForVoting,
+              drawingsKeys: currentLobby.drawings ? Object.keys(currentLobby.drawings) : 'null',
+              drawingsForVotingLength: currentLobby.drawings_for_voting?.length || 0,
+              drawingsForVoting: currentLobby.drawings_for_voting
+            });
+            
+            if (!hasDrawings && !hasDrawingsForVoting) {
+              console.log('[MinigameLobby] No drawings available for voting/showcase');
+              return null;
+            }
+
+            // Convert drawings_for_voting to the format expected by VotingInterface
+            let drawingsToUse = [];
+            if (hasDrawings) {
+              drawingsToUse = Object.values(currentLobby.drawings);
+              console.log('[MinigameLobby] Using drawings from drawings field:', drawingsToUse);
+            } else if (hasDrawingsForVoting) {
+              drawingsToUse = currentLobby.drawings_for_voting!.map(drawing => ({
+                id: drawing.drawing_id,
+                drawing_id: drawing.drawing_id,
+                player_id: drawing.player_id,
+                player_name: currentLobby.players[drawing.player_id]?.display_name || 'Unknown',
+                data: drawing.drawing_data,
+                theme: drawing.drawing_theme,
+                votes: 0, // No votes yet during voting phase
+                current_voters: []
+              }));
+              console.log('[MinigameLobby] Using converted drawings from drawings_for_voting:', drawingsToUse);
+            }
+
+            return (gameStatus === 'voting_for_drawings' || gameStatus === 'voting' || gameStatus === 'showcasing_results') && (playerId || minigameWebSocketService.getPlayerId()) ? (
+              <VotingInterface
+                drawings={drawingsToUse}
+                currentPlayerVote={currentLobby.drawing_votes?.[playerId || minigameWebSocketService.getPlayerId() || ''] || null}
+                onVote={handleSubmitVote}
+                timeRemaining={currentLobby.phase_time_remaining}
+                canVote={!!(playerId || minigameWebSocketService.getPlayerId())}
+                currentPlayerId={playerId || minigameWebSocketService.getPlayerId() || ''}
+                currentShowcaseIndex={currentLobby.showcase_current_index}
+                showcaseTimeRemaining={currentLobby.phase_time_remaining}
+                isShowcaseMode={gameStatus === 'showcasing_results'}                // Auto-display voting props
+                currentVotingDrawing={currentLobby.current_voting_drawing || null}
+                votingDisplayTimeRemaining={currentLobby.voting_display_time_remaining || 0}
+                currentVoters={currentLobby.current_voters || {}}
+                currentVotingDrawingIndex={currentLobby.current_voting_drawing_index || 0}
+                totalDrawings={drawingsToUse.length}
+              />
+            ) : null;
+          })()}
+          
+          {(gameStatus === 'showcasing_results' || gameStatus === 'ended') && currentLobby.results && Array.isArray(currentLobby.results) && currentLobby.results.length > 0 && (
           <ResultsDisplay
-            players={currentLobby.results.map(([playerId, votes], index) => {
-              const player = currentLobby.players[playerId];
-              return {
-                id: playerId,
-                name: player?.display_name || 'Unknown',
-                votes: votes,
-                rank: index + 1,
-              };
-            })}
+            players={currentLobby.results.map((result, index) => ({
+              id: result.player_id,
+              name: result.player_name || 'Unknown',
+              votes: result.votes,
+              rank: index + 1,
+            }))}
             drawings={Object.values(currentLobby.drawings || {})}
             currentPlayerId={playerId || ''}
             theme={currentLobby.theme || 'Unknown'}

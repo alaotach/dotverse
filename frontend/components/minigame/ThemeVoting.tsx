@@ -14,7 +14,8 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
 }) => {
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
 
-  const themes = [
+  // Use themes from backend if available, otherwise fallback to default themes
+  const defaultThemes = [
     { name: 'Nature', emoji: '🌲', description: 'Trees, flowers, landscapes' },
     { name: 'Animals', emoji: '🐱', description: 'Pets, wildlife, creatures' },
     { name: 'Food', emoji: '🍕', description: 'Meals, snacks, drinks' },
@@ -24,6 +25,14 @@ const ThemeVoting: React.FC<ThemeVotingProps> = ({
     { name: 'Sports', emoji: '⚽', description: 'Games, activities, competition' },
     { name: 'Music', emoji: '🎵', description: 'Instruments, songs, concerts' }
   ];
+
+  // Create theme objects from backend themes or use defaults
+  const themes = lobbyState.possible_color_themes && lobbyState.possible_color_themes.length > 0
+    ? lobbyState.possible_color_themes.map(themeName => {
+        const defaultTheme = defaultThemes.find(t => t.name === themeName);
+        return defaultTheme || { name: themeName, emoji: '🎨', description: 'Draw something related to this theme' };
+      })
+    : defaultThemes;
 
   const handleVote = (theme: string) => {
     setSelectedTheme(theme);

@@ -47,6 +47,7 @@ class Drawing:
         self.drawing_data = drawing_data
         self.drawing_theme = drawing_theme
         self.votes = 0
+        self.current_voters = set()  # Track who is currently voting for this drawing
 
 class Lobby:
     def __init__(self, lobby_id: str, max_players: int = LOBBY_MAX_PLAYERS, min_players: int = MIN_PLAYERS_TO_START):
@@ -62,8 +63,10 @@ class Lobby:
         self.timer_end_time: Optional[float] = None
         self.game_start_time: Optional[float] = None
         self.current_showcased_drawing_index: int = 0
+        self.current_voting_drawing_index: int = 0  # Track which drawing is currently being voted on
+        self.voting_display_end_time: Optional[float] = None  # When current drawing display ends
         self.color_theme_votes: dict[str, int] = {}
-        self.possible_color_themes = ["sunset", "forest", "ocean", "monochrome", "neon"]
+        self.possible_color_themes = ["Nature", "Animals", "Food", "Technology", "Fantasy", "Space", "Sports", "Music"]
         self.possible_drawing_prompts = [
             "A mythical creature",
             "A dream you had",
@@ -251,8 +254,6 @@ class Lobby:
                 winning_themes.append(theme)
         
         return random.choice(winning_themes) if winning_themes else random.choice(self.possible_color_themes)
-
-
     def start_drawing_phase(self):
         if self.game_status == GameStatus.THEME_VOTING: 
             self.current_canvas_color_theme = self._determine_winning_color_theme()
@@ -269,32 +270,65 @@ class Lobby:
             for p in self.players:
                 p.drawing = None
                 p.voted_for_drawing_id = None
-
+                
     def submit_drawing(self, player_id: str, drawing_data: str):
         player = self.get_player(player_id)
         if player and self.game_status == GameStatus.DRAWING and self.current_drawing_theme is not None:
             drawing = Drawing(player_id, drawing_data, self.current_drawing_theme)
             player.drawing = drawing 
-            self.drawings.append(drawing)
+            self.drawings.append(drawing)            
+            print(f"[DEBUG] Drawing submitted by player {player_id}. Total drawings: {len(self.drawings)}")
             return True
+        print(f"[DEBUG] Drawing submission failed for player {player_id}. Status: {self.game_status}, Theme: {self.current_drawing_theme}")
         return False
 
     def start_voting_phase(self):
+        print(f"[DEBUG] start_voting_phase called. Status: {self.game_status}, Drawings count: {len(self.drawings)}")
         if self.game_status == GameStatus.DRAWING and self.drawings:
             self.game_status = GameStatus.VOTING_FOR_DRAWINGS
-            self.timer_end_time = time.time() + self.settings.voting_time
+            self.current_voting_drawing_index = 0
+            # Set initial display timer for first drawing (10 seconds each)
+            self.voting_display_end_time = time.time() + 10
+            # Total voting time includes all drawings display time
+            total_voting_time = len(self.drawings) * 10 + 30  # 10 seconds per drawing + 30 seconds buffer
+            self.timer_end_time = time.time() + total_voting_time
+            
             for p in self.players:
                 p.voted_for_drawing_id = None
+            # Clear current voters for all drawings
+            for drawing in self.drawings:
+                drawing.current_voters.clear()
+            print(f"[DEBUG] Voting phase started with {len(self.drawings)} drawings")
+        else:
+            print(f"[DEBUG] Cannot start voting phase. Status: {self.game_status}, Drawings: {len(self.drawings)}")
 
     def cast_vote(self, voter_player_id: str, drawing_id: str) -> bool:
         voter = self.get_player(voter_player_id)
-        if not voter or voter.voted_for_drawing_id:
+        if not voter:
+            return False
+
+        # Check if the drawing being voted for is currently displayed
+        current_drawing = self.get_current_voting_drawing()
+        if not current_drawing or current_drawing.drawing_id != drawing_id:
+            return False  # Can only vote for currently displayed drawing
+
+        # Check if voter has already voted for this drawing
+        if voter.voted_for_drawing_id == drawing_id:
             return False
 
         target_drawing = next((d for d in self.drawings if d.drawing_id == drawing_id), None)
         if target_drawing and target_drawing.player_id != voter_player_id:
+            # Remove previous vote if exists
+            if voter.voted_for_drawing_id:
+                prev_drawing = next((d for d in self.drawings if d.drawing_id == voter.voted_for_drawing_id), None)
+                if prev_drawing:
+                    prev_drawing.votes = max(0, prev_drawing.votes - 1)
+                    prev_drawing.current_voters.discard(voter_player_id)
+            
+            # Add new vote
             target_drawing.votes += 1
             voter.voted_for_drawing_id = drawing_id
+            target_drawing.current_voters.add(voter_player_id)
             return True
         return False
 
@@ -327,24 +361,101 @@ class Lobby:
         self.current_canvas_color_theme = None
         self.current_drawing_theme = None
         self.drawings = []
+        self.current_voting_drawing_index = 0
+        self.voting_display_end_time = None
+
+    def advance_voting_display(self) -> bool:
+        """Advance to the next drawing in the auto-display voting sequence"""
+        if self.game_status != GameStatus.VOTING_FOR_DRAWINGS:
+            return False
+            
+        self.current_voting_drawing_index += 1
+        if self.current_voting_drawing_index < len(self.drawings):
+            # Set timer for next drawing display
+            self.voting_display_end_time = time.time() + 10
+            return True
+        else:
+            # All drawings have been displayed, end voting phase
+            self.voting_display_end_time = None
+            return False
+
+    def get_current_voting_drawing(self) -> Optional[Drawing]:
+        """Get the drawing currently being displayed for voting"""
+        if (self.game_status == GameStatus.VOTING_FOR_DRAWINGS and 
+            0 <= self.current_voting_drawing_index < len(self.drawings)):
+            return self.drawings[self.current_voting_drawing_index]
+        return None
+
+    def add_current_voter(self, voter_id: str, drawing_id: str):
+        """Add a voter to the current drawing being displayed"""
+        current_drawing = self.get_current_voting_drawing()
+        if current_drawing and current_drawing.drawing_id == drawing_id:
+            current_drawing.current_voters.add(voter_id)
+
+    def remove_current_voter(self, voter_id: str, drawing_id: str):
+        """Remove a voter from the current drawing being displayed"""
+        current_drawing = self.get_current_voting_drawing()
+        if current_drawing and current_drawing.drawing_id == drawing_id:
+            current_drawing.current_voters.discard(voter_id)
 
     def update(self):
         current_time = time.time()
+        
+        # Handle auto-advancing drawings during voting
+        if (self.game_status == GameStatus.VOTING_FOR_DRAWINGS and 
+            self.voting_display_end_time and 
+            current_time >= self.voting_display_end_time):
+            
+            if not self.advance_voting_display():
+                # All drawings have been displayed, move to showcase
+                self.start_showcasing_results()
+        
+        # Handle phase timer endings
         if self.timer_end_time and current_time >= self.timer_end_time:
             if self.game_status == GameStatus.THEME_VOTING:
                 self.start_drawing_phase()
             elif self.game_status == GameStatus.DRAWING:
                 self.start_voting_phase()
             elif self.game_status == GameStatus.VOTING_FOR_DRAWINGS:
-                self.start_showcase_phase()
-            elif self.game_status == GameStatus.SHOWCASING_RESULTS:
-                self.advance_showcase()
-        
+                self.start_showcasing_results()
+            elif self.game_status == GameStatus.SHOWCASING_RESULTS:                self.advance_showcase()        
         if (self.game_status == GameStatus.WAITING_FOR_PLAYERS and 
             self.can_start_game()):
             self.start_theme_voting()
     
     def get_lobby_state(self):
+        # Calculate remaining time for frontend
+        phase_time_remaining = 0
+        if self.timer_end_time:
+            phase_time_remaining = max(0, int(self.timer_end_time - time.time()))
+        
+        # Calculate time remaining for current drawing display
+        voting_display_time_remaining = 0
+        if self.voting_display_end_time and self.game_status == GameStatus.VOTING_FOR_DRAWINGS:
+            voting_display_time_remaining = max(0, int(self.voting_display_end_time - time.time()))
+        
+        # Get current voting drawing info
+        current_voting_drawing = self.get_current_voting_drawing()
+        current_voting_drawing_info = None
+        current_voters_info = {}
+        
+        if current_voting_drawing:
+            current_voting_drawing_info = {
+                "drawing_id": current_voting_drawing.drawing_id,
+                "player_id": current_voting_drawing.player_id,
+                "player_name": self.get_player(current_voting_drawing.player_id).display_name if self.get_player(current_voting_drawing.player_id) else "Unknown",
+                "data": current_voting_drawing.drawing_data,
+                "theme": current_voting_drawing.drawing_theme,
+                "votes": current_voting_drawing.votes,
+                "current_voters": list(current_voting_drawing.current_voters)
+            }
+            
+            # For the drawing owner, provide detailed voter info
+            current_voters_info = {
+                voter_id: self.get_player(voter_id).display_name if self.get_player(voter_id) else "Unknown"
+                for voter_id in current_voting_drawing.current_voters
+            }
+        
         return {
             "id": self.lobby_id,
             "lobby_id": self.lobby_id,
@@ -370,13 +481,23 @@ class Lobby:
             "max_players": self.max_players,
             "min_players": self.min_players,
             "timer_end_time": self.timer_end_time,
+            "phase_time_remaining": phase_time_remaining,
+            "theme": self.current_drawing_theme,  # Frontend expects this field name
             "current_drawing_theme": self.current_drawing_theme,
             "current_canvas_color_theme": self.current_canvas_color_theme,
             "possible_color_themes": self.possible_color_themes if self.game_status == GameStatus.THEME_VOTING else [],
             "color_theme_votes": self.color_theme_votes if self.game_status == GameStatus.THEME_VOTING else {},
-            "drawings_for_voting": [{"drawing_id": d.drawing_id, "player_id": d.player_id, "drawing_data": d.drawing_data, "drawing_theme": d.drawing_theme} for d in self.drawings] if self.game_status == GameStatus.VOTING_FOR_DRAWINGS else [],
-            "results": [{"player_id": d.player_id, "drawing_id": d.drawing_id, "drawing_data": d.drawing_data, "votes": d.votes, "player_name": self.get_player(d.player_id).display_name if self.get_player(d.player_id) else "Unknown"} for d in self.drawings] if self.game_status in [GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else [],
+            "theme_votes": {p.player_id: p.color_theme_vote for p in self.players if p.color_theme_vote} if self.game_status == GameStatus.THEME_VOTING else {},  # Player ID to theme mapping for frontend            "drawings": {d.drawing_id: {"id": d.drawing_id, "player_id": d.player_id, "player_name": self.get_player(d.player_id).display_name if self.get_player(d.player_id) else "Unknown", "data": d.drawing_data, "theme": d.drawing_theme, "votes": d.votes} for d in self.drawings},  # Frontend expects this format
+            "drawing_votes": {p.player_id: p.voted_for_drawing_id for p in self.players if p.voted_for_drawing_id},  # Player votes mapping
+            "drawings_for_voting": [{"drawing_id": d.drawing_id, "player_id": d.player_id, "drawing_data": d.drawing_data, "drawing_theme": d.drawing_theme} for d in self.drawings] if self.game_status == GameStatus.VOTING_FOR_DRAWINGS else [],            "results": [{"player_id": d.player_id, "drawing_id": d.drawing_id, "drawing_data": d.drawing_data, "votes": d.votes, "player_name": self.get_player(d.player_id).display_name if self.get_player(d.player_id) else "Unknown"} for d in self.drawings] if self.game_status in [GameStatus.SHOWCASING_RESULTS, GameStatus.ENDED] else [],
             "current_showcased_drawing": self.drawings[self.current_showcased_drawing_index].drawing_id if self.game_status == GameStatus.SHOWCASING_RESULTS and self.drawings and 0 <= self.current_showcased_drawing_index < len(self.drawings) else None,
+            "showcase_current_index": self.current_showcased_drawing_index if self.game_status == GameStatus.SHOWCASING_RESULTS else None,
+            # Auto-display voting fields
+            "current_voting_drawing": current_voting_drawing_info,
+            "current_voting_drawing_index": self.current_voting_drawing_index if self.game_status == GameStatus.VOTING_FOR_DRAWINGS else None,
+            "voting_display_time_remaining": voting_display_time_remaining,
+            "current_voters": current_voters_info,
+            "created_at": self.game_start_time or time.time(),
         }
 
 class LobbySettings:

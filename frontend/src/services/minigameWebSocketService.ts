@@ -12,16 +12,43 @@ interface LobbyState {
   game_status: string;
   spectators: { [key: string]: any };
   max_players: number;
+  settings?: LobbySettings;
   phase_time_remaining: number;
   theme: string | null;
   theme_votes: { [key: string]: string };
+  possible_color_themes: string[];
   drawings: { [key: string]: any };
   drawing_votes: { [key: string]: string };
-  results: Array<[string, number]> | null;
+  drawings_for_voting?: Array<{
+    drawing_id: string;
+    player_id: string;
+    drawing_data: string;
+    drawing_theme: string;
+  }>;
+  results: Array<{
+    player_id: string;
+    drawing_id: string;
+    drawing_data: string;
+    votes: number;
+    player_name: string;
+  }> | null;
   created_at: number;
   showcase_current_index?: number;
   showcase_total_drawings?: number;
   showcase_time_per_drawing?: number;
+  // Auto-display voting fields
+  current_voting_drawing?: {
+    drawing_id: string;
+    player_id: string;
+    player_name: string;
+    data: string;
+    theme: string;
+    votes: number;
+    current_voters: string[];
+  } | null;
+  current_voting_drawing_index?: number | null;
+  voting_display_time_remaining?: number;
+  current_voters?: { [key: string]: string };
 }
 
 interface LobbySettings {
@@ -156,13 +183,42 @@ class MinigameWebSocketService {
       const message: MinigameMessage = JSON.parse(event.data);
       console.log('[Minigame WS] Received:', message);
       
+      // Ensure timestamps are valid Date objects when needed
+      if (message.type === 'game_state' && message.data) {
+        if (message.data.votingEndsAt) {
+          let ts = message.data.votingEndsAt;
+          if (typeof ts === 'object' && ts !== null && typeof ts.toISOString === 'function') {
+            message.data.votingEndsAt = ts.toISOString();
+          } else if (typeof ts === 'number') {
+            message.data.votingEndsAt = new Date(ts).toISOString();
+          } else if (typeof ts === 'string') {
+            // Try to parse, if invalid, set to null
+            if (isNaN(Date.parse(ts))) {
+              message.data.votingEndsAt = null;
+            }
+          } else {
+            message.data.votingEndsAt = null;
+          }
+        }
+        
+        // Handle other timestamps similarly
+        if (message.data.drawingEndsAt && typeof message.data.drawingEndsAt === 'string') {
+          const timestamp = new Date(message.data.drawingEndsAt).getTime();
+          if (!isNaN(timestamp)) {
+            message.data.drawingEndsAt = message.data.drawingEndsAt;
+          } else {
+            message.data.drawingEndsAt = null;
+          }
+        }
+      }
+
       if (message.type === 'connection_ack') {
         this.playerId = message.data?.player_id || message.player_id;
         console.log('[Minigame WS] Player ID assigned:', this.playerId);
         this.emit('player_id_assigned', this.playerId);
       }
       if (message.type) {
-        this.emit(message.type, message);
+        this.emit(message.type, message.data);
       }
       
     } catch (error) {
@@ -386,8 +442,7 @@ class MinigameWebSocketService {
       data: { drawing: drawingData }
     });
   }
-
-  voteForDrawing(targetPlayerId: string): boolean {
+  voteForDrawing(drawingId: string): boolean {
     if (!this.isConnected()) {
       console.error('Cannot vote for drawing: not connected');
       return false;
@@ -395,7 +450,7 @@ class MinigameWebSocketService {
 
     return this.send({
       type: 'vote_drawing',
-      data: { player_id: targetPlayerId }
+      data: { drawing_id: drawingId }
     });
   }
 
