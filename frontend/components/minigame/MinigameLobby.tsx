@@ -19,11 +19,13 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [currentLobby, setCurrentLobby] = useState<LobbyState | null>(null);
-  const [availableLobbies, setAvailableLobbies] = useState<Array<{
+  const [isCreatingLobby, setIsCreatingLobby] = useState(false);  const [availableLobbies, setAvailableLobbies] = useState<Array<{
     id: string;
     player_count: number;
     max_players: number;
     status: string;
+    private_lobby?: boolean;
+    has_password?: boolean;
   }>>([]);
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -36,6 +38,11 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       }
     };
     connect();
+
+    const handleSettingsUpdated = (data: { message: string; settings: any }) => {
+      toast.success(data.message);
+      console.log('Lobby settings updated:', data.settings);
+    };
 
     const handleConnected = (isConnected: boolean) => {
       setConnected(isConnected);
@@ -82,14 +89,16 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
         }
       }
     };
-      const handleLobbyJoined = (message: any) => {
+    const handleLobbyJoined = (message: any) => {
       const lobbyState = message?.data || message;
       
       if (lobbyState) {
         setCurrentLobby(lobbyState);
         minigameWebSocketService.getLobbyList();
+        setIsCreatingLobby(false);
       } else {
         console.error('No lobby state found in join response');
+        setIsCreatingLobby(false);
       }
     };
     
@@ -99,12 +108,15 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     };
 
     const handleError = (errorData: { message?: string } | null) => {
-      const errorMessage = errorData?.message || 'Unknown error connecting to minigame server';
-      console.error('Minigame error:', errorMessage);
+      const message = errorData?.message || 'An unknown error occurred';
+      console.error('Minigame error:', message);
+      setErrorMessage(message);
+      setIsCreatingLobby(false);
       
-      setErrorMessage(errorMessage);
       setTimeout(() => setErrorMessage(''), 5000);
-    };    const handleKickedFromLobby = (data: { message: string }) => {
+    }; 
+
+    const handleKickedFromLobby = (data: { message: string }) => {
       setCurrentLobby(null);
       setIsReady(false);
       setErrorMessage(`${data.message}. You can rejoin the lobby if you want.`);
@@ -164,6 +176,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     minigameWebSocketService.on('player_kicked', handlePlayerKicked);
     minigameWebSocketService.on('player_banned', handlePlayerBanned);
     minigameWebSocketService.on('host_transferred', handleHostTransferred);
+    minigameWebSocketService.on('settings_updated', handleSettingsUpdated);
 
     return () => {
       minigameWebSocketService.off('connected', handleConnected);
@@ -177,6 +190,7 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
       minigameWebSocketService.off('player_kicked', handlePlayerKicked);
       minigameWebSocketService.off('player_banned', handlePlayerBanned);
       minigameWebSocketService.off('host_transferred', handleHostTransferred);
+      minigameWebSocketService.off('settings_updated', handleSettingsUpdated);
 
       const currentPlayerId = minigameWebSocketService.getPlayerId();
       if (currentLobby && currentPlayerId) {
@@ -198,20 +212,51 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     minigameWebSocketService.transferHost(playerId);
   }, []);
 
-  const handleCreateLobby = () => {
+  const handleCreateLobby = (playerName: string, settings?: any) => {
+    if (isCreatingLobby) {
+      console.log('Already creating lobby, ignoring duplicate request');
+      return;
+    }
+
     if (!playerName.trim()) {
       alert('Please enter a player name');
       return;
     }
-    minigameWebSocketService.createLobby(playerName.trim());
-  };
 
+    console.log('Creating lobby with name:', playerName.trim(), 'and settings:', settings);
+    setIsCreatingLobby(true);
+    
+    try {
+      const success = minigameWebSocketService.createLobby(playerName.trim(), settings);
+      if (!success) {
+        setIsCreatingLobby(false);
+        alert('Failed to create lobby - not connected to server');
+      }
+    } catch (error) {
+      console.error('Error creating lobby:', error);
+      setIsCreatingLobby(false);
+      alert('Error creating lobby');
+    }
+  };
   const handleJoinLobby = (lobbyId: string) => {
     if (!playerName.trim()) {
       alert('Please enter a player name');
       return;
     }
-    minigameWebSocketService.joinLobby(lobbyId, playerName.trim());
+
+    // Find the lobby to check if it's password protected
+    const lobby = availableLobbies.find(l => l.id === lobbyId);
+    if (lobby && lobby.has_password) {
+      // Prompt for password
+      const password = prompt('This lobby requires a password:');
+      if (password === null) {
+        return; // User cancelled
+      }
+      minigameWebSocketService.joinLobbyWithPassword(lobbyId, playerName.trim(), password);
+    } else {
+      // No password required
+      minigameWebSocketService.joinLobby(lobbyId, playerName.trim());
+    }
   };
   const handleReadyToggle = () => {
   const currentEffectivePlayerId = playerId || minigameWebSocketService.getPlayerId();
@@ -261,6 +306,14 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
     setIsReady(false);
     minigameWebSocketService.getLobbyList();
   };
+
+  const handleUpdateSettings = useCallback((newSettings: any) => {
+    const success = minigameWebSocketService.updateLobbySettings(newSettings);
+    if (!success) {
+      console.error('Failed to update lobby settings');
+    }
+  }, []);
+
   const renderLobbyContent = () => {
     if (!connected) {
       return (
@@ -312,13 +365,15 @@ const MinigameLobby: React.FC<MinigameLobbyProps> = ({ onClose }) => {
           currentPlayerId={playerId || minigameWebSocketService.getPlayerId() || ''}
           hostId={currentLobby.host_id || ''}
           isReady={isReady}
-          maxPlayers={currentLobby.max_players || 4}
+          maxPlayers={currentLobby.settings?.max_players || 4}
+          settings={currentLobby.settings}
           onReadyToggle={handleReadyToggle}
           onStartGame={handleStartGame}
           onLeaveLobby={handleLeaveLobby}
           onKickPlayer={handleKickPlayer}
           onBanPlayer={handleBanPlayer}
           onTransferHost={handleTransferHost}
+          onUpdateSettings={handleUpdateSettings}
         />
       );
     }

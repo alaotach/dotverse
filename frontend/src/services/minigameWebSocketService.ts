@@ -10,6 +10,7 @@ interface LobbyState {
   host_id: string;
   players: { [key: string]: any };
   game_status: string;
+  spectators: { [key: string]: any };
   max_players: number;
   phase_time_remaining: number;
   theme: string | null;
@@ -21,6 +22,22 @@ interface LobbyState {
   showcase_current_index?: number;
   showcase_total_drawings?: number;
   showcase_time_per_drawing?: number;
+}
+
+interface LobbySettings {
+  max_players: number;
+  min_players: number;
+  theme_voting_time: number;
+  drawing_time: number;
+  voting_time: number;
+  showcase_time_per_drawing: number;
+  allow_spectators: boolean;
+  private_lobby: boolean;
+  has_password: boolean;
+  custom_themes: string[];
+  enable_chat: boolean;
+  auto_start_when_ready: boolean;
+  winner_takes_all: boolean;
 }
 
 type MinigameEventHandler = (data: any) => void;
@@ -210,7 +227,9 @@ class MinigameWebSocketService {
     }
 
     try {
-      this.ws.send(JSON.stringify(message));
+      const messageStr = JSON.stringify(message);
+      console.log('[Minigame WS] Sending:', messageStr);
+      this.ws.send(messageStr);
       return true;
     } catch (error) {
       console.error('[Minigame WS] Error sending message:', error);
@@ -245,61 +264,137 @@ class MinigameWebSocketService {
     }
   }
 
-  createLobby(playerName: string): boolean {
+  createLobby(playerName: string, settings?: Partial<LobbySettings>): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot create lobby: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'create_lobby',
-      data: { player_name: playerName }
+      type: 'create_lobby',
+      data: { 
+        player_name: playerName,
+        settings: settings || {}
+      }
     });
   }
 
-  joinLobby(lobbyId: string, playerName: string): boolean {
+  joinLobbyWithPassword(lobbyId: string, playerName: string, password: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot join lobby: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'join_lobby',
+      type: 'join_lobby_with_password',
+      data: { 
+        lobby_id: lobbyId, 
+        player_name: playerName,
+        password: password
+      }
+    });
+  }
+
+  updateLobbySettings(settings: Partial<LobbySettings>): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot update settings: not connected');
+      return false;
+    }
+
+    return this.send({
+      type: 'update_lobby_settings',
+      data: { settings }
+    });
+  }
+  joinLobby(lobbyId: string, playerName: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot join lobby: not connected');
+      return false;
+    }
+
+    return this.send({
+      type: 'join_lobby',
       data: { lobby_id: lobbyId, player_name: playerName }
     });
   }
 
   leaveLobby(): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot leave lobby: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'leave_lobby'
+      type: 'leave_lobby'
     });
   }
 
   getLobbyList(): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot get lobby list: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'get_lobby_list'
+      type: 'get_lobby_list'
     });
   }
-
   setPlayerReady(isReady: boolean): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot set ready: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'player_ready',
+      type: 'set_ready',
       data: { is_ready: isReady }
     });
   }
 
   startGame(): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot start game: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'start_game',
+      type: 'start_game',
       data: {}
     });
   }
 
   voteTheme(theme: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot vote theme: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'vote_theme',
+      type: 'vote_theme',
       data: { theme }
     });
   }
+
   submitDrawing(drawingData: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot submit drawing: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'submit_drawing',
+      type: 'submit_drawing',
       data: { drawing: drawingData }
     });
   }
+
   voteForDrawing(targetPlayerId: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot vote for drawing: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'vote_for_drawing',
+      type: 'vote_drawing',
       data: { player_id: targetPlayerId }
     });
   }
@@ -311,23 +406,39 @@ class MinigameWebSocketService {
   isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
   }
+
   kickPlayer(targetPlayerId: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot kick player: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'kick_player',
+      type: 'kick_player',
       data: { target_player_id: targetPlayerId }
     });
   }
 
   banPlayer(targetPlayerId: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot ban player: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'ban_player',
+      type: 'ban_player',
       data: { target_player_id: targetPlayerId }
     });
   }
 
   transferHost(targetPlayerId: string): boolean {
+    if (!this.isConnected()) {
+      console.error('Cannot transfer host: not connected');
+      return false;
+    }
+
     return this.send({
-      action: 'transfer_host',
+      type: 'transfer_host',
       data: { target_player_id: targetPlayerId }
     });
   }

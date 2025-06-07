@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import CreateLobbyModal from './CreateLobbyModal';
 
 interface LobbyCardProps {
   id: string;
@@ -7,6 +8,8 @@ interface LobbyCardProps {
   status: string;
   onJoin: () => void;
   disabled?: boolean;
+  privateLobby?: boolean;
+  hasPassword?: boolean;
 }
 
 const LobbyCard: React.FC<LobbyCardProps> = ({
@@ -15,8 +18,10 @@ const LobbyCard: React.FC<LobbyCardProps> = ({
   maxPlayers,
   status,
   onJoin,
-  disabled = false
-}) => {  const getStatusColor = (status: string) => {
+  disabled = false,
+  privateLobby = false,
+  hasPassword = false
+}) => {const getStatusColor = (status: string) => {
     switch (status) {
       case 'waiting_for_players': return 'bg-green-600';
       case 'theme_voting': return 'bg-blue-600';
@@ -41,11 +46,12 @@ const LobbyCard: React.FC<LobbyCardProps> = ({
   };
 
   return (
-    <div className="bg-gradient-to-br from-gray-700 to-gray-600 p-4 rounded-xl border border-gray-500 hover:border-gray-400 transition-all hover:scale-105">
-      <div className="flex justify-between items-start mb-3">
+    <div className="bg-gradient-to-br from-gray-700 to-gray-600 p-4 rounded-xl border border-gray-500 hover:border-gray-400 transition-all hover:scale-105">      <div className="flex justify-between items-start mb-3">
         <div>
           <h4 className="text-white font-bold text-lg flex items-center gap-2">
             🎮 Lobby
+            {privateLobby && <span className="text-yellow-400">🔒</span>}
+            {hasPassword && <span className="text-red-400">🔑</span>}
           </h4>
           <p className="text-gray-300 text-sm font-mono">ID: {id?.slice(0, 8) || 'Unknown'}...</p>
         </div>
@@ -83,12 +89,13 @@ const LobbyCard: React.FC<LobbyCardProps> = ({
 interface MinigameEntryProps {
   playerName: string;
   onPlayerNameChange: (name: string) => void;
-  onCreateLobby: () => void;
-  availableLobbies: Array<{
+  onCreateLobby: (playerName: string, settings?: any) => void;  availableLobbies: Array<{
     id: string;
     player_count: number;
     max_players: number;
     status: string;
+    private_lobby?: boolean;
+    has_password?: boolean;
   }>;
   onJoinLobby: (lobbyId: string) => void;
 }
@@ -101,6 +108,17 @@ const MinigameEntry: React.FC<MinigameEntryProps> = ({
   onJoinLobby
 }) => {
   const safeAvailableLobbies = Array.isArray(availableLobbies) ? availableLobbies : [];
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const handleCreateLobby = (name: string, settings?: any) => {
+    if (isCreating) return;
+    
+    setIsCreating(true);
+    onCreateLobby(name, settings);
+    setShowCreateModal(false);
+    setTimeout(() => setIsCreating(false), 5000);
+  };
+
   return (
     <div className="space-y-8">
       <div className="text-center">
@@ -154,8 +172,8 @@ const MinigameEntry: React.FC<MinigameEntryProps> = ({
           </div>
           
           <button
-            onClick={onCreateLobby}
-            disabled={!playerName.trim()}
+            onClick={() => setShowCreateModal(true)}
+            disabled={!playerName.trim() || isCreating}
             className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 text-white py-4 px-6 rounded-xl font-bold text-lg transition-all transform hover:scale-105 disabled:scale-100 shadow-lg"
           >
             🚀 Create New Lobby
@@ -174,23 +192,23 @@ const MinigameEntry: React.FC<MinigameEntryProps> = ({
             <h3 className="text-xl font-bold text-white mb-2">No Active Lobbies</h3>
             <p className="text-gray-400 mb-6">
               Be the first to create a lobby and start the fun!
-            </p>
-            <button
-              onClick={onCreateLobby}
+            </p>            <button
+              onClick={() => onCreateLobby(playerName)}
               disabled={!playerName.trim()}
               className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 disabled:from-gray-600 disabled:to-gray-700 text-white px-8 py-3 rounded-lg font-semibold transition-all transform hover:scale-105 disabled:scale-100"
             >
               🎮 Create First Lobby
             </button>
           </div>
-        ) : (          <div className="grid gap-4 max-h-96 overflow-y-auto">
-            {safeAvailableLobbies.map((lobby) => (
+        ) : (          <div className="grid gap-4 max-h-96 overflow-y-auto">            {safeAvailableLobbies.map((lobby) => (
               <LobbyCard
                 key={lobby.id}
                 id={lobby.id}
                 playerCount={lobby.player_count}
                 maxPlayers={lobby.max_players}
                 status={lobby.status}
+                privateLobby={lobby.private_lobby}
+                hasPassword={lobby.has_password}
                 onJoin={() => onJoinLobby(lobby.id)}
                 disabled={
                   !playerName.trim() ||
@@ -238,6 +256,13 @@ const MinigameEntry: React.FC<MinigameEntryProps> = ({
           </div>
         </div>
       </div>
+      <CreateLobbyModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateLobby={handleCreateLobby}
+        playerName={playerName}
+        onPlayerNameChange={onPlayerNameChange}
+      />
     </div>
   );
 };

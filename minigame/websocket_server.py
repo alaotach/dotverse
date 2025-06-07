@@ -49,13 +49,11 @@ async def process_message(client_id, message):
     try:
         data = json.loads(message)
         logger.info(f"Received from {client_id}: {data}")
-        
-        action = data.get('action')
+        action = data.get('action') or data.get('type')
         if not action:
             return
         
         client = connected_clients[client_id]
-        
         if action == 'create_lobby':
             await create_lobby(client_id, data)
         elif action == 'join_lobby':
@@ -63,7 +61,9 @@ async def process_message(client_id, message):
         elif action == 'leave_lobby':
             await leave_lobby(client_id)
         elif action == 'get_lobby_list':
-            await send_lobby_list(client_id)        
+            await send_lobby_list(client_id)
+        elif action == 'set_ready':
+            await set_player_ready(client_id, data)
         elif action == 'player_ready':
             await set_player_ready(client_id, data)
         elif action == 'start_game':
@@ -72,6 +72,8 @@ async def process_message(client_id, message):
             await handle_theme_vote(client_id, data)
         elif action == 'submit_drawing':
             await handle_drawing_submission(client_id, data)
+        elif action == 'vote_drawing':
+            await handle_drawing_vote(client_id, data)
         elif action == 'vote_for_drawing':
             await handle_drawing_vote(client_id, data)
         elif action == 'kick_player':
@@ -80,51 +82,127 @@ async def process_message(client_id, message):
             await ban_player(client_id, data)
         elif action == 'transfer_host':
             await transfer_host(client_id, data)
+        elif action == 'update_lobby_settings':
+            await update_lobby_settings(client_id, data)
+        elif action == 'join_lobby_with_password':
+            await join_lobby_with_password(client_id, data)
         else:
             logger.warning(f"Unknown action: {action}")
+            await send_error(client_id, f"Unknown action: {action}")
             
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON from {client_id}: {e}")
+        await send_error(client_id, "Invalid JSON format")
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        try:
-            await connected_clients[client_id]['websocket'].send(json.dumps({
-                'type': 'error',
-                'data': {'message': f"Error processing request: {str(e)}"}
-            }))
-        except Exception:
-            pass
+        logger.error(f"Error processing message from {client_id}: {e}", exc_info=True)
+        await send_error(client_id, f"Failed to process message: {str(e)}")
 
 async def create_lobby(client_id, data):
-    player_name = data.get('data', {}).get('player_name', 'Anonymous')
-    
-    connected_clients[client_id]['name'] = player_name
-    
-    lobby_id = str(uuid.uuid4())
-    player_id = connected_clients[client_id]['player_id']
-    
-    lobby = Lobby(lobby_id, max_players=4, min_players=2)
-    player = Player(player_id, player_name)
-    lobby.add_player(player)
-    lobbies[lobby_id] = lobby
-    
-    connected_clients[client_id]['current_lobby'] = lobby_id
-    await connected_clients[client_id]['websocket'].send(json.dumps({
-        'type': 'lobby_joined',
-        'data': lobby.get_lobby_state()
-    }))
-    
-    await broadcast_lobby_list()
-    
-    logger.info(f"Lobby created: {lobby_id} by player {player_id}")
+    try:
+        logger.info(f"Creating lobby for client {client_id} with data: {data}")
+        
+        player_name = data.get('data', {}).get('player_name', 'Anonymous')
+        settings = data.get('data', {}).get('settings', {})
+        
+        if not player_name or player_name.strip() == '':
+            await send_error(client_id, 'Player name is required')
+            return
+            
+        connected_clients[client_id]['name'] = player_name
+        lobby_id = str(uuid.uuid4())
+        player_id = connected_clients[client_id]['player_id']
+        
+        max_players = settings.get('max_players', 4)
+        min_players = settings.get('min_players', 2)
+        
+        if max_players < 2 or max_players > 20:
+            await send_error(client_id, 'Max players must be between 2 and 20')
+            return
+            
+        if min_players < 2 or min_players > max_players:
+            await send_error(client_id, 'Min players must be between 2 and max players')
+            return
+        
+        lobby = Lobby(lobby_id, max_players=max_players, min_players=min_players)
+        
+        if settings:
+            lobby.settings.update_from_dict(settings)
+        
+        player = Player(player_id, player_name)
+        lobby.add_player(player)
+        lobby.set_host(player_id)        
+        lobbies[lobby_id] = lobby
+        connected_clients[client_id]['current_lobby'] = lobby_id
+        
+        logger.info(f"Lobby {lobby_id} created by {player_name} with settings: {settings}")
+        
+        await send_message(client_id, {
+            'type': 'lobby_joined',
+            'data': lobby.get_lobby_state()
+        })
+        
+        await broadcast_lobby_list()
+        
+    except Exception as e:
+        logger.error(f"Error creating lobby for client {client_id}: {e}", exc_info=True)
+        await send_error(client_id, f'Failed to create lobby: {str(e)}')
 
-async def join_lobby(client_id, data):
+async def update_lobby_settings(client_id, data):
+    client = connected_clients.get(client_id)
+    if not client or not client.get('current_lobby'):
+        await send_error(client_id, "You are not in a lobby")
+        return
+    lobby_id = client['current_lobby']
+    lobby = lobbies.get(lobby_id)
+    if not lobby:
+        await send_error(client_id, "Lobby not found")
+        return
+    player_id = client['player_id']
+    new_settings = data.get('data', {}).get('settings', {})
+    success, message = lobby.update_settings(player_id, new_settings)
+    if success:
+        await broadcast_lobby_update(lobby_id)
+        await send_message(client_id, {
+            'type': 'settings_updated',
+            'data': {
+                'message': message,
+                'settings': lobby.settings.to_dict()
+            }
+        })
+        logger.info(f"Lobby {lobby_id} settings updated by {player_id}: {new_settings}")
+    else:
+        await send_error(client_id, message)
+
+async def join_lobby_with_password(client_id, data):
+    lobby_id = data.get('data', {}).get('lobby_id')
+    player_name = data.get('data', {}).get('player_name', 'Anonymous')
+    password = data.get('data', {}).get('password', '')
+    
+    if not lobby_id:
+        await send_error(client_id, "Lobby ID required")
+        return
+    
+    lobby = lobbies.get(lobby_id)
+    if not lobby:
+        await send_error(client_id, "Lobby not found")
+        return
+    if lobby.settings.private_lobby:
+        if not lobby.settings.lobby_password:
+            await send_error(client_id, "Lobby password not set properly")
+            return
+        if lobby.settings.lobby_password != password:
+            await send_error(client_id, "Incorrect lobby password")
+            return
+    
+    await _internal_join_lobby(client_id, data)
+
+async def _internal_join_lobby(client_id, data):
+    """Internal function to join a lobby without password checks"""
     lobby_id = data.get('data', {}).get('lobby_id')
     player_name = data.get('data', {}).get('player_name', 'Anonymous')
     
     if not lobby_id or lobby_id not in lobbies:
-        await connected_clients[client_id]['websocket'].send(json.dumps({
-            'type': 'error',
-            'data': {'message': 'Lobby not found'}
-        }))
+        await send_error(client_id, 'Lobby not found')
         return
         
     lobby = lobbies[lobby_id]
@@ -132,27 +210,38 @@ async def join_lobby(client_id, data):
     
     can_join, reason = lobby.can_player_join(player_id)
     if not can_join:
-        await connected_clients[client_id]['websocket'].send(json.dumps({
-            'type': 'error',
-            'data': {'message': reason}
-        }))
+        await send_error(client_id, reason)
         return
+        
     connected_clients[client_id]['name'] = player_name
     connected_clients[client_id]['current_lobby'] = lobby_id
     player = Player(player_id, player_name)
     lobby.add_player(player)
     
-    await connected_clients[client_id]['websocket'].send(json.dumps({
+    await send_message(client_id, {
         'type': 'lobby_joined',
         'data': lobby.get_lobby_state()
-    }))
+    })
+    
     await broadcast_lobby_update(lobby_id)
     await broadcast_lobby_list()
     
-    logger.info(f"Player {player_id} joined lobby {lobby_id}")
-    await broadcast_lobby_list()
+    logger.info(f"Player {player_id} ({player_name}) joined lobby {lobby_id}")
+
+async def join_lobby(client_id, data):
+    lobby_id = data.get('data', {}).get('lobby_id')
     
-    logger.info(f"Player {player_id} joined lobby {lobby_id}")
+    if not lobby_id or lobby_id not in lobbies:
+        await send_error(client_id, 'Lobby not found')
+        return
+        
+    lobby = lobbies[lobby_id]
+    
+    if lobby.settings.private_lobby and lobby.settings.lobby_password:
+        await send_error(client_id, 'This lobby requires a password. Please use join with password option.')
+        return
+    
+    await _internal_join_lobby(client_id, data)
 
 async def kick_player(client_id, data):
     target_player_id = data.get('data', {}).get('target_player_id')
@@ -324,7 +413,9 @@ async def send_lobby_list(client_id):
                 'player_count': len(lobby.players),
                 'max_players': lobby.max_players,
                 'status': lobby.game_status.value,
-                'created_at': datetime.now().timestamp()
+                'created_at': datetime.now().timestamp(),
+                'private_lobby': lobby.settings.private_lobby,
+                'has_password': lobby.settings.lobby_password is not None
             }
             for lobby in lobbies.values()
             if lobby.game_status == GameStatus.WAITING_FOR_PLAYERS
@@ -738,6 +829,11 @@ async def start_game(client_id, data):
     await broadcast_lobby_update(lobby_id)
 
 async def send_message(client_id, message):
+    """Send a message to a specific client."""
+    if client_id not in connected_clients:
+        logger.warning(f"Tried to send message to non-existent client {client_id}")
+        return
+    
     try:
         await connected_clients[client_id]['websocket'].send(json.dumps(message))
     except Exception as e:

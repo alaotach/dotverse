@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FiMoreVertical, FiUserX, FiShield, FiStar } from 'react-icons/fi';
+import { FiMoreVertical, FiUserX, FiShield, FiStar, FiSettings } from 'react-icons/fi';
+import LobbySettingsModal from './LobbySettingsModal';
 
 interface LobbyInterfaceProps {
   lobbyId: string;
@@ -9,13 +10,15 @@ interface LobbyInterfaceProps {
   hostId: string;
   isReady: boolean;
   maxPlayers: number;
+  settings?: any;
   onReadyToggle: () => void;
   onStartGame: () => void;
   onLeaveLobby: () => void;
   onKickPlayer?: (playerId: string) => void;
   onBanPlayer?: (playerId: string) => void;
   onTransferHost?: (playerId: string) => void;
-}
+  onUpdateSettings?: (settings: any) => void;
+};
 
 const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   lobbyId,
@@ -30,7 +33,9 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   onLeaveLobby,
   onKickPlayer,
   onBanPlayer,
-  onTransferHost
+  onTransferHost,
+  settings,
+  onUpdateSettings
 }) => {
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set());
   const safeePlayers = players || {};
@@ -38,6 +43,25 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
   const readyCount = Object.values(safeePlayers).filter(p => p.is_ready).length;
   const allReady = playerCount > 1 && readyCount === playerCount;
   const isHost = currentPlayerId === hostId;
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const isInGame = Boolean(gameStatus && gameStatus !== 'waiting' && gameStatus !== 'waiting_for_players');
+
+  const formatTime = (seconds: number) => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    } else if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -92,17 +116,53 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
     setOpenMenus(new Set());
   };
 
+  const handleSettingsUpdate = (newSettings: any) => {
+    if (onUpdateSettings) {
+      onUpdateSettings(newSettings);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-xl text-center">
-        <h2 className="text-2xl font-bold text-white mb-2">🎮 Drawing Lobby</h2>
+        <div className="flex items-center justify-between mb-2">
+          <div></div>
+          <h2 className="text-2xl font-bold text-white">🎮 Drawing Lobby</h2>
+          {isHost && (
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              title="Lobby Settings"
+            >
+              <FiSettings className="text-white" size={20} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center justify-center gap-2 text-gray-200">
           <span className="font-mono">ID: {lobbyId.slice(0, 8)}</span>
           <span>•</span>
           <span className={`font-semibold ${getStatusColor(gameStatus || 'waiting')}`}>
             {getStatusEmoji(gameStatus || 'waiting')} {(gameStatus || 'waiting').replace('_', ' ').toUpperCase()}
           </span>
-        </div>
+          {settings?.private_lobby && (
+            <>
+              <span>•</span>
+              <span className="text-yellow-200 flex items-center gap-1">
+                🔒 Private
+              </span>
+            </>
+          )}
+        </div>        {settings && (
+          <div className="mt-3 text-sm text-gray-200">
+            <div className="flex justify-center gap-4">
+              <span>⏱️ Draw: {formatTime(settings.drawing_time)}</span>
+              <span>🗳️ Vote: {settings.voting_time}s</span>
+              {settings.custom_themes?.length > 0 && (
+                <span>🎨 Custom themes: {settings.custom_themes.length}</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-6 rounded-xl border border-gray-600">
@@ -328,6 +388,16 @@ const LobbyInterface: React.FC<LobbyInterfaceProps> = ({
           🚪 Leave Lobby
         </button>
       </div>
+    {settings && (
+        <LobbySettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          currentSettings={settings}
+          onSave={handleSettingsUpdate}
+          isHost={isHost}
+          isInGame={isInGame}
+        />
+      )}
     </div>
   );
 };
