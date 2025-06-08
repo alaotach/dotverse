@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../src/context/AuthContext';
 import { lazy, Suspense } from 'react';
 import { ChevronDown } from 'lucide-react';
-
 const HeroSectionBG = lazy(() => import('./layout/HeroSectionBG'));
 
 export default function Home() {
   const { currentUser, userProfile, logout } = useAuth();
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoaded(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -20,7 +28,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
       <div className="absolute inset-0 z-0" style={{ pointerEvents: 'auto' }}>
-        <Suspense fallback={<div className="w-full h-full bg-gradient-to-b from-purple-900 via-blue-900 to-black" />}>
+        <Suspense fallback={<div className="w-full h-full bg-gradient-to-b from-[#000011]-900 via-[#000011]-900 to-black" />}>
           <HeroSectionBG />
         </Suspense>
       </div>
@@ -28,21 +36,29 @@ export default function Home() {
       <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/10 via-transparent to-black/20 pointer-events-none" />
 
       <div className="relative z-20 min-h-screen max-md:hidden md:flex pointer-events-none">
-        <div className="w-1/2 flex flex-col justify-center items-start pl-8 lg:pl-16 xl:pl-24 pointer-events-auto">
+        <div className="w-1/2 flex flex-col justify-center items-start pl-8 lg:pl-16 xl:pl-24">
           <div className="max-w-xl">
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight">
+            <h1 className={`text-4xl md:text-6xl lg:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight transition-all duration-1000 ${
+              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}>
               DotVerse
             </h1>
-            <p className="text-lg md:text-xl lg:text-2xl text-gray-200 mb-4 font-light">
+            <p className={`text-lg md:text-xl lg:text-2xl text-gray-200 mb-4 font-light transition-all duration-1000 delay-200 ${
+              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}>
               Connect your dots across the cosmos
             </p>
-            <p className="text-base md:text-lg text-gray-400 mb-8 leading-relaxed">
+            <p className={`text-base md:text-lg text-gray-400 mb-8 leading-relaxed transition-all duration-1000 delay-300 ${
+              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}>
               DotVerse is a collaborative pixel canvas where you can claim your own land, express your creativity, and connect with others in a shared universe.
             </p>
             <div className="flex flex-col gap-4 mb-8">
               <Link 
                 to="/canvas" 
-                className="group relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-1 rounded-2xl shadow-2xl hover:shadow-blue-500/25 transition-all duration-300 transform hover:scale-105 w-fit"
+                className={`pointer-events-auto group relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-1 rounded-2xl shadow-2xl hover:shadow-blue-500/25 transition-all duration-1000 delay-400 transform hover:scale-105 w-fit ${
+                  isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
+                }`}
               >
                 <div className="bg-black rounded-xl px-6 py-3 group-hover:bg-transparent transition-all duration-300">
                   <div className="flex items-center justify-center gap-3">
@@ -59,7 +75,9 @@ export default function Home() {
 
               <Link 
                 to="/minigame" 
-                className="group relative overflow-hidden bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 p-1 rounded-2xl shadow-2xl hover:shadow-orange-500/25 transition-all duration-300 transform hover:scale-105 w-fit"
+                className={`pointer-events-auto group relative overflow-hidden bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 p-1 rounded-2xl shadow-2xl hover:shadow-orange-500/25 transition-all duration-1000 delay-500 transform hover:scale-105 w-fit ${
+                  isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
+                }`}
               >
                 <div className="bg-black rounded-xl px-6 py-3 group-hover:bg-transparent transition-all duration-300">
                   <div className="flex items-center justify-center gap-3">
@@ -77,7 +95,9 @@ export default function Home() {
               {!currentUser && (
                 <Link 
                   to="/register" 
-                  className="group relative overflow-hidden bg-gradient-to-r from-green-500 to-emerald-500 p-1 rounded-2xl shadow-2xl hover:shadow-green-500/25 transition-all duration-300 transform hover:scale-105 w-fit"
+                  className={`pointer-events-auto group relative overflow-hidden bg-gradient-to-r from-green-500 to-emerald-500 p-1 rounded-2xl shadow-2xl hover:shadow-green-500/25 transition-all duration-1000 delay-600 transform hover:scale-105 w-fit ${
+                    isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
+                  }`}
                 >
                   <div className="bg-black rounded-xl px-6 py-3 group-hover:bg-transparent transition-all duration-300">
                     <div className="flex items-center justify-center gap-3">
@@ -98,7 +118,9 @@ export default function Home() {
 
         <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-auto">
           {currentUser && userProfile ? (
-            <div className="max-w-md w-full">
+            <div className={`max-w-md w-full transition-all duration-1000 delay-700 ${
+              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
+            }`}>
               <div className="group relative">
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-300"></div>
                 
@@ -159,7 +181,9 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="max-w-md w-full">
+            <div className={`max-w-md w-full transition-all duration-1000 delay-700 ${
+              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
+            }`}>
               <div className="bg-black/60 backdrop-blur-xl border border-gray-800 rounded-2xl p-6 text-center">
                 <h3 className="text-2xl font-bold text-white mb-4">
                   Ready to explore?
@@ -193,13 +217,19 @@ export default function Home() {
         <div className="min-h-screen flex flex-col items-center px-6">
          <div className="flex-1 flex flex-col justify-start items-center pointer-events-none">
             <div className="text-center">
-              <h1 className="text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight leading-tight">
+              <h1 className={`text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight leading-tight transition-all duration-1000 ${
+                isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+              }`}>
                 DotVerse
               </h1>
-              <p className="text-xl max-md:text-lg sm:text-2xl text-gray-200 font-light px-3">
+              <p className={`text-xl max-md:text-lg sm:text-2xl text-gray-200 font-light px-3 transition-all duration-1000 ${
+                isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+              }`}>
                 Connect Your Dots
-                </p>
-              <p className="text-3xl max-md:text-2xl sm:text-2xl text-gray-200 font-light mb-8 px-10">
+              </p>
+              <p className={`text-3xl max-md:text-2xl sm:text-2xl text-gray-200 font-light mb-8 px-10 transition-all duration-1000 ${
+                isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+              }`}>
                 Across The Universe
               </p>
               </div>

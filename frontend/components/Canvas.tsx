@@ -22,6 +22,7 @@ import { DailyCheckInModal } from './dailylogin/DailyLoginModal';
 import LandAnimationModal from "./lands/LandAnimationModal";
 import type { LandFramePixelData, LandFrame } from "../src/services/landService";
 import LandSelectionModal from './lands/LandSelectionModal';
+import CanvasLoading from './layout/CanvasLoading'
 
 interface AnimatedLandState {
   landId: string;
@@ -564,6 +565,16 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   } | null>(null);
 
   const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
+  const [showCanvasAnimation, setShowCanvasAnimation] = useState(true);
+  const [canvasAnimationComplete, setCanvasAnimationComplete] = useState(false);
+
+  const handleCanvasAnimationComplete = () => {
+    setCanvasAnimationComplete(true);
+    setTimeout(() => {
+      setShowCanvasAnimation(false);
+    }, 500);
+  };
+
 
   useEffect(() => {
     const handleClickOutside = (_event: MouseEvent) => {
@@ -1084,7 +1095,8 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       
       updateGridFromVisibleChunks();
       
-      setLastSyncTime(Date.now());      setInitialDataLoaded(true);
+      setLastSyncTime(Date.now());      
+      setInitialDataLoaded(true);
       
     } catch (error) {
       console.error("[Canvas] Error during sync:", error);
@@ -2996,10 +3008,19 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   }, []);
 
 
-  if (!initialDataLoaded) {
+  if (!initialDataLoaded || showCanvasAnimation) {
     console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
     
     return (
+      <div className="relative w-screen h-screen overflow-hidden">
+        {/* Canvas Loading Animation */}
+        {showCanvasAnimation && (
+          <CanvasLoading 
+            onAnimationComplete={handleCanvasAnimationComplete}
+            className="canvas-loading-animation"
+          />
+        )}
+      {canvasAnimationComplete && !initialDataLoaded && (
       <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
         <div className="flex flex-col items-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
@@ -3033,6 +3054,8 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             </button>
           </div>
         </div>
+      </div>
+      )}
       </div>
     );
   }
