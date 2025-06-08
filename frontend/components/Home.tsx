@@ -96,17 +96,6 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="w-1/3 flex items-center justify-center pointer-events-none">
-          <div className="text-center opacity-20 hover:opacity-40 transition-opacity duration-500">
-            <div className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white/20 to-white/10 mb-4">
-              ∞
-            </div>
-            <p className="text-white/20 text-sm font-light">
-              Drag to explore
-            </p>
-          </div>
-        </div>
-
         <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-auto">
           {currentUser && userProfile ? (
             <div className="max-w-md w-full">
@@ -198,32 +187,86 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="dada relative z-20 flex flex-col pointer-events-auto">
-        <div className="min-h-screen flex flex-col justify-center items-center px-6 pointer-events-auto">
-          <div className="text-center">
-            <h1 className="text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight leading-tight">
-              DotVerse
-            </h1>
-            <p className="text-xl sm:text-2xl text-gray-200 font-light mb-8">
-              Connect your dots across the cosmos
-            </p>
-            
-            <div className="text-center opacity-30 mb-12">
-              <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white/40 to-white/20 mb-3">
-                ∞
-              </div>
-              <p className="text-white/40 text-sm font-light">
-                Touch & drag to explore the universe
-              </p>
-            </div>
-          </div>
+      {/* mobile*/}
 
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex flex-col items-center animate-bounce">
-            <p className="text-white/60 text-sm mb-2 font-light">Scroll to explore</p>
-            <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
-              <div className="w-1 h-3 bg-white/60 rounded-full mt-2 animate-pulse"></div>
+      <div className="dada relative z-20 flex flex-col pointer-events-none">
+        <div className="min-h-screen flex flex-col items-center px-6">
+         <div className="flex-1 flex flex-col justify-start items-center pointer-events-none">
+            <div className="text-center">
+              <h1 className="text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-6 tracking-tight leading-tight">
+                DotVerse
+              </h1>
+              <p className="text-xl max-md:text-lg sm:text-2xl text-gray-200 font-light px-3">
+                Connect Your Dots
+                </p>
+              <p className="text-3xl max-md:text-2xl sm:text-2xl text-gray-200 font-light mb-8 px-10">
+                Across The Universe
+              </p>
+              </div>
+              </div>
+
+          <div className="pointer-events-auto">
+            <div className="flex justify-center items-center gap-3 mb-8 px-4">
+              <div className="flex justify-center gap-3"></div>
+        {currentUser && (
+              <Link 
+                to="/canvas" 
+                className="w-29 sm:w-32 group relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-[2px] rounded-xl shadow-2xl hover:shadow-blue-500/25 transition-all duration-500 transform active:scale-95"
+              >
+                <div className="bg-black/90 backdrop-blur-xl rounded-xl px-14 py-3 group-hover:bg-transparent transition-all duration-500">
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-xl">🎨</span>
+                    <span className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 group-hover:from-white group-hover:to-white transition-all duration-500">
+                      Canvas
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            )};
+            {currentUser && (
+              <Link 
+                to="/minigame" 
+                className="w-29 sm:w-32 group relative overflow-hidden bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 p-[2px] rounded-xl shadow-2xl hover:shadow-orange-500/25 transition-all duration-500 transform active:scale-95"
+              >
+                <div className="bg-black/90 backdrop-blur-xl rounded-xl px-14 py-3 group-hover:bg-transparent transition-all duration-500">
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-xl">🎮</span>
+                    <span className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-400 group-hover:from-white group-hover:to-white transition-all duration-500">
+                      Games
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            )};
             </div>
-            <ChevronDown className="w-5 h-5 text-white/40 mt-2" />
+            <div className="flex gap-10 mb-8">
+
+              {!currentUser && (
+                <Link 
+                  to="/register" 
+                  className="group relative overflow-hidden bg-gradient-to-r from-green-500 to-emerald-500 p-1 rounded-2xl shadow-2xl hover:shadow-green-500/25 transition-all duration-300 transform hover:scale-105 w-fit"
+                >
+                  <div className="bg-black rounded-xl px-6 py-3 group-hover:bg-transparent transition-all duration-300">
+                    <div className="flex items-center justify-center gap-3">
+                      <span className="text-2xl">🚀</span>
+                      <span className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400 group-hover:from-white group-hover:to-white transition-all duration-300">
+                        Join DotVerse
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-400 group-hover:text-gray-200 mt-1 transition-colors duration-300">
+                      Start your cosmic journey
+                    </p>
+                  </div>
+                </Link>
+              )}
+              </div>
+          <div className="flex flex-col items-center animate-bounce">
+              <p className="text-white/60 text-sm mb-2 font-light">Scroll to explore</p>
+              <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
+                <div className="w-1 h-3 bg-white/60 rounded-full mt-2 animate-pulse"></div>
+              </div>
+              <ChevronDown className="w-5 h-5 text-white/40 mt-2" />
+            </div>
           </div>
         </div>
 

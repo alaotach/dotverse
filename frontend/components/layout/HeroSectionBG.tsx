@@ -610,7 +610,7 @@ const HeroSectionBG = () => {
         <DetailedPlanets />
         
         <OrbitControls 
-          enableZoom={false} 
+          enableZoom={true} 
           autoRotate 
           autoRotateSpeed={0.15}
           minDistance={40}
