@@ -169,7 +169,16 @@ const Navbar: React.FC = () => {
           </div>
           
           {/* Mobile menu */}
-          <div className="lg:hidden">
+          <div className="lg:hidden flex items-center space-x-1 md:space-x-1.5 lg:space-x-2 xl:space-x-3 pl-1 md:pl-2 lg:pl-3 xl:pl-4">
+            { currentUser && (
+              <div className="hover:scale-110 transition-transform duration-200"> <NotificationDropdown /> </div>
+            )}
+              { currentUser && (
+                <div className="hover:scale-110 transition-transform duration-200"> <ChatButton /> </div>
+              )}
+                { currentUser && (
+            <div> <DailyCheckInButton /> </div>
+                )}
             <button
               onClick={toggleMobileMenu}
               className="group relative text-white hover:text-purple-300 p-2 sm:p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20" /* Adjusted padding for mobile */
@@ -280,11 +289,6 @@ const Navbar: React.FC = () => {
                     </div>
                     <div onClick={closeMobileMenu} className="flex justify-center">
                       <div className="scale-70">
-                        <MinigameButton />
-                      </div>
-                    </div>
-                    <div onClick={closeMobileMenu} className="flex justify-center">
-                      <div className="scale-70">
                         <NotificationDropdown />
                       </div>
                     </div>
@@ -293,8 +297,8 @@ const Navbar: React.FC = () => {
                         <ChatButton />
                       </div>
                     </div>
-                    <div onClick={closeMobileMenu} className="flex justify-center">
-                      <div className="scale-70">
+                    <div className="flex justify-center">
+                      <div>
                         <DailyCheckInButton />
                       </div>
                     </div>
