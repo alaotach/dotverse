@@ -169,7 +169,7 @@ const Navbar: React.FC = () => {
           </div>
           
           {/* Mobile menu */}
-          <div className="lg:hidden flex items-center space-x-1 md:space-x-1.5 lg:space-x-2 xl:space-x-3 pl-1 md:pl-2 lg:pl-3 xl:pl-4">
+          <div className="dada flex items-center space-x-1 md:space-x-1.5 lg:space-x-2 xl:space-x-3 pl-1 md:pl-2 lg:pl-3 xl:pl-4">
             { currentUser && (
               <div className="hover:scale-110 transition-transform duration-200"> <NotificationDropdown /> </div>
             )}
