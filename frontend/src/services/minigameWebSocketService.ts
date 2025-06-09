@@ -80,7 +80,7 @@ class MinigameWebSocketService {
   private eventHandlers: Map<string, Set<MinigameEventHandler>> = new Map();
   private readonly wsUrls = [
     'ws://localhost:8765',
-    'wss://dotverse-minigame.krypkey.tech'
+    'wss://minigame.krypkey.tech'
   ];
   private currentUrlIndex = 0;
   private connectionTimeout: NodeJS.Timeout | null = null;
