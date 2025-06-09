@@ -13,7 +13,7 @@ const MarketplaceButton: React.FC = () => {
         title="Open Marketplace"
       >
         <FiShoppingCart size={16} />
-        <span>Marketplace</span>
+        <span className='max-2xl:hidden'>Marketplace</span>
       </button>
 
       <Marketplace 

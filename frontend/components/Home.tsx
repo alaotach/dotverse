@@ -116,9 +116,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-auto">
+        <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-none">
           {currentUser && userProfile ? (
-            <div className={`max-w-md w-full transition-all duration-1000 delay-700 ${
+            <div className={`hidden max-w-md w-full transition-all duration-1000 delay-700 ${
               isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
             }`}>
               <div className="group relative">

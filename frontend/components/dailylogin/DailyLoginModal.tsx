@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { dailyCheckInService, type DailyCheckInReward } from '../../src/services/dailyLoginRewardService';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { FiX, FiGift, FiCalendar, FiTrendingUp } from 'react-icons/fi';
-import ModalWrapper from '../common/ModalWrapper';
 
 interface DailyCheckInModalProps {
   isOpen: boolean;
@@ -22,12 +21,14 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
   useEffect(() => {
     if (isOpen) {
       loadCheckInData();
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
     }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
   }, [isOpen]);
-
-
-
-
 
   const loadCheckInData = () => {
     setRewards(dailyCheckInService.getRewards());
@@ -56,24 +57,47 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
 
     setIsChecking(false);
   };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose}>
-      <div className="bg-gray-900 rounded-lg border border-gray-700 max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+      onClick={handleBackdropClick}
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}
+    >
+      <div 
+        className="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl shadow-purple-500/20 relative transform transition-all duration-300 scale-100"
+        onClick={(e) => e.stopPropagation()}
+        style={{ 
+          margin: 'auto',
+          maxHeight: '85vh',
+          overflowY: 'auto'
+        }}
+      >
+        <div className="sticky top-0 bg-gray-900 flex items-center justify-between p-4 border-b border-gray-700 z-10">
           <div className="flex items-center gap-2">
             <FiCalendar className="text-yellow-400" />
             <h2 className="text-xl font-bold text-white">Daily Check-In</h2>
           </div>
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-            className="text-gray-400 hover:text-white transition-colors p-2 touch-action-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-            style={{ touchAction: 'manipulation' }}
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800 rounded-lg"
           >
             <FiX size={24} />
           </button>
@@ -95,7 +119,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
         </div>
 
         {showSuccess && (
-          <div className="p-4 bg-green-900 border-l-4 border-green-400 m-4 rounded">
+          <div className="p-4 bg-green-900/50 border-l-4 border-green-400 m-4 rounded">
             <div className="flex items-center">
               <FiGift className="text-green-400 mr-2" />
               <div>
@@ -113,7 +137,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
               <div
                 key={reward.day}
                 className={`
-                  relative p-3 rounded-lg text-center border-2 transition-all duration-200
+                  relative p-2 sm:p-3 rounded-lg text-center border-2 transition-all duration-200
                   ${reward.claimed 
                     ? 'bg-green-900 border-green-500 text-green-100' 
                     : currentStreak + 1 === reward.day && canCheckIn
@@ -127,8 +151,8 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
                 <div className="text-xs">coins</div>
                 
                 {reward.claimed && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <FiGift className="text-green-400 text-xl" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-green-900/50 rounded-lg">
+                    <FiGift className="text-green-400 text-lg" />
                   </div>
                 )}
               </div>
@@ -136,26 +160,18 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-700">
+        <div className="sticky bottom-0 bg-gray-900 p-4 border-t border-gray-700">
           {canCheckIn ? (
             <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleCheckIn();
-              }}
+              onClick={handleCheckIn}
               disabled={isChecking}
               className={`
-                w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[48px] ui-element
+                w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[48px]
                 ${isChecking
                   ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                  : 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl'
+                  : 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
                 }
               `}
-              style={{ 
-                touchAction: 'manipulation',
-                WebkitTapHighlightColor: 'transparent'
-              }}
             >
               {isChecking ? (
                 <div className="flex items-center justify-center gap-2">
@@ -170,13 +186,13 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
               )}
             </button>
           ) : (
-            <div className="text-center">
+            <div className="text-center py-2">
               <div className="text-gray-400 mb-2">Already checked in today!</div>
               <div className="text-sm text-gray-500">Come back tomorrow for your next reward</div>
             </div>
           )}
         </div>
       </div>
-    </ModalWrapper>
+    </div>
   );
 };
