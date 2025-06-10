@@ -477,7 +477,7 @@ body.modal-open {
   -webkit-tap-highlight-color: transparent !important;
 }
 
-@media screen and (min-width: 768px) {
+@media screen and (min-width: 1024px) {
   div.dada {
     display: none;
   }

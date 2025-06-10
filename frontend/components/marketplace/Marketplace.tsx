@@ -4,7 +4,6 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useEconomy } from '../../src/context/EconomyContext';
 import { marketplaceService } from '../../src/services/marketplaceService';
 import type { MarketplaceItem, UserInventory } from '../../src/services/marketplaceService';
-import ModalWrapper from '../common/ModalWrapper';
 
 interface MarketplaceProps {
   isOpen: boolean;
@@ -43,12 +42,22 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
   useEffect(() => {
     if (isOpen && currentUser) {
       loadMarketplaceData();
     }
   }, [isOpen, currentUser]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   const loadMarketplaceData = async () => {
     if (!currentUser) return;
@@ -116,9 +125,7 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
   const isItemOwned = (itemId: string): boolean => {
     if (!inventory) return false;
     
-    // Check if user owns the item
     if (inventory.purchasedItems.includes(itemId)) {
-      // If it's a temporary item, check if it's still valid
       if (inventory.temporaryItems[itemId]) {
         return Date.now() < inventory.temporaryItems[itemId];
       }
@@ -159,14 +166,37 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
     { id: 'stickers', name: 'Stickers', icon: CATEGORY_ICONS.stickers },
     { id: 'tools', name: 'Tools', icon: CATEGORY_ICONS.tools },
     { id: 'premium', name: 'Premium', icon: CATEGORY_ICONS.premium }
-  ];
+  ];  if (!isOpen) return null;
 
-  if (!isOpen) return null;
-  return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose}>
-      <div className="bg-gray-800 rounded-lg shadow-xl border border-gray-700 w-full max-w-6xl h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-gray-700">
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+      onClick={handleBackdropClick}
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}
+    >      <div 
+        className="bg-gray-800 rounded-lg border border-gray-700 w-full max-w-6xl max-h-[85vh] flex flex-col overflow-hidden transform transition-all duration-300 scale-100 shadow-2xl shadow-purple-500/20"
+        onClick={(e) => e.stopPropagation()}
+        style={{ 
+          margin: 'auto',
+          maxHeight: '85vh',
+          overflowY: 'hidden'
+        }}
+      >{/* Header */}
+        <div className="flex justify-between items-center p-6 border-b border-gray-700 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <FiShoppingCart className="text-blue-400" size={24} />
             <h2 className="text-2xl font-bold text-white">Marketplace</h2>
@@ -179,18 +209,15 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
                   {userEconomy.balance?.toLocaleString() || 0} 🪙
                 </span>
               </div>
-            )}
-            <button
+            )}            <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white"
+              className="text-gray-400 hover:text-white transition-colors duration-200"
             >
               <FiX size={24} />
             </button>
           </div>
-        </div>
-
-        {/* Categories */}
-        <div className="p-4 border-b border-gray-700">
+        </div>        {/* Categories */}
+        <div className="p-4 border-b border-gray-700 flex-shrink-0">
           <div className="flex space-x-2 overflow-x-auto">
             {categories.map((category) => (
               <button
@@ -207,21 +234,17 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Message */}
+        </div>        {/* Message */}
         {message && (
-          <div className={`mx-6 mt-4 p-3 rounded-lg ${
+          <div className={`mx-6 mt-4 p-3 rounded-lg flex-shrink-0 ${
             message.type === 'success' 
               ? 'bg-green-900 border border-green-600 text-green-200'
               : 'bg-red-900 border border-red-600 text-red-200'
           }`}>
             {message.text}
           </div>
-        )}
-
-        {/* Items Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        )}        {/* Items Grid */}
+        <div className="flex-1 overflow-y-auto p-6 min-h-0">
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -235,12 +258,11 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
                 const isOwned = isItemOwned(item.id);
                 const expirationDate = getItemExpirationTime(item.id);
                 
-                return (
-                  <div
+                return (                  <div
                     key={item.id}
-                    className={`border-2 rounded-lg p-4 transition-all ${
+                    className={`border-2 rounded-lg p-4 transition-all duration-200 ${
                       RARITY_COLORS[item.rarity]
-                    } ${isOwned ? 'opacity-75' : 'hover:scale-105'}`}
+                    } ${isOwned ? 'opacity-75' : 'hover:shadow-lg cursor-pointer'}`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-2">
@@ -307,8 +329,7 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
                             !userEconomy || 
                             (userEconomy.balance || 0) < item.price || 
                             purchaseLoading === item.id
-                          }
-                          className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
+                          }                          className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2 ${
                             !userEconomy || (userEconomy.balance || 0) < item.price
                               ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                               : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -339,10 +360,8 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-700 bg-gray-900 rounded-b-lg">
+        </div>        {/* Footer */}
+        <div className="p-4 border-t border-gray-700 bg-gray-900 rounded-b-lg flex-shrink-0">
           <div className="flex items-center justify-between text-sm text-gray-400">
             <div className="flex items-center space-x-4">
               <span>Total Items: {items.length}</span>
@@ -359,10 +378,9 @@ const Marketplace: React.FC<MarketplaceProps> = ({ isOpen, onClose }) => {
                 Complete daily tasks
               </button>
             </div>
-          </div>
-        </div>
+          </div>        </div>
       </div>
-    </ModalWrapper>
+    </div>
   );
 };
 

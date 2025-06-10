@@ -104,6 +104,7 @@ const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 10;
 const ZOOM_SENSITIVITY = 0.1;
 const CHUNK_SIZE = 25;
+const DEFAULT_ZOOM = 4;
 
 const debounce = (func: Function, delay: number) => {
   let timeoutId: ReturnType<typeof setTimeout>;
@@ -203,8 +204,44 @@ const toggleBrowserFullScreen = () => {
 };
 
 const Canvas = () => {
+  const getInitialViewportOffset = (): { x: number; y: number } => {
+    if (typeof window !== 'undefined') {
+      const savedX = localStorage.getItem(LOCAL_STORAGE_VIEWPORT_X_KEY);
+      const savedY = localStorage.getItem(LOCAL_STORAGE_VIEWPORT_Y_KEY);
+      if (savedX !== null && savedY !== null) {
+        try {
+          const x = parseFloat(savedX);
+          const y = parseFloat(savedY);
+          if (!isNaN(x) && !isNaN(y)) {
+            return { x, y };
+          }
+        } catch (e) {
+          console.error("Error parsing viewport data from localStorage:", e);
+        }
+      }
+    }
+    return { x: 0, y: 0 };
+  };
+
+  const getInitialZoomLevel = (): number => {
+    if (typeof window !== 'undefined') {
+      const savedZoom = localStorage.getItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY);
+      if (savedZoom !== null) {
+        try {
+          const z = parseFloat(savedZoom);
+          if (!isNaN(z)) {
+            return z;
+          }
+        } catch (e) {
+          console.error("Error parsing zoom data from localStorage:", e);
+        }
+      }
+    }
+    return DEFAULT_ZOOM;
+  };
+
   const [grid, setGrid] = useState<Map<string, string>>(new Map());
-  const [viewportOffset, setViewportOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [viewportOffset, setViewportOffset] = useState<{ x: number; y: number }>(getInitialViewportOffset);
   const [lastPlaced, setLastPlaced] = useState<number>(0);
   const [selectedColor, setSelectedColor] = useState<string>("#000000");
   const [isMouseDown, setIsMouseDown] = useState<boolean>(false);
@@ -214,7 +251,7 @@ const Canvas = () => {
   const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
   const [isBrowserFullScreen, setIsBrowserFullScreen] = useState<boolean>(false);
   const [isEraserActive, setIsEraserActive] = useState<boolean>(false); 
-  const [eraserSize, setEraserSize] = useState<number>(1);   const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [eraserSize, setEraserSize] = useState<number>(1);   const [zoomLevel, setZoomLevel] = useState<number>(getInitialZoomLevel);
   const [showAuthWarning, setShowAuthWarning] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);  const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
   const [allLands, setAllLands] = useState<UserLandInfo[]>([]);
@@ -238,10 +275,19 @@ const Canvas = () => {
   });
   const [showDailyCheckIn, setShowDailyCheckIn] = useState(false);
   const [showAnimationModalForLand, setShowAnimationModalForLand] = useState<UserLandInfo | null>(null);
-  const [animatedLands, setAnimatedLands] = useState<Map<string, AnimatedLandState>>(new Map());
-  const [showLandSelectionModal, setShowLandSelectionModal] = useState(false);
+  const [animatedLands, setAnimatedLands] = useState<Map<string, AnimatedLandState>>(new Map());  const [showLandSelectionModal, setShowLandSelectionModal] = useState(false);
+  const [isViewportReady, setIsViewportReady] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(LOCAL_STORAGE_VIEWPORT_X_KEY) !== null && 
+             localStorage.getItem(LOCAL_STORAGE_VIEWPORT_Y_KEY) !== null && 
+             localStorage.getItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY) !== null;
+    }
+    return false;
+  });
   const animatedPixelCache = useRef<Map<string, Map<string, string>>>(new Map());
   const lastAnimationUpdate = useRef<Map<string, number>>(new Map());
+  const [syncAttempted, setSyncAttempted] = useState<boolean>(false);
+  const [lastSuccessfulSync, setLastSuccessfulSync] = useState<number>(0);
 
   const updateAnimatedLandFrames = useCallback(() => {
     const now = Date.now();
@@ -421,24 +467,35 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     return pixelMap;
   }, []);
 
-  
-  const allStickersMap = useMemo(() => {
+    const allStickersMap = useMemo(() => {
     const map = new Map<string, Sticker>();
+    console.log(`[Canvas] Building stickers map from ${stickerPacks.length} packs`);
     stickerPacks.forEach(pack => {
+      console.log(`[Canvas] Processing pack ${pack.id} with ${pack.stickers.length} stickers`);
       pack.stickers.forEach(sticker => {
         map.set(sticker.id, sticker);
+        console.log(`[Canvas] Added sticker ${sticker.id} to map`);
       });
     });
+    console.log(`[Canvas] Final stickers map has ${map.size} stickers:`, Array.from(map.keys()));
     return map;
-  }, [stickerPacks]);
-  const findStickerById = useCallback((stickerId: string): Sticker | null => {
+  }, [stickerPacks]);const findStickerById = useCallback((stickerId: string): Sticker | null => {
+    if (stickerPacks.length === 0) {
+      console.log(`[Canvas] Stickers not loaded yet, skipping sticker ${stickerId}`);
+      return null;
+    }
+    
     const sticker = allStickersMap.get(stickerId);
     if (!sticker) {
       console.warn(`[Canvas] Could not find sticker with ID: ${stickerId}. Available stickers: ${Array.from(allStickersMap.keys()).join(', ')}`);
+      console.warn(`[Canvas] Total sticker packs loaded: ${stickerPacks.length}`);
+      stickerPacks.forEach(pack => {
+        console.warn(`[Canvas] Pack ${pack.id} has ${pack.stickers.length} stickers`);
+      });
       return null;
     }
     return sticker;
-  }, [allStickersMap]);
+  }, [allStickersMap, stickerPacks]);
 
   const currentTheme = useMemo(() => {
     return PREDEFINED_THEMES.find(theme => theme.id === currentThemeId) || PREDEFINED_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!;
@@ -954,19 +1011,26 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     return pixelData;
   }, [allLands, grid, getPixelKey, currentTheme.defaultPixelColor]);
 
-  
-  const updateGridFromVisibleChunks = useCallback(() => {
-    if (!initialDataLoaded) return;
+    const updateGridFromVisibleChunks = useCallback(() => {
+    if (!initialDataLoaded && masterGridDataRef.current.size === 0) {
+      console.log('[Canvas] Skipping grid update - no data loaded yet');
+      return;
+    }
 
     const visibleKeys = getVisibleChunkKeys();
     const newGrid = new Map<string, string>();
+    let pixelsAdded = 0;
+
+    console.log(`[Canvas] Updating grid from ${visibleKeys.size} visible chunks`);
 
     visibleKeys.forEach(chunkKey => {
       const [chunkRegX, chunkRegY] = chunkKey.split(':').map(Number);
       const startX = chunkRegX * CHUNK_SIZE;
       const endX = startX + CHUNK_SIZE;
       const startY = chunkRegY * CHUNK_SIZE;
-      const endY = startY + CHUNK_SIZE;      for (let wy = startY; wy < endY; wy++) {
+      const endY = startY + CHUNK_SIZE;
+
+      for (let wy = startY; wy < endY; wy++) {
         for (let wx = startX; wx < endX; wx++) {
           const pixelKey = getPixelKey(wx, wy);
           const pixelData = masterGridDataRef.current.get(pixelKey);
@@ -976,7 +1040,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
                 const parsed = JSON.parse(pixelData);
                 color = parsed.color;
-                if (parsed.stickerId) {
+                if (parsed.stickerId && stickerPacks.length > 0) {
                   const sticker = findStickerById(parsed.stickerId);
                   if (sticker) {
                     setStickerOverlays(prev => {
@@ -1000,6 +1064,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             }
             
             newGrid.set(pixelKey, color);
+            pixelsAdded++;
           }
         }
       }
@@ -1007,7 +1072,16 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
 
     activeChunkKeysRef.current = visibleKeys;
     setGrid(newGrid);
-  }, [getVisibleChunkKeys, initialDataLoaded]);
+    console.log(`[Canvas] Grid updated with ${pixelsAdded} pixels from ${masterGridDataRef.current.size} total pixels`);
+  }, [getVisibleChunkKeys, initialDataLoaded, stickerPacks, findStickerById, getPixelKey]);
+
+
+  useEffect(() => {
+    if (stickerPacks.length > 0 && initialDataLoaded) {
+      console.log('Sticker packs loaded, updating grid to render stickers');
+      updateGridFromVisibleChunks();
+    }
+  }, [stickerPacks, initialDataLoaded, updateGridFromVisibleChunks]);
 
   const requestFullSync = useCallback(async () => {
     if (syncInProgressRef.current) {
@@ -1019,18 +1093,29 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     if (now - lastSyncRequestTimeRef.current < MIN_SYNC_INTERVAL) {
       console.log(`Sync request throttled. Last request was ${now - lastSyncRequestTimeRef.current}ms ago`);
       return;
-    }    console.log("[Canvas] requestFullSync: Starting WebSocket sync");
+    }
+
+    console.log("[Canvas] requestFullSync: Starting WebSocket sync");
     syncInProgressRef.current = true;
     lastSyncRequestTimeRef.current = now;
+    setSyncAttempted(true);
 
     if (pixelBatchManagerRef.current) {
       pixelBatchManagerRef.current.clear();
     }
-    try {      
+
+    try {
       masterGridDataRef.current.clear();
+      setGrid(new Map());
+      setStickerOverlays(new Map());
+      optimisticUpdatesMapRef.current.clear();
 
       let receivedPixelCount = 0;
-      let syncDataComplete = false;      const syncDataHandler = (data: any[]) => {
+      let syncDataComplete = false;
+
+      const syncDataHandler = (data: any[]) => {
+        console.log(`[Canvas] Received sync batch with ${data.length} pixels`);
+        
         if (Array.isArray(data)) {
           data.forEach(pixel => {
             if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
@@ -1062,24 +1147,33 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               receivedPixelCount++;
             }
           });
-          console.log(`[Canvas] Received ${data.length} pixels in sync batch`);
+          console.log(`[Canvas] Processed ${data.length} pixels, total received: ${receivedPixelCount}`);
         }
       };
 
-      const syncCompletionPromise = new Promise<void>(resolve => {
+      const syncCompletionPromise = new Promise<void>((resolve, reject) => {
         const syncCompleteHandler = () => {
+          console.log('[Canvas] Sync completion signal received');
           syncDataComplete = true;
           websocketService.off('sync_complete', syncCompleteHandler);
           resolve();
         };
-        websocketService.on('sync_complete', syncCompleteHandler);      
-        setTimeout(() => {
+        
+        websocketService.on('sync_complete', syncCompleteHandler);
+        
+        const timeoutId = setTimeout(() => {
           if (!syncDataComplete) {
             console.warn('[Canvas] Sync completion timeout reached');
             websocketService.off('sync_complete', syncCompleteHandler);
             resolve();
           }
-        }, 10000);
+        }, 15000);
+
+        const originalResolve = resolve;
+        resolve = () => {
+          clearTimeout(timeoutId);
+          originalResolve();
+        };
       });
 
       websocketService.on('sync_data', syncDataHandler);
@@ -1095,7 +1189,8 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       
       updateGridFromVisibleChunks();
       
-      setLastSyncTime(Date.now());      
+      setLastSyncTime(Date.now());
+      setLastSuccessfulSync(Date.now());
       setInitialDataLoaded(true);
       
     } catch (error) {
@@ -1104,7 +1199,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [getPixelKey, updateGridFromVisibleChunks]);  
+  }, [getPixelKey, updateGridFromVisibleChunks, findStickerById]);
   
   const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
     if (!currentUser) {
@@ -1217,7 +1312,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       const newOffsetY = land.centerY - (cellsHigh / 2);
       
       setViewportOffset({ x: newOffsetX, y: newOffsetY });
-    // setViewportOffset({ x: land.centerX, y: land.centerY });
       setIsLandsDropdownOpen(false);
     }
   }, [effectiveCellSize, canvasContainerRef]);
@@ -2462,39 +2556,21 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   useEffect(() => {
     getAllLands();
   }, [getAllLands]);
-
   useEffect(() => {
     if (!initialDataLoaded || initialViewportSet || !canvasContainerRef.current) return;
 
-    const savedX = localStorage.getItem(LOCAL_STORAGE_VIEWPORT_X_KEY);
-    const savedY = localStorage.getItem(LOCAL_STORAGE_VIEWPORT_Y_KEY);
-    const savedZoom = localStorage.getItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY);
+    const hasStoredViewport = typeof window !== 'undefined' && 
+      localStorage.getItem(LOCAL_STORAGE_VIEWPORT_X_KEY) !== null && 
+      localStorage.getItem(LOCAL_STORAGE_VIEWPORT_Y_KEY) !== null && 
+      localStorage.getItem(LOCAL_STORAGE_ZOOM_LEVEL_KEY) !== null;
 
-    let loadedFromStorage = false;
-    if (savedX !== null && savedY !== null && savedZoom !== null) {
-      try {
-        const x = parseFloat(savedX);
-        const y = parseFloat(savedY);
-        const z = parseFloat(savedZoom);
-        if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-          setViewportOffset({ x, y });
-          setZoomLevel(z);
-          console.log("Restored viewport from localStorage:", { x, y, zoom: z });
-          loadedFromStorage = true;
-        }
-      } catch (e) {
-        console.error("Error parsing viewport data from localStorage:", e);
-      }
-    }
-
-    if (!loadedFromStorage) {
-      const defaultZoom = 2;
+    if (!hasStoredViewport) {
       const centerX = currentUser && userProfile?.landInfo ? userProfile.landInfo.centerX : 0;
       const centerY = currentUser && userProfile?.landInfo ? userProfile.landInfo.centerY : 0;
       
       const containerWidth = canvasContainerRef.current.clientWidth;
       const containerHeight = canvasContainerRef.current.clientHeight;
-      const effectiveCell = CELL_SIZE * defaultZoom;
+      const effectiveCell = CELL_SIZE * DEFAULT_ZOOM;
       
       const cellsWide = containerWidth / effectiveCell;
       const cellsHigh = containerHeight / effectiveCell;
@@ -2502,11 +2578,15 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       const newOffsetY = centerY - (cellsHigh / 2);
       
       setViewportOffset({ x: newOffsetX, y: newOffsetY });
-      setZoomLevel(defaultZoom);
-      console.log("Set default viewport:", { x: newOffsetX, y: newOffsetY, zoom: defaultZoom });
+      setZoomLevel(DEFAULT_ZOOM);
+      console.log("Set default viewport (no stored data):", { x: newOffsetX, y: newOffsetY, zoom: DEFAULT_ZOOM });
+    } else {
+      console.log("Using stored viewport:", { x: viewportOffset.x, y: viewportOffset.y, zoom: zoomLevel });
     }
+    
     setInitialViewportSet(true);
-  }, [initialDataLoaded, currentUser, userProfile, initialViewportSet]);
+    setIsViewportReady(true);
+  }, [initialDataLoaded, currentUser, userProfile, initialViewportSet, viewportOffset.x, viewportOffset.y, zoomLevel]);
 
   useEffect(() => {
     debouncedSaveViewport(viewportOffset, zoomLevel);
@@ -2519,110 +2599,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  useEffect(() => {
-    const hasRequiredMethods = websocketService && 
-                              typeof websocketService.isConnected === 'function' &&
-                              typeof websocketService.connect === 'function';
-    
-    if (!hasRequiredMethods) {
-      console.error('WebSocket service is missing required methods');
-      return;
-    }
-
-    if (!websocketService.isConnected()) {
-      websocketService.connect();
-    }
-    
-    const handleConnectionChange = (isConnected: boolean) => {
-      console.log(`WebSocket connection status changed: ${isConnected}`);
-      setWsConnected(isConnected);
-    };
-    
-    websocketService.onConnectionChange(handleConnectionChange);    const handlePixelUpdate = (data: any) => {
-      if (Array.isArray(data)) {
-        data.forEach(pixel => {
-          if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
-            const pixelKey = getPixelKey(pixel.x, pixel.y);
-              const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
-            if (optimisticUpdate && optimisticUpdate.timestamp > (pixel.timestamp || 0)) {
-              return;
-            }
-            
-            const pixelData = pixel.stickerId 
-              ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
-              : pixel.color;
-              
-            masterGridDataRef.current.set(pixelKey, pixelData);
-            
-            if (pixel.stickerId) {
-              console.log(`[Canvas] Processing pixel update with stickerId: ${pixel.stickerId} at ${pixelKey}`);
-            }
-            
-            if (pixel.stickerId) {
-              const sticker = findStickerById(pixel.stickerId);
-              if (sticker) {
-                setStickerOverlays(prev => {
-                  const newOverlays = new Map(prev);
-                  newOverlays.set(pixelKey, {
-                    sticker,
-                    x: pixel.x,
-                    y: pixel.y
-                  });
-                  return newOverlays;
-                });
-              }
-            } else {
-              setStickerOverlays(prev => {
-                const newOverlays = new Map(prev);
-                newOverlays.delete(pixelKey);
-                return newOverlays;
-              });
-            }
-              const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
-            if (activeChunkKeysRef.current.has(chunkKey)) {
-              setGrid(prev => {
-                const newGrid = new Map(prev);
-                newGrid.set(pixelKey, pixelData);
-                return newGrid;
-              });
-            }
-          }
-        });
-      }
-    };
-    
-    websocketService.on('pixel_update', handlePixelUpdate);
-    
-    let syncAttempted = false;
-    const syncOnceConnected = () => {
-      if (wsConnected && !initialDataLoaded && !syncAttempted && websocketService.isConnected()) {
-        syncAttempted = true;
-        requestFullSync();
-      }
-    };
-    
-    if (websocketService.isConnected() && !initialDataLoaded && !syncAttempted) {
-      syncAttempted = true;
-      requestFullSync();
-    }
-    
-    const syncInterval = setInterval(() => {
-      if (websocketService.isConnected() && !initialDataLoaded && !syncAttempted) {
-        syncAttempted = true;
-        requestFullSync();
-      }
-    }, 2000);
-    
-    return () => {
-      if (hasRequiredMethods) {
-        websocketService.offConnectionChange(handleConnectionChange);
-        websocketService.off('pixel_update', handlePixelUpdate);
-        websocketService.off('canvas_reset', handleCanvasReset);
-      }
-      clearInterval(syncInterval);
-    };
   }, []);
 
   const handleCanvasReset = useCallback((data: any) => {
@@ -2659,6 +2635,116 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       optimisticUpdatesMapRef.current.clear();
     }
   }, [getPixelKey, currentTheme.defaultPixelColor]);
+
+  useEffect(() => {
+    const hasRequiredMethods = websocketService && 
+                              typeof websocketService.isConnected === 'function' &&
+                              typeof websocketService.connect === 'function';
+    
+    if (!hasRequiredMethods) {
+      console.error('WebSocket service is missing required methods');
+      return;
+    }
+
+    if (!websocketService.isConnected()) {
+      console.log('[Canvas] Connecting to WebSocket...');
+      websocketService.connect();
+    }
+    
+    const handleConnectionChange = (isConnected: boolean) => {
+      console.log(`[Canvas] WebSocket connection status changed: ${isConnected}`);
+      setWsConnected(isConnected);
+      
+      if (isConnected && !initialDataLoaded && !syncAttempted) {
+        console.log('[Canvas] Connection established, triggering sync...');
+        setTimeout(() => {
+          if (websocketService.isConnected()) {
+            requestFullSync();
+          }
+        }, 1000);
+      }
+    };
+    
+    websocketService.onConnectionChange(handleConnectionChange);
+
+    const handlePixelUpdate = (data: any) => {
+      if (Array.isArray(data)) {
+        data.forEach(pixel => {
+          if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
+            const pixelKey = getPixelKey(pixel.x, pixel.y);
+            
+            const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
+            if (optimisticUpdate && optimisticUpdate.timestamp > (pixel.timestamp || 0)) {
+              return;
+            }
+            
+            const pixelData = pixel.stickerId 
+              ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
+              : pixel.color;
+              
+            masterGridDataRef.current.set(pixelKey, pixelData);
+            
+            if (pixel.stickerId) {
+              const sticker = findStickerById(pixel.stickerId);
+              if (sticker) {
+                setStickerOverlays(prev => {
+                  const newOverlays = new Map(prev);
+                  newOverlays.set(pixelKey, {
+                    sticker,
+                    x: pixel.x,
+                    y: pixel.y
+                  });
+                  return newOverlays;
+                });
+              }
+            } else {
+              setStickerOverlays(prev => {
+                const newOverlays = new Map(prev);
+                newOverlays.delete(pixelKey);
+                return newOverlays;
+              });
+            }
+            const chunkKey = getChunkKeyForPixel(pixel.x, pixel.y);
+            if (activeChunkKeysRef.current.has(chunkKey)) {
+              setGrid(prev => {
+                const newGrid = new Map(prev);
+                newGrid.set(pixelKey, pixel.color);
+                return newGrid;
+              });
+            }
+          }
+        });
+      }
+    };
+    
+    websocketService.on('pixel_update', handlePixelUpdate);
+
+    
+    const syncInterval = setInterval(() => {
+      if (websocketService.isConnected() && !initialDataLoaded && !syncInProgressRef.current) {
+        const timeSinceLastAttempt = Date.now() - lastSyncRequestTimeRef.current;
+        if (timeSinceLastAttempt > 10000) { 
+          console.log('[Canvas] Manual sync retry...');
+          requestFullSync();
+        }
+      }
+    }, 5000);
+    
+    if (websocketService.isConnected() && !initialDataLoaded && !syncAttempted) {
+      console.log('[Canvas] Already connected, triggering initial sync...');
+      setTimeout(() => requestFullSync(), 500);
+    }
+    
+    return () => {
+      if (hasRequiredMethods) {
+        websocketService.offConnectionChange(handleConnectionChange);
+        websocketService.off('pixel_update', handlePixelUpdate);
+        websocketService.off('canvas_reset', handleCanvasReset);
+      }
+      clearInterval(syncInterval);
+    };
+  }, [requestFullSync, getChunkKeyForPixel, getPixelKey, findStickerById, handleCanvasReset, initialDataLoaded, syncAttempted]);
+
 
   websocketService.on('canvas_reset', handleCanvasReset);  const handleLandOwnershipChange = useCallback(async (data: any) => {
     console.log('[Canvas] Land ownership changed, refreshing land data:', data);
@@ -3020,15 +3106,15 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             className="canvas-loading-animation"
           />
         )}
-      {canvasAnimationComplete && !initialDataLoaded && (
+      {canvasAnimationComplete && (!initialDataLoaded || !isViewportReady) && (
       <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
         <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-          <div className="text-lg mb-2">Loading Canvas...</div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>          <div className="text-lg mb-2">Loading Canvas...</div>
           <div className="text-sm text-gray-600 mb-4">
-            {wsConnected ? 
-              "Connected to server, loading data..." : 
-              "Connecting to server..."}
+            {!initialDataLoaded 
+              ? (wsConnected ? "Connected to server, loading data..." : "Connecting to server...")
+              : "Setting up viewport..."
+            }
           </div>
           <div className="flex space-x-4">
             <button 
@@ -3080,16 +3166,14 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         padding: 0,
         border: 'none',
         zIndex: 0
-      }} 
-      onMouseDown={handleCanvasMouseDown}
+      }}      onMouseDown={handleCanvasMouseDown}
       onTouchStart={handleCanvasTouchStart}
       onMouseMove={handleMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
-      onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      onWheel={handleWheel}    >
+      onWheel={handleWheel}>
 
 
       {isToolbarVisible && (      <div data-toolbar className="absolute top-4 left-4 toolbar-element bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar ui-overlay"

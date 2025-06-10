@@ -118,7 +118,7 @@ const Navbar: React.FC = () => {
                 </div>
 
                 <div className="flex items-center space-x-1 md:space-x-1.5 lg:space-x-2 xl:space-x-3 border-l border-white/20 pl-1 md:pl-2 lg:pl-3 xl:pl-4">
-                  <div className="hover:scale-110 transition-transform duration-200"> <MarketplaceButton /> </div>
+                  <div className=""> <MarketplaceButton /> </div>
                   <div className="hover:scale-110 transition-transform duration-200"> <NotificationDropdown /> </div>
                   <div className="hover:scale-110 transition-transform duration-200"> <ChatButton /> </div>
                   <div> <DailyCheckInButton /> </div>
@@ -170,6 +170,9 @@ const Navbar: React.FC = () => {
           
           {/* Mobile menu */}
           <div className="dada flex items-center space-x-1 md:space-x-1.5 lg:space-x-2 xl:space-x-3 pl-1 md:pl-2 lg:pl-3 xl:pl-4">
+            { currentUser && (
+              <div className="hover:scale-110 transition-transform duration-200"> <MarketplaceButton /> </div>
+            )}
             { currentUser && (
               <div className="hover:scale-110 transition-transform duration-200"> <NotificationDropdown /> </div>
             )}
@@ -282,12 +285,12 @@ const Navbar: React.FC = () => {
                     Quick Actions
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2">
-                    <div onClick={closeMobileMenu} className="flex justify-center">
-                      <div className="scale-70">
+                    <div className="flex justify-center">
+                      <div className="">
                         <MarketplaceButton />
                       </div>
                     </div>
-                    <div onClick={closeMobileMenu} className="flex justify-center">
+                    <div className="flex justify-center">
                       <div className="scale-70">
                         <NotificationDropdown />
                       </div>
