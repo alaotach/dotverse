@@ -285,9 +285,20 @@ const Canvas = () => {
     return false;
   });
   const animatedPixelCache = useRef<Map<string, Map<string, string>>>(new Map());
-  const lastAnimationUpdate = useRef<Map<string, number>>(new Map());
-  const [syncAttempted, setSyncAttempted] = useState<boolean>(false);
+  const lastAnimationUpdate = useRef<Map<string, number>>(new Map());  const [syncAttempted, setSyncAttempted] = useState<boolean>(false);
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<number>(0);
+  const [loadingTimeout, setLoadingTimeout] = useState<boolean>(false);
+  useEffect(() => {
+    if (initialDataLoaded) return;
+    
+    const timeoutId = setTimeout(() => {
+      console.warn('[Canvas] Loading timeout reached - forcing canvas to load without sync');
+      setLoadingTimeout(true);
+      setInitialDataLoaded(true);
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   const updateAnimatedLandFrames = useCallback(() => {
     const now = Date.now();
@@ -1075,13 +1086,12 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     console.log(`[Canvas] Grid updated with ${pixelsAdded} pixels from ${masterGridDataRef.current.size} total pixels`);
   }, [getVisibleChunkKeys, initialDataLoaded, stickerPacks, findStickerById, getPixelKey]);
 
-
   useEffect(() => {
     if (stickerPacks.length > 0 && initialDataLoaded) {
       console.log('Sticker packs loaded, updating grid to render stickers');
       updateGridFromVisibleChunks();
     }
-  }, [stickerPacks, initialDataLoaded, updateGridFromVisibleChunks]);
+  }, [stickerPacks.length, initialDataLoaded]);
 
   const requestFullSync = useCallback(async () => {
     if (syncInProgressRef.current) {
@@ -1160,14 +1170,13 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         };
         
         websocketService.on('sync_complete', syncCompleteHandler);
-        
         const timeoutId = setTimeout(() => {
           if (!syncDataComplete) {
             console.warn('[Canvas] Sync completion timeout reached');
             websocketService.off('sync_complete', syncCompleteHandler);
             resolve();
           }
-        }, 15000);
+        }, 5000);
 
         const originalResolve = resolve;
         resolve = () => {
@@ -2635,17 +2644,16 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       optimisticUpdatesMapRef.current.clear();
     }
   }, [getPixelKey, currentTheme.defaultPixelColor]);
-
   useEffect(() => {
     const hasRequiredMethods = websocketService && 
                               typeof websocketService.isConnected === 'function' &&
                               typeof websocketService.connect === 'function';
     
     if (!hasRequiredMethods) {
-      console.error('WebSocket service is missing required methods');
+      console.error('WebSocket service is missing required methods - loading canvas without sync');
+      setInitialDataLoaded(true);
       return;
     }
-
     if (!websocketService.isConnected()) {
       console.log('[Canvas] Connecting to WebSocket...');
       websocketService.connect();
@@ -2657,11 +2665,12 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       
       if (isConnected && !initialDataLoaded && !syncAttempted) {
         console.log('[Canvas] Connection established, triggering sync...');
+        setSyncAttempted(true);
         setTimeout(() => {
           if (websocketService.isConnected()) {
             requestFullSync();
           }
-        }, 1000);
+        }, 500);
       }
     };
     
@@ -2718,24 +2727,22 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     };
     
     websocketService.on('pixel_update', handlePixelUpdate);
-
-    
     const syncInterval = setInterval(() => {
       if (websocketService.isConnected() && !initialDataLoaded && !syncInProgressRef.current) {
         const timeSinceLastAttempt = Date.now() - lastSyncRequestTimeRef.current;
-        if (timeSinceLastAttempt > 10000) { 
-          console.log('[Canvas] Manual sync retry...');
+        if (timeSinceLastAttempt > 3000) { 
+          console.log('[Canvas] Aggressive sync retry...');
           requestFullSync();
         }
       }
-    }, 5000);
-    
+    }, 2000);
+
     if (websocketService.isConnected() && !initialDataLoaded && !syncAttempted) {
       console.log('[Canvas] Already connected, triggering initial sync...');
-      setTimeout(() => requestFullSync(), 500);
+      setSyncAttempted(true);
+      setTimeout(() => requestFullSync(), 100);
     }
-    
-    return () => {
+      return () => {
       if (hasRequiredMethods) {
         websocketService.offConnectionChange(handleConnectionChange);
         websocketService.off('pixel_update', handlePixelUpdate);
@@ -2743,7 +2750,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       }
       clearInterval(syncInterval);
     };
-  }, [requestFullSync, getChunkKeyForPixel, getPixelKey, findStickerById, handleCanvasReset, initialDataLoaded, syncAttempted]);
+  }, [requestFullSync]);
 
 
   websocketService.on('canvas_reset', handleCanvasReset);  const handleLandOwnershipChange = useCallback(async (data: any) => {
@@ -2770,29 +2777,19 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   websocketService.on('auction_completed', handleLandOwnershipChange);
   websocketService.on('land_sold', handleLandOwnershipChange);
   websocketService.on('auction_created', handleLandOwnershipChange);
-
   useEffect(() => {
     if (initialDataLoaded) {
       updateGridFromVisibleChunks();
       clearHistory();
-    }
-  }, [viewportOffset, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded, updateGridFromVisibleChunks,clearHistory]);  useEffect(() => {
-    const loadingTimeout = setTimeout(() => {
-      if (!initialDataLoaded) {
-        console.log("Loading timeout reached - forcing canvas to display");
-        setInitialDataLoaded(true);
-      }
-    }, 15000);
-    
-    return () => clearTimeout(loadingTimeout);
-  }, []);  
+    }  }, [viewportOffset.x, viewportOffset.y, zoomLevel, viewportCellWidth, viewportCellHeight, initialDataLoaded]);
+
   useEffect(() => {
     const refreshInterval = setInterval(() => {
       if (currentUser && allLands.length > 0) {
         console.log('[Canvas] Periodic land data refresh');
         getAllLands();
       }
-    }, 30000); 
+    }, 30000);
 
     return () => clearInterval(refreshInterval);
   }, [currentUser, allLands.length, getAllLands]);
