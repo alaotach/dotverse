@@ -286,19 +286,35 @@ const Canvas = () => {
   });
   const animatedPixelCache = useRef<Map<string, Map<string, string>>>(new Map());
   const lastAnimationUpdate = useRef<Map<string, number>>(new Map());  const [syncAttempted, setSyncAttempted] = useState<boolean>(false);
-  const [lastSuccessfulSync, setLastSuccessfulSync] = useState<number>(0);
-  const [loadingTimeout, setLoadingTimeout] = useState<boolean>(false);
+  const [lastSuccessfulSync, setLastSuccessfulSync] = useState<number>(0);  const [loadingTimeout, setLoadingTimeout] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobileCheck = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const smallScreen = window.innerWidth <= 768;
+      setIsMobile(mobileCheck || smallScreen);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   useEffect(() => {
     if (initialDataLoaded) return;
     
+    const timeout = isMobile ? 3000 : 5000;
+    
     const timeoutId = setTimeout(() => {
-      console.warn('[Canvas] Loading timeout reached - forcing canvas to load without sync');
+      console.warn(`[Canvas] Loading timeout reached after ${timeout}ms - forcing canvas to load without sync`);
       setLoadingTimeout(true);
       setInitialDataLoaded(true);
-    }, 5000);
+      setIsViewportReady(true);
+    }, timeout);
 
     return () => clearTimeout(timeoutId);
-  }, []);
+  }, [isMobile, initialDataLoaded]);
 
   const updateAnimatedLandFrames = useCallback(() => {
     const now = Date.now();
@@ -635,8 +651,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     mergeCandidates: MergeCandidate[];
   } | null>(null);
 
-  const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
-  const [showCanvasAnimation, setShowCanvasAnimation] = useState(true);
+  const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);  const [showCanvasAnimation, setShowCanvasAnimation] = useState(true);
   const [canvasAnimationComplete, setCanvasAnimationComplete] = useState(false);
 
   const handleCanvasAnimationComplete = () => {
@@ -645,6 +660,18 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setShowCanvasAnimation(false);
     }, 500);
   };
+
+  useEffect(() => {
+    if (isMobile && showCanvasAnimation) {
+      const timer = setTimeout(() => {
+        console.log('[Canvas] Auto-skipping heavy animation on mobile');
+        setShowCanvasAnimation(false);
+        setCanvasAnimationComplete(true);
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, showCanvasAnimation]);
 
 
   useEffect(() => {
@@ -2755,34 +2782,67 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       masterGridDataRef.current.clear();
       optimisticUpdatesMapRef.current.clear();
     }
-  }, [getPixelKey, currentTheme.defaultPixelColor]);
-  useEffect(() => {
-    const hasRequiredMethods = websocketService && typeof websocketService.isConnected === 'function' && typeof websocketService.connect === 'function';
+  }, [getPixelKey, currentTheme.defaultPixelColor]);  useEffect(() => {
+    const hasRequiredMethods = websocketService && 
+      typeof websocketService.isConnected === 'function' && 
+      typeof websocketService.connect === 'function';
 
     if (!hasRequiredMethods) {
       console.error('WebSocket service is missing required methods - loading canvas without sync');
       setInitialDataLoaded(true);
+      setIsViewportReady(true);
       return;
     }
-    if (!websocketService.isConnected()) {
-      console.log('[Canvas] Connecting to WebSocket...');
-      websocketService.connect();
-    }
+
+    let connectionTimeout: NodeJS.Timeout;
+    let retryCount = 0;
+    const maxRetries = isMobile ? 2 : 3;
+    const timeoutDuration = isMobile ? 2000 : 5000;
+
+    const attemptConnection = () => {
+      console.log(`[Canvas] Connection attempt ${retryCount + 1}/${maxRetries} (mobile: ${isMobile})`);
+      
+      if (!websocketService.isConnected()) {
+        console.log('[Canvas] Connecting to WebSocket...');
+        websocketService.connect();
+      }
+      
+      connectionTimeout = setTimeout(() => {
+        if (!websocketService.isConnected()) {
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            console.log(`[Canvas] Connection timeout, retrying... (${retryCount}/${maxRetries})`);
+            attemptConnection();
+          } else {
+            console.warn('[Canvas] All connection attempts failed - enabling offline mode');
+            setInitialDataLoaded(true);
+            setIsViewportReady(true);
+            setWsConnected(false);
+          }
+        }
+      }, timeoutDuration);    };
     
     const handleConnectionChange = (isConnected: boolean) => {
-      console.log(`[Canvas] WebSocket connection status changed: ${isConnected}`);
+      console.log(`[Canvas] Connection status changed: ${isConnected}`);
       setWsConnected(isConnected);
       
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
+      
       if (isConnected && !initialDataLoaded && !syncAttempted) {
-        console.log('[Canvas] Connection established, triggering sync...');
+        console.log('[Canvas] Connected - requesting sync');
         setSyncAttempted(true);
+        
+        const syncDelay = isMobile ? 300 : 1000;
         setTimeout(() => {
           if (websocketService.isConnected()) {
             requestFullSync();
           }
-        }, 500);
+        }, syncDelay);
       }
     };
+    attemptConnection();
     
     websocketService.onConnectionChange(handleConnectionChange);
 
@@ -3391,52 +3451,98 @@ useEffect(() => {
     lastAnimationUpdate.current.delete(landId);
   }, []);
 
-
   if (!initialDataLoaded || showCanvasAnimation) {
     console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
     
     return (
-      <div className="relative w-screen h-screen overflow-hidden">
-        {/* Canvas Loading Animation */}
-        {showCanvasAnimation && (
+      <div className="relative w-screen h-screen overflow-hidden bg-gray-900">
+        {/* Lightweight loading for mobile, full animation for desktop */}
+        {showCanvasAnimation && !isMobile && (
           <CanvasLoading 
             onAnimationComplete={handleCanvasAnimationComplete}
             className="canvas-loading-animation"
           />
         )}
+        
+        {/* Mobile-optimized loading screen */}
+        {showCanvasAnimation && isMobile && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
+            <div className="text-center text-white">
+              <div className="text-6xl mb-4 animate-pulse">🎨</div>
+              <div className="text-2xl font-bold mb-2">dotVerse</div>
+              <div className="text-lg opacity-75">Loading Canvas...</div>
+              <div className="mt-4">
+                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
+              </div>
+              {/* Auto-skip for mobile after 2 seconds */}
+              <div className="mt-4 text-sm opacity-50">
+                Loading...
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Skip heavy animation on mobile */}
+        {isMobile && showCanvasAnimation && (
+          <div className="absolute bottom-4 right-4">
+            <button
+              onClick={() => {
+                setShowCanvasAnimation(false);
+                setCanvasAnimationComplete(true);
+                handleCanvasAnimationComplete();
+              }}
+              className="px-4 py-2 bg-white/20 text-white rounded-lg backdrop-blur-sm"
+            >
+              Skip Animation
+            </button>
+          </div>
+        )}
+      
       {canvasAnimationComplete && (!initialDataLoaded || !isViewportReady) && (
-      <div ref={canvasContainerRef} className="flex justify-center items-center h-screen" onWheel={handleWheel}>
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>          <div className="text-lg mb-2">Loading Canvas...</div>
-          <div className="text-sm text-gray-600 mb-4">
+      <div ref={canvasContainerRef} className="flex justify-center items-center h-screen bg-gray-800" onWheel={handleWheel}>
+        <div className="flex flex-col items-center text-white max-w-sm mx-4">
+          <div className="w-12 h-12 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>          
+          <div className="text-xl mb-2 text-center">Loading Canvas...</div>
+          <div className="text-sm text-gray-300 mb-4 text-center">
             {!initialDataLoaded 
               ? (wsConnected ? "Connected to server, loading data..." : "Connecting to server...")
               : "Setting up viewport..."
             }
           </div>
-          <div className="flex space-x-4">
+            <div className="flex flex-col space-y-3 w-full">
             <button 
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log('[Canvas] Force loading canvas');
                 setInitialDataLoaded(true);
+                setIsViewportReady(true);
                 setGrid(new Map());
+                masterGridDataRef.current = new Map();
               }}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-lg font-medium"
             >
-              Skip Loading
+              Enter Canvas
             </button>
+            
             <button
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log('[Canvas] Retry sync');
                 requestFullSync();
               }}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
             >
-              Retry Sync
+              Retry Connection
             </button>
           </div>
+          
+          {/* Debug info */}
+          <div className="mt-4 text-xs text-gray-400 text-center space-y-1">
+            <div>Status: {wsConnected ? 'Connected' : 'Disconnected'}</div>
+            <div>Data: {initialDataLoaded ? 'Loaded' : 'Loading'}</div>
+            <div>Viewport: {isViewportReady ? 'Ready' : 'Setting up'}</div>          </div>
         </div>
       </div>
       )}
