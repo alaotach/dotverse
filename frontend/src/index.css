@@ -330,10 +330,22 @@ select {
     background: rgba(255, 255, 255, 0.95) !important;
     backdrop-filter: blur(10px) !important;
     border-radius: 12px !important;
-    padding: 16px !important;
+    padding: 8px !important; /* Reduced padding */
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+    overflow-x: auto; /* Enable horizontal scrolling */
+    white-space: nowrap; /* Prevent wrapping */
   }
   
+  /* Adjust padding for toolbar items on mobile */
+  [data-toolbar] > div > * {
+    padding: 4px 8px !important; 
+    margin-right: 8px !important; /* Add some spacing between items */
+  }
+
+  [data-toolbar] label {
+    font-size: 14px !important; /* Smaller labels */
+  }
+
   input[type="color"] {
     height: 48px !important;
     width: 48px !important;

@@ -3456,7 +3456,6 @@ useEffect(() => {
     
     return (
       <div className="relative w-screen h-screen overflow-hidden bg-gray-900">
-        {/* Lightweight loading for mobile, full animation for desktop */}
         {showCanvasAnimation && !isMobile && (
           <CanvasLoading 
             onAnimationComplete={handleCanvasAnimationComplete}
@@ -3464,7 +3463,6 @@ useEffect(() => {
           />
         )}
         
-        {/* Mobile-optimized loading screen */}
         {showCanvasAnimation && isMobile && (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
             <div className="text-center text-white">
@@ -3474,7 +3472,6 @@ useEffect(() => {
               <div className="mt-4">
                 <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
               </div>
-              {/* Auto-skip for mobile after 2 seconds */}
               <div className="mt-4 text-sm opacity-50">
                 Loading...
               </div>
@@ -3482,7 +3479,6 @@ useEffect(() => {
           </div>
         )}
         
-        {/* Skip heavy animation on mobile */}
         {isMobile && showCanvasAnimation && (
           <div className="absolute bottom-4 right-4">
             <button
@@ -3538,7 +3534,6 @@ useEffect(() => {
             </button>
           </div>
           
-          {/* Debug info */}
           <div className="mt-4 text-xs text-gray-400 text-center space-y-1">
             <div>Status: {wsConnected ? 'Connected' : 'Disconnected'}</div>
             <div>Data: {initialDataLoaded ? 'Loaded' : 'Loading'}</div>
@@ -3570,7 +3565,8 @@ useEffect(() => {
         padding: 0,
         border: 'none',
         zIndex: 0
-      }}      onMouseDown={handleCanvasMouseDown}
+      }}      
+      onMouseDown={handleCanvasMouseDown}
       onTouchStart={handleTouchStart}
       onMouseMove={handleMouseMove}
       onMouseUp={handleCanvasMouseUp}
@@ -3580,16 +3576,20 @@ useEffect(() => {
       onWheel={handleWheel}>
 
 
-      {isToolbarVisible && (      <div data-toolbar className="absolute top-4 left-4 toolbar-element bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar ui-overlay"
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-      id = "data-toolbar"
-      style={{ 
-        backgroundColor: currentTheme.toolbarBgColor, 
-        color: currentTheme.toolbarTextColor,
+
+{isToolbarVisible && (
+  <>
+    <div className="max-lg:hidden">
+      <div className="absolute top-4 left-4 toolbar-element bg-white p-2 rounded shadow-lg flex items-center flex-wrap gap-2 data-toolbar ui-overlay"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        id = "data-toolbar"
+        style={{ 
+          backgroundColor: currentTheme.toolbarBgColor, 
+          color: currentTheme.toolbarTextColor,
         touchAction: 'manipulation',
         pointerEvents: 'auto'
       }}
@@ -3607,7 +3607,7 @@ useEffect(() => {
           className="h-8 w-14 mr-4"
         />
 
-        <div className="flex items-center ml-2">
+        <div className="flex max-sm:hidden justify-center items-center ml-2">
           <label htmlFor="themeSelector" className="mr-1 text-sm" style={{ color: currentTheme.toolbarTextColor }}>Theme:</label>
           <select
             id="themeSelector"
@@ -4304,18 +4304,368 @@ useEffect(() => {
             Size: {userProfile.landInfo.ownedSize}x{userProfile.landInfo.ownedSize}
           </div>        )}
       </div>
-      )}        <canvas
+      </div>
+
+    {/* Mobile Toolbar */}
+    <div className="lg:hidden">
+      <div 
+        data-toolbar 
+        className="fixed top-4 left-4 right-4 toolbar-element bg-white/95 backdrop-blur-lg border border-gray-200/60 rounded-2xl shadow-xl z-50"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        style={{ 
+          backgroundColor: `${currentTheme.toolbarBgColor}f8`,
+          touchAction: 'manipulation',
+          pointerEvents: 'auto'
+        }}
+      >
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={selectedColor}
+                onChange={handleColorChange}
+                className="w-12 h-12 rounded-xl border-2 border-gray-200 cursor-pointer shadow-sm"
+                style={{ backgroundColor: selectedColor }}
+              />
+
+             <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isEraserActive) toggleEraser();
+                  else if (isFillActive) toggleFill();
+                  else if (isStickerMode) toggleSticker();
+                  else toggleFill();
+                }}
+                className={`p-3 rounded-lg text-white transition-all shadow-sm ${
+                  isFillActive ? 'bg-green-500' : 
+                  isEraserActive ? 'bg-red-500' : 
+                  isStickerMode ? 'bg-purple-500' : 'bg-blue-500'
+                }`}
+                title={isFillActive ? "Fill" : isEraserActive ? "Eraser" : isStickerMode ? "Sticker" : "Brush"}
+              >
+                {isFillActive ? '🪣' : isEraserActive ? '🧽' : isStickerMode ? '🎨' : '✏️'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  value={isEraserActive ? eraserSize : brushSize}
+                  onChange={(e) => isEraserActive ? setEraserSize(parseInt(e.target.value)) : setBrushSize(parseInt(e.target.value))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  min="1"
+                  max="20"
+                  className="w-16 h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-blue-200 to-purple-300"
+                  style={{
+                    WebkitAppearance: 'none',
+                    height: '8px'
+                  }}
+                />
+                <span className="text-sm font-semibold text-gray-700 bg-white px-2 py-1 rounded-lg shadow-sm min-w-[30px] text-center">
+                  {isEraserActive ? eraserSize : brushSize}
+                </span>
+              </div>
+            </div>
+          </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={undo}
+                disabled={undoHistory.length === 0}
+                className="p-3 bg-purple-500 text-white rounded-xl disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+              >
+                ↶
+              </button>
+              
+              <button 
+                onClick={redo}
+                disabled={redoHistory.length === 0}
+                className="p-3 bg-purple-500 text-white rounded-xl disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+              >
+                ↷
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLandsDropdownOpen(!isLandsDropdownOpen);
+                }}
+                className="p-3 bg-gray-600 text-white rounded-xl shadow-sm"
+              >
+                ⋯
+              </button>
+            </div>
+          </div>
+
+          {isLandsDropdownOpen && (
+            <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+              <button 
+                onClick={togglePanMode}
+                className={`w-full p-3 rounded-xl font-medium transition-colors shadow-sm ${
+                  isPanMode ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {isPanMode ? '✋ Drawing Mode' : '🔍 Pan Mode'}
+              </button>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-600">Zoom</span>
+                <div className="flex items-center bg-gray-100 rounded-xl overflow-hidden shadow-sm">
+                  <button onClick={zoomOut} disabled={zoomLevel <= MIN_ZOOM} className="p-2 text-sm">−</button>
+                  <span className="px-3 py-2 text-sm bg-white border-x border-gray-200">{Math.round(zoomLevel*100)}%</span>
+                  <button onClick={zoomIn} disabled={zoomLevel >= MAX_ZOOM} className="p-2 text-sm">+</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">Theme</label>
+                <select
+                  value={currentThemeId}
+                  onChange={(e) => setCurrentThemeId(e.target.value)}
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  {PREDEFINED_THEMES.map(theme => (
+                    <option key={theme.id} value={theme.id}>{theme.name}</option>
+                  ))}
+                </select>
+              </div>
+              {isStickerMode && (
+                <div>
+                  <label className="block text-sm font-medium text-purple-600 mb-2">Sticker Pack</label>
+                  <select
+                    value={selectedStickerPack}
+                    onChange={(e) => setSelectedStickerPack(e.target.value)}
+                    className="w-full p-3 border border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  >
+                    <option value="">Select Pack</option>
+                    {stickerPacks.map((pack) => (
+                      <option key={pack.id} value={pack.id}>
+                        {pack.name} ({pack.stickers.length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {currentUser && userProfile?.landInfo && (
+                <button
+                  onClick={navigateToUserLand}
+                  className="w-full p-3 bg-green-500 text-white rounded-xl font-medium shadow-sm"
+                >
+                  🏠 My Land
+                </button>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={clearCanvas}
+                  disabled={isClearing}
+                  className="p-3 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 shadow-sm"
+                >
+                  🗑️ Clear
+                </button>
+                
+                <button
+                  onClick={captureScreenshot}
+                  disabled={isCapturing}
+                  className="p-3 bg-purple-500 text-white rounded-xl font-medium disabled:opacity-50 shadow-sm"
+                >
+                  📸 Screenshot
+                </button>
+
+                <button
+                  onClick={toggleBrowserFullScreen}
+                  className="p-3 bg-blue-500 text-white rounded-xl font-medium shadow-sm"
+                >
+                  {isBrowserFullScreen ? '⛶ Exit FS' : '⛶ Fullscreen'}
+                </button>
+
+                <button
+                  onClick={requestFullSync}
+                  className="p-3 bg-green-500 text-white rounded-xl font-medium shadow-sm"
+                >
+                  🔄 Sync
+                </button>
+              </div>
+              {userLands.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-600">Land Management</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setShowLandsExpansionDropdown(!showLandsExpansionDropdown)}
+                      className="p-3 bg-green-100 text-green-700 rounded-xl font-medium border border-green-200"
+                    >
+                      🏗️ Expand
+                    </button>
+                    
+                    {currentUser && (
+                      <button
+                        onClick={() => setShowLandSelectionModal(true)}
+                        className="p-3 bg-purple-100 text-purple-700 rounded-xl font-medium border border-purple-200"
+                      >
+                        🎬 Animate
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {currentUser && userLands.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-600">My Lands ({userLands.length})</div>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {userLands.slice(0, 3).map((land, index) => (
+                      <button
+                        key={`${land.centerX}-${land.centerY}-${index}`}
+                        onClick={() => navigateToLand(land)}
+                        className="w-full p-2 text-left text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        <div className="font-medium text-gray-900">
+                          {land.displayName || `Land #${index + 1}`}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          ({land.centerX}, {land.centerY}) • {land.ownedSize}×{land.ownedSize}
+                        </div>
+                      </button>
+                    ))}
+                    {userLands.length > 3 && (
+                      <div className="text-xs text-gray-500 text-center py-2">
+                        +{userLands.length - 3} more lands
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-xl p-3">
+                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span>{wsConnected ? 'Connected' : 'Offline'} • {allLands.length} lands</span>
+              </div>
+            </div>
+          )}
+          {showAuthWarning && !currentUser && (
+            <div className="mt-4 pt-4 border-t border-red-200 bg-red-50 -mx-4 -mb-4 px-4 pb-4 rounded-b-2xl">
+              <div className="text-sm text-red-600 text-center">
+                Please log in to draw
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+    <div className="lg:hidden fixed bottom-6 right-6 z-50">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!isEraserActive && !isFillActive && !isStickerMode) {
+            toggleFill();
+          } else if (isFillActive) {
+            toggleFill();
+            toggleEraser();
+          } else if (isEraserActive) {
+            toggleEraser();
+            toggleSticker();
+          } else {
+            toggleSticker();
+          }
+        }}
+        className={`w-16 h-16 rounded-full shadow-2xl text-white transition-all duration-300 hover:scale-110 active:scale-95 ${
+          isFillActive ? 'bg-green-500' : 
+          isEraserActive ? 'bg-red-500' : 
+          isStickerMode ? 'bg-purple-500' : 'bg-blue-500'
+        }`}
+        title="Cycle Drawing Tools"
+      >
+        {isFillActive ? '🪣' : isEraserActive ? '🧽' : isStickerMode ? '🎨' : '✏️'}
+      </button>
+    </div>
+
+    {isEraserActive && eraserSize > 0 && mousePosition.x > 0 && mousePosition.y > 0 && (
+      <div
+        className="fixed pointer-events-none z-50"
+        style={{
+          left: `${mousePosition.x - (eraserSize * effectiveCellSize) / 2}px`,
+          top: `${mousePosition.y - (eraserSize * effectiveCellSize) / 2}px`,
+          width: `${eraserSize * effectiveCellSize}px`,
+          height: `${eraserSize * effectiveCellSize}px`,
+          border: '3px solid rgba(239, 68, 68, 0.8)',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+        }}
+      >
+        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">
+          {eraserSize}×{eraserSize}
+        </div>
+      </div>
+    )}
+
+    {!isEraserActive && brushSize > 1 && mousePosition.x > 0 && mousePosition.y > 0 && (
+      <div
+        className="fixed pointer-events-none z-50"
+        style={{
+          left: `${mousePosition.x - (brushSize * effectiveCellSize) / 2}px`,
+          top: `${mousePosition.y - (brushSize * effectiveCellSize) / 2}px`,
+          width: `${brushSize * effectiveCellSize}px`,
+          height: `${brushSize * effectiveCellSize}px`,
+          border: `3px solid ${selectedColor}`,
+          backgroundColor: `${selectedColor}20`,
+          borderRadius: '8px',
+          boxShadow: `0 4px 12px ${selectedColor}40`,
+        }}
+      >
+        <div 
+          className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs font-bold px-2 py-1 rounded text-white"
+          style={{ backgroundColor: selectedColor }}
+        >
+          {brushSize}×{brushSize}
+        </div>
+      </div>
+    )}
+
+    <style>{`
+      .modern-slider::-webkit-slider-thumb {
+        appearance: none;
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        cursor: pointer;
+        border: 3px solid #ffffff;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        transition: all 0.2s ease;
+      }
+      
+      .modern-slider::-webkit-slider-thumb:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+      }
+      
+      .modern-slider::-moz-range-thumb {
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        cursor: pointer;
+        border: 3px solid #ffffff;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      }
+    `}</style>
+  </>
+)}        
+        <canvas
           ref={canvasRef}
-          width={window.innerWidth}  /* Force initial dimensions */
+          width={window.innerWidth} 
           height={window.innerHeight}
-          className="absolute inset-0 w-full h-full z-10" /* Use Tailwind for positioning */
+          className="absolute inset-0 w-full h-full z-10" 
           style={{
             position: 'absolute',
             left: 0,
             top: 0,
             width: '100%', 
             height: '100%',
-            backgroundColor: currentTheme.backgroundColor, /* Ensure we have a background */
+            backgroundColor: currentTheme.backgroundColor, 
           }}
         />
         {auctionOverlays}
