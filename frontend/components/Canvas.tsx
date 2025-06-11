@@ -2281,63 +2281,71 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setIsClearing(false);
     }
   }, [currentUser, userProfile, allLands, viewportOffset, effectiveCellSize, canvasContainerRef, getPixelKey, grid, addToHistory, currentTheme.defaultPixelColor]);
+
     const bind = useGesture(
-    {
-      onDrag: ({ active, movement: [dx, dy], event, first, last, touches, memo }) => {
-        const target = event?.target as HTMLElement;
-        if (target && (
-          target.closest('[data-toolbar]') ||
-          target.closest('button') ||
-          target.closest('input') ||
-          target.closest('select') ||
-          target.closest('textarea') ||
-          target.closest('.context-menu') ||
-          target.closest('.ui-overlay') ||
-          target.tagName === 'BUTTON' ||
-          target.tagName === 'INPUT' ||
-          target.tagName === 'SELECT' ||
-          target.tagName === 'TEXTAREA'
-        )) {
-          return memo;
+  {
+    onDrag: ({ active, movement: [dx, dy], event, first, last, touches, memo }) => {
+      console.log('[Canvas] Gesture onDrag - active:', active, 'touches:', touches, 'isPanMode:', isPanMode);
+      
+      const target = event?.target as HTMLElement;
+      if (target && (
+        target.closest('[data-toolbar]') ||
+        target.closest('button') ||
+        target.closest('input') ||
+        target.closest('select') ||
+        target.closest('textarea') ||
+        target.closest('.context-menu') ||
+        target.closest('.ui-overlay') ||
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'SELECT' ||
+        target.tagName === 'TEXTAREA'
+      )) {
+        return memo;
+      }
+      if ((isPanMode && touches === 1) || touches >= 2) { 
+        console.log('[Canvas] Handling pan gesture');
+        
+        if (event?.target === canvasContainerRef.current || canvasContainerRef.current?.contains(event?.target as Node)) {
+          if (event?.cancelable) event.preventDefault();
         }
 
-        if (isPanMode && (touches === 1 || touches === 2)) { 
-          if (event?.target === canvasContainerRef.current || canvasContainerRef.current?.contains(event?.target as Node)) {
-            if (event?.cancelable) event.preventDefault();
-          }
+        if (first) {
+          memo = { x: latestViewportOffsetTargetRef.current.x, y: latestViewportOffsetTargetRef.current.y };
+          setIsPanning(true);
+          setIsMouseDown(false);
+        }
 
-          if (first) {
-            memo = { x: latestViewportOffsetTargetRef.current.x, y: latestViewportOffsetTargetRef.current.y };
-            setIsPanning(true);
-          }
+        if (active && memo) {
+          const panSensitivity = touches === 1 ? 1.5 : 2; 
+          latestViewportOffsetTargetRef.current = {
+            x: memo.x - (dx / panSensitivity) / effectiveCellSize,
+            y: memo.y - (dy / panSensitivity) / effectiveCellSize,
+          };
+          requestViewportUpdateRAF();
+        }
 
-          if (active && memo) {
-            const panSensitivity = touches === 1 ? 1.5 : 2; 
-            latestViewportOffsetTargetRef.current = {
-              x: memo.x - (dx / panSensitivity) / effectiveCellSize,
-              y: memo.y - (dy / panSensitivity) / effectiveCellSize,
-            };
-            requestViewportUpdateRAF();
-          }
-
-          if (last) { 
-            setIsPanning(false);
-          }
-          return memo;
-        } else {
-          if (isPanning && !active) setIsPanning(false);
+        if (last) { 
+          setIsPanning(false);
         }
         return memo;
-      },
+      } else {
+        if (isPanning && !active) {
+          console.log('[Canvas] Resetting pan state for drawing');
+          setIsPanning(false);
+        }
+      }
+      return memo;
     },
-    {
-      drag: {
-        filterTaps: true,
-        threshold: 10, 
-      },
-      eventOptions: { passive: false, capture: false },
-    }
-  );
+  },
+  {
+    drag: {
+      filterTaps: true,
+      threshold: 5,
+    },
+    eventOptions: { passive: false, capture: false },
+  }
+);
 
 
   const navigateToUserLand = useCallback(() => {
@@ -2518,38 +2526,98 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   }, [currentUser, addToHistory, isEraserActive]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-
-    if (isPanMode) {
-      setIsMouseDown(true);
+    console.log('[Canvas] handleTouchStart - touches:', event.touches.length, 'isPanMode:', isPanMode);
+    
+    const target = event.target as HTMLElement;
+    if (target && (
+      target.closest('[data-toolbar]') ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea') ||
+      target.closest('.context-menu') ||
+      target.closest('.ui-overlay') ||
+      target.tagName === 'BUTTON' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'SELECT' ||
+      target.tagName === 'TEXTAREA'
+    )) {
       return;
     }
 
-    if (event.touches.length === 1) {
+    if (event.touches.length === 1 && !isPanMode) {
+      console.log('[Canvas] Single touch drawing mode');
       if (event.cancelable) event.preventDefault();
       event.stopPropagation();
       
       setIsMouseDown(true);
       setIsPanning(false);
       lastDrawnPositionRef.current = null;
-      handleDrawing(event);
-    }
-  }, [handleDrawing, isPanMode, setIsMouseDown, setIsPanning]);
-
-  const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-
-    if (isPanMode) {
-      return;
-    }
-    if (event.touches.length === 1 && isMouseDown && !isPanning) {
-      if (event.cancelable) event.preventDefault();
-      event.stopPropagation();
       
-      handleDrawing(event);
+      const touch = event.touches[0];
+      const mouseEvent = {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        button: 0,
+        preventDefault: () => event.preventDefault(),
+        stopPropagation: () => event.stopPropagation(),
+        target: event.target,
+        currentTarget: event.currentTarget
+      } as React.MouseEvent<HTMLDivElement>;
+      
+      handleDrawing(mouseEvent);
     }
-  }, [handleDrawing, isMouseDown, isPanMode, isPanning]);
+    else if (event.touches.length >= 2 || isPanMode) {
+      console.log('[Canvas] Multi-touch or pan mode, letting gesture handler take over');
+      setIsMouseDown(false);
+      setIsPanning(false);
+    }
+  }, [handleDrawing, isPanMode]);
+
+    const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+      console.log('[Canvas] handleTouchMove - touches:', event.touches.length, 'isMouseDown:', isMouseDown, 'isPanning:', isPanning, 'isPanMode:', isPanMode);
+
+      const target = event.target as HTMLElement;
+      if (target && (
+        target.closest('[data-toolbar]') ||
+        target.closest('button') ||
+        target.closest('input') ||
+        target.closest('select') ||
+        target.closest('textarea') ||
+        target.closest('.context-menu') ||
+        target.closest('.ui-overlay') ||
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'SELECT' ||
+        target.tagName === 'TEXTAREA'
+      )) {
+        return;
+      }
+
+      if (event.touches.length === 1 && isMouseDown && !isPanning && !isPanMode) {
+        console.log('[Canvas] Touch move drawing');
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        
+        const touch = event.touches[0];
+        const mouseEvent = {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          button: 0,
+          preventDefault: () => event.preventDefault(),
+          stopPropagation: () => event.stopPropagation(),
+          target: event.target,
+          currentTarget: event.currentTarget
+        } as React.MouseEvent<HTMLDivElement>;
+        
+        handleDrawing(mouseEvent);
+      }
+    }, [handleDrawing, isMouseDown, isPanning, isPanMode]);
 
   const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault();
+    console.log('[Canvas] handleTouchEnd - touches remaining:', event.touches.length);
+    
+    if (event.cancelable) event.preventDefault();
     event.stopPropagation();
     
     if (isDrawingSessionActiveRef.current && drawingSessionPixelsRef.current.length > 0) {
@@ -3397,7 +3465,7 @@ useEffect(() => {
         border: 'none',
         zIndex: 0
       }}      onMouseDown={handleCanvasMouseDown}
-      onTouchStart={handleCanvasTouchStart}
+      onTouchStart={handleTouchStart}
       onMouseMove={handleMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
