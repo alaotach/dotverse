@@ -1142,121 +1142,133 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   }, [stickerPacks.length, initialDataLoaded]);
 
   const requestFullSync = useCallback(async () => {
-    if (syncInProgressRef.current) {
-      console.log("Sync already in progress, skipping request");
-      return;
-    }
+  if (syncInProgressRef.current) {
+    console.log("Sync already in progress, skipping request");
+    return;
+  }
 
-    const now = Date.now();
-    if (now - lastSyncRequestTimeRef.current < MIN_SYNC_INTERVAL) {
-      console.log(`Sync request throttled. Last request was ${now - lastSyncRequestTimeRef.current}ms ago`);
-      return;
-    }
+  const now = Date.now();
+  if (now - lastSyncRequestTimeRef.current < MIN_SYNC_INTERVAL) {
+    console.log(`Sync request throttled. Last request was ${now - lastSyncRequestTimeRef.current}ms ago`);
+    return;
+  }
 
-    console.log("[Canvas] requestFullSync: Starting WebSocket sync");
-    syncInProgressRef.current = true;
-    lastSyncRequestTimeRef.current = now;
-    setSyncAttempted(true);
+  console.log("[Canvas] requestFullSync: Starting WebSocket sync");
+  syncInProgressRef.current = true;
+  lastSyncRequestTimeRef.current = now;
+  setSyncAttempted(true);
 
-    if (pixelBatchManagerRef.current) {
-      pixelBatchManagerRef.current.clear();
-    }
+  if (pixelBatchManagerRef.current) {
+    pixelBatchManagerRef.current.clear();
+  }
 
-    try {
-      masterGridDataRef.current.clear();
-      setGrid(new Map());
-      setStickerOverlays(new Map());
-      optimisticUpdatesMapRef.current.clear();
+  try {
+    masterGridDataRef.current.clear();
+    setGrid(new Map());
+    setStickerOverlays(new Map());
+    optimisticUpdatesMapRef.current.clear();
 
-      let receivedPixelCount = 0;
-      let syncDataComplete = false;
+    let receivedPixelCount = 0;
+    let syncDataComplete = false;
 
-      const syncDataHandler = (data: any[]) => {
-        console.log(`[Canvas] Received sync batch with ${data.length} pixels`);
-        
-        if (Array.isArray(data)) {
-          data.forEach(pixel => {
-            if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
-              const pixelKey = getPixelKey(pixel.x, pixel.y);
-              
-              const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
-              if (!optimisticUpdate || optimisticUpdate.timestamp < (pixel.timestamp || 0)) {
-                const pixelData = pixel.stickerId 
-                  ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
-                  : pixel.color;
-                  
-                masterGridDataRef.current.set(pixelKey, pixelData);
+    console.log("[Canvas] Requesting sync from server...");
+    
+    const syncDataHandler = (data: any[]) => {
+      console.log(`[Canvas] Received sync batch with ${data.length} pixels`);
+      console.log("[Canvas] Sample pixel data:", data.slice(0, 3));
+      
+      if (Array.isArray(data)) {
+        data.forEach(pixel => {
+          if (pixel && typeof pixel.x === 'number' && typeof pixel.y === 'number' && pixel.color) {
+            const pixelKey = getPixelKey(pixel.x, pixel.y);
+            
+            const optimisticUpdate = optimisticUpdatesMapRef.current.get(pixelKey);
+            if (!optimisticUpdate || optimisticUpdate.timestamp < (pixel.timestamp || 0)) {
+              const pixelData = pixel.stickerId 
+                ? JSON.stringify({ color: pixel.color, stickerId: pixel.stickerId })
+                : pixel.color;
                 
-                if (pixel.stickerId) {
-                  const sticker = findStickerById(pixel.stickerId);
-                  if (sticker) {
-                    setStickerOverlays(prev => {
-                      const newOverlays = new Map(prev);
-                      newOverlays.set(pixelKey, {
-                        sticker,
-                        x: pixel.x,
-                        y: pixel.y
-                      });
-                      return newOverlays;
+              masterGridDataRef.current.set(pixelKey, pixelData);
+              
+              if (pixel.stickerId) {
+                const sticker = findStickerById(pixel.stickerId);
+                if (sticker) {
+                  setStickerOverlays(prev => {
+                    const newOverlays = new Map(prev);
+                    newOverlays.set(pixelKey, {
+                      sticker,
+                      x: pixel.x,
+                      y: pixel.y
                     });
-                  }
+                    return newOverlays;
+                  });
                 }
               }
               receivedPixelCount++;
             }
-          });
-          console.log(`[Canvas] Processed ${data.length} pixels, total received: ${receivedPixelCount}`);
-        }
-      };
+          } else {
+            console.warn("[Canvas] Invalid pixel data received:", pixel);
+          }
+        });
+        console.log(`[Canvas] Processed ${data.length} pixels, total received: ${receivedPixelCount}`);
+        console.log(`[Canvas] Master grid now has ${masterGridDataRef.current.size} pixels`);
+      }
+    };
 
-      const syncCompletionPromise = new Promise<void>((resolve, reject) => {
-        const syncCompleteHandler = () => {
-          console.log('[Canvas] Sync completion signal received');
-          syncDataComplete = true;
+    const syncCompletionPromise = new Promise<void>((resolve, reject) => {
+      const syncCompleteHandler = () => {
+        console.log('[Canvas] Sync completion signal received');
+        syncDataComplete = true;
+        websocketService.off('sync_complete', syncCompleteHandler);
+        resolve();
+      };
+      
+      websocketService.on('sync_complete', syncCompleteHandler);
+      const timeoutId = setTimeout(() => {
+        if (!syncDataComplete) {
+          console.warn('[Canvas] Sync completion timeout reached');
           websocketService.off('sync_complete', syncCompleteHandler);
           resolve();
-        };
-        
-        websocketService.on('sync_complete', syncCompleteHandler);
-        const timeoutId = setTimeout(() => {
-          if (!syncDataComplete) {
-            console.warn('[Canvas] Sync completion timeout reached');
-            websocketService.off('sync_complete', syncCompleteHandler);
-            resolve();
-          }
-        }, 5000);
+        }
+      }, 10000);
 
-        const originalResolve = resolve;
-        resolve = () => {
-          clearTimeout(timeoutId);
-          originalResolve();
-        };
-      });
+      const originalResolve = resolve;
+      resolve = () => {
+        clearTimeout(timeoutId);
+        originalResolve();
+      };
+    });
 
-      websocketService.on('sync_data', syncDataHandler);
-      
-      websocketService.send('sync_request', {});
-      console.log('[Canvas] Sync request sent to WebSocket server');
-      
-      await syncCompletionPromise;
-      
-      websocketService.off('sync_data', syncDataHandler);
-      
-      console.log(`[Canvas] Sync complete, received ${receivedPixelCount} pixels from server`);
-      
-      updateGridFromVisibleChunks();
-      
-      setLastSyncTime(Date.now());
-      setLastSuccessfulSync(Date.now());
-      setInitialDataLoaded(true);
-      
-    } catch (error) {
-      console.error("[Canvas] Error during sync:", error);
-      setInitialDataLoaded(true);
-    } finally {
-      syncInProgressRef.current = false;
+    websocketService.on('sync_data', syncDataHandler);
+    
+    console.log('[Canvas] Sending sync_request to server...');
+    const syncSent = websocketService.send('sync_request', {});
+    console.log('[Canvas] Sync request sent:', syncSent);
+    
+    if (!syncSent) {
+      throw new Error('Failed to send sync request - WebSocket not connected');
     }
-  }, [getPixelKey, updateGridFromVisibleChunks, findStickerById]);
+    
+    await syncCompletionPromise;
+    
+    websocketService.off('sync_data', syncDataHandler);
+    
+    console.log(`[Canvas] Sync complete, received ${receivedPixelCount} pixels from server`);
+    console.log(`[Canvas] Master grid final size: ${masterGridDataRef.current.size}`);
+    
+    updateGridFromVisibleChunks();
+    
+    setLastSyncTime(Date.now());
+    setLastSuccessfulSync(Date.now());
+    setInitialDataLoaded(true);
+    
+  } catch (error) {
+      console.error("[Canvas] Error during sync:", error);
+    setInitialDataLoaded(true);
+  } finally {
+    syncInProgressRef.current = false;
+  }
+}, [getPixelKey, updateGridFromVisibleChunks, findStickerById]);
     const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
     if (!currentUser) {
       console.log('[Canvas] Cannot draw - no current user');
@@ -2677,10 +2689,8 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     }
   }, [getPixelKey, currentTheme.defaultPixelColor]);
   useEffect(() => {
-    const hasRequiredMethods = websocketService && 
-                              typeof websocketService.isConnected === 'function' &&
-                              typeof websocketService.connect === 'function';
-    
+    const hasRequiredMethods = websocketService && typeof websocketService.isConnected === 'function' && typeof websocketService.connect === 'function';
+
     if (!hasRequiredMethods) {
       console.error('WebSocket service is missing required methods - loading canvas without sync');
       setInitialDataLoaded(true);
