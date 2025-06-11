@@ -565,7 +565,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
 
   const [viewportCellWidth, setViewportCellWidth] = useState(100); 
   const [viewportCellHeight, setViewportCellHeight] = useState(100);
-    const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
+  const effectiveCellSize = useMemo(() => CELL_SIZE * zoomLevel, [zoomLevel]);
+  const imageCache = useRef(new Map<string, HTMLImageElement>());
+
   const { currentUser, userProfile, refreshProfile } = useAuth(); 
   
   useEffect(() => {
@@ -602,6 +604,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
   const clientIdRef = useRef<string>(CLIENT_ID);
   const optimisticUpdatesMapRef = useRef<Map<string, {timestamp: number, color: string}>>(new Map());
   const canvasContainerRef = useRef<HTMLDivElement>(null); 
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const panStartMousePositionRef = useRef<{ x: number, y: number } | null>(null);
   const panStartViewportOffsetRef = useRef<{ x: number, y: number } | null>(null);  const isSpacebarHeldRef = useRef<boolean>(false);  const latestViewportOffsetTargetRef = useRef(viewportOffset);
   const latestZoomLevelTargetRef = useRef(zoomLevel);
@@ -853,29 +856,74 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         setViewportCellWidth(newWidth);
         setViewportCellHeight(newHeight);
       }
-    }
-  }, [effectiveCellSize, canvasWidth, canvasHeight]);
+    }  }, [effectiveCellSize, canvasWidth, canvasHeight]);
 
   useEffect(() => {
-  const updateCanvasDimensions = () => {
-      if (canvasContainerRef.current) {
-        const containerWidth = canvasContainerRef.current.clientWidth;
-        const containerHeight = canvasContainerRef.current.clientHeight;
+    console.log('[Canvas] Canvas ref effect running. canvasRef.current:', !!canvasRef.current, 'initialDataLoaded:', initialDataLoaded);
+    
+    if (canvasRef.current && initialDataLoaded) {
+      const container = canvasRef.current.parentElement;
+      console.log('[Canvas] Container:', !!container);
+      
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const width = rect.width > 0 ? rect.width : window.innerWidth;
+        const height = rect.height > 0 ? rect.height : window.innerHeight;
         
-        setCanvasWidth(containerWidth);
-        setCanvasHeight(containerHeight);
+        console.log('[Canvas] Setting dimensions directly:', width, 'x', height);
+        
+        setCanvasWidth(width);
+        setCanvasHeight(height);
+        
+        canvasRef.current.width = width;
+        canvasRef.current.height = height;
         
         if (effectiveCellSize > 0) {
-          const newWidth = Math.ceil(containerWidth / effectiveCellSize) + 2;
-          const newHeight = Math.ceil(containerHeight / effectiveCellSize) + 2;
-          
+          const newWidth = Math.ceil(width / effectiveCellSize) + 2;
+          const newHeight = Math.ceil(height / effectiveCellSize) + 2;
           setViewportCellWidth(newWidth);
           setViewportCellHeight(newHeight);
         }
       }
+    }
+  }, [canvasRef.current, initialDataLoaded, effectiveCellSize]);
+
+  useEffect(() => {
+    console.log('[Canvas] useEffect for updateCanvasDimensions running. effectiveCellSize:', effectiveCellSize, 'initialDataLoaded:', initialDataLoaded);
+    
+    const updateCanvasDimensions = () => {
+      console.log('[Canvas] updateCanvasDimensions called, canvasContainerRef.current:', !!canvasContainerRef.current);if (canvasContainerRef.current) {
+        const containerWidth = canvasContainerRef.current.clientWidth;
+        const containerHeight = canvasContainerRef.current.clientHeight;
+        
+        console.log('[Canvas] Container dimensions:', { containerWidth, containerHeight });
+        
+        const finalWidth = containerWidth > 0 ? containerWidth : window.innerWidth;
+        const finalHeight = containerHeight > 0 ? containerHeight : window.innerHeight;
+        
+        console.log('[Canvas] Final dimensions:', { finalWidth, finalHeight });
+        
+        setCanvasWidth(finalWidth);
+        setCanvasHeight(finalHeight);
+
+        if (canvasRef.current) {
+          canvasRef.current.width = finalWidth;
+          canvasRef.current.height = finalHeight;
+          console.log('[Canvas] Set canvas element dimensions to:', finalWidth, 'x', finalHeight);
+        }
+        
+        if (effectiveCellSize > 0) {
+          const newWidth = Math.ceil(finalWidth / effectiveCellSize) + 2;
+          const newHeight = Math.ceil(finalHeight / effectiveCellSize) + 2;
+          
+          setViewportCellWidth(newWidth);
+          setViewportCellHeight(newHeight);
+        }} else {
+        console.log('[Canvas] canvasContainerRef.current is null');
+      }
     };
 
-    updateCanvasDimensions();
+    const timeoutId = setTimeout(updateCanvasDimensions, 10);
     
     const resizeObserver = new ResizeObserver(updateCanvasDimensions);
     if (canvasContainerRef.current) {
@@ -883,10 +931,10 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     }
 
     return () => {
+      clearTimeout(timeoutId);
       resizeObserver.disconnect();
     };
-  }, [effectiveCellSize]);
-
+  }, [effectiveCellSize, initialDataLoaded]);
   const processViewportUpdatesRAF = useCallback(() => {
     setViewportOffset(latestViewportOffsetTargetRef.current);
     setZoomLevel(latestZoomLevelTargetRef.current);
@@ -1209,14 +1257,15 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       syncInProgressRef.current = false;
     }
   }, [getPixelKey, updateGridFromVisibleChunks, findStickerById]);
-  
-  const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
+    const canDrawAtPoint = useCallback((worldX: number, worldY: number): boolean => {
     if (!currentUser) {
+      console.log('[Canvas] Cannot draw - no current user');
       return false;
     }
     
     for (const land of allLands) {
-      if (land.owner === currentUser.uid) {        const halfSize = Math.floor(land.ownedSize / 2);
+      if (land.owner === currentUser.uid) {        
+        const halfSize = Math.floor(land.ownedSize / 2);
         const isWithinLand = (
           worldX >= land.centerX - halfSize &&
           worldX <= land.centerX + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0) &&
@@ -1225,8 +1274,8 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
         );
         
         if (isWithinLand) {
-          
           if (land.isAuctioned) {
+            console.log('[Canvas] Cannot draw - land is under auction');
             return false;
           }
           return true;
@@ -1813,9 +1862,17 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       setIsEraserActive(false);
       setIsFillActive(false);
     }
-  }, [isStickerMode]);
+  }, [isStickerMode]);  
 
-  
+  const updateGridAndRedraw = useCallback((updates: Map<string, string>) => {
+    setGrid(prev => {
+      const newGrid = new Map(prev);
+      updates.forEach((color, key) => {
+        newGrid.set(key, color);
+      });
+      return newGrid;
+    });
+  }, []);
 
   const handleDrawing = useCallback( (event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!canvasContainerRef.current || !currentUser || !userProfile) {
@@ -1909,9 +1966,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               color,
               timestamp: now,
               clientId: clientIdRef.current
-            });
-
-            setStickerOverlays(prev => {
+            });            setStickerOverlays(prev => {
               const newOverlays = new Map(prev);
               newOverlays.delete(pixelKey);
               return newOverlays;
@@ -1921,13 +1976,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       }
       
       if (gridUpdates.size > 0) {
-        setGrid(prev => {
-          const newGrid = new Map(prev);
-          gridUpdates.forEach((color, key) => {
-            newGrid.set(key, color);
-          });
-          return newGrid;
-        });
+        updateGridAndRedraw(gridUpdates);
       }
       
       if (pixelsToUpdate.length > 0) {
@@ -1968,20 +2017,13 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
               y: targetY,
               color,
               timestamp: now,
-              clientId: clientIdRef.current
-            });
+              clientId: clientIdRef.current            });
           }
         }
       }
       
       if (gridUpdates.size > 0) {
-        setGrid(prev => {
-          const newGrid = new Map(prev);
-          gridUpdates.forEach((color, key) => {
-            newGrid.set(key, color);
-          });
-          return newGrid;
-        });
+        updateGridAndRedraw(gridUpdates);
       }
       
       if (pixelsToUpdate.length > 0) {
@@ -2031,18 +2073,11 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             color,
             timestamp: now,
             clientId: clientIdRef.current
-          });
-        }
+          });        }
       });
       
       if (gridUpdates.size > 0) {
-        setGrid(prev => {
-          const newGrid = new Map(prev);
-          gridUpdates.forEach((color, key) => {
-            newGrid.set(key, color);
-          });
-          return newGrid;
-        });
+        updateGridAndRedraw(gridUpdates);
       }
       
       if (pixelsToUpdate.length > 0) {
@@ -2070,16 +2105,15 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       const pixelData = newStickerId 
         ? JSON.stringify({ color, stickerId: newStickerId })
         : color;
-        
-      masterGridDataRef.current.set(pixelKey, pixelData);
+          masterGridDataRef.current.set(pixelKey, pixelData);
       optimisticUpdatesMapRef.current.set(pixelKey, {
         timestamp: now,
         color: pixelData
-      });setGrid(prev => {
-        const newGrid = new Map(prev);
-        newGrid.set(pixelKey, color);
-        return newGrid;
       });
+      
+      const gridUpdates = new Map<string, string>();
+      gridUpdates.set(pixelKey, color);
+      updateGridAndRedraw(gridUpdates);
       
       if (randomSticker) {
         setStickerOverlays(prev => {
@@ -2112,11 +2146,9 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       trackPixel(worldX, worldY, color);
     }
 
-    
-    
-    lastDrawnPositionRef.current = { x: worldX, y: worldY };
+        lastDrawnPositionRef.current = { x: worldX, y: worldY };
     setLastPlaced(now);
-  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive,trackPixel, isStickerMode, selectedStickerPack, getPixelKey, currentTheme]);
+  }, [canvasContainerRef, currentUser, userProfile, viewportOffset, effectiveCellSize, canDrawAtPoint, lastPlaced, isEraserActive, selectedColor, getPixelKey, isMouseDown, eraserSize, brushSize, isFillActive, trackPixel, isStickerMode, selectedStickerPack, getPixelKey, currentTheme]);
   const clearCanvas = useCallback(async () => {
     if (!currentUser) {
       setShowAuthWarning(true);
@@ -2815,6 +2847,263 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [isLandsDropdownOpen]);
+
+  const showGridLines = SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD;
+
+    const landBorderOverlays = useMemo(() => {
+    if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
+      return [];
+    }
+
+    const overlays: JSX.Element[] = [];
+    const startWorldX = Math.floor(viewportOffset.x);
+    const startWorldY = Math.floor(viewportOffset.y);
+    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;    allLands.forEach((land) => {
+      const halfSize = Math.floor(land.ownedSize / 2);
+      const landMinX = land.centerX - halfSize;
+      const landMaxX = land.centerX + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
+      const landMinY = land.centerY - halfSize;
+      const landMaxY = land.centerY + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
+
+      const viewMinX = startWorldX;
+      const viewMaxX = startWorldX + viewportCellWidth;
+      const viewMinY = startWorldY;
+      const viewMaxY = startWorldY + viewportCellHeight;
+
+      if (landMaxX < viewMinX || landMinX > viewMaxX || landMaxY < viewMinY || landMinY > viewMaxY) {
+        return;
+      }
+
+      const screenLeft = (landMinX - startWorldX) * effectiveCellSize - offsetX;
+      const screenTop = (landMinY - startWorldY) * effectiveCellSize - offsetY;
+      const screenWidth = land.ownedSize * effectiveCellSize;
+      const screenHeight = land.ownedSize * effectiveCellSize;
+      const isCurrentUserLand = currentUser && currentUser.uid === land.owner;
+      const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
+      const borderWidth = 2;
+
+      overlays.push(
+        <div
+          key={`land-border-${land.centerX}-${land.centerY}`}
+          style={{
+            position: 'absolute',
+            left: screenLeft,
+            top: screenTop,
+            width: screenWidth,
+            height: screenHeight,
+            border: `${borderWidth}px solid ${borderColor}`,
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+            zIndex: 10
+          }}
+        />
+      );
+    });
+
+    return overlays;
+  }, [allLands,viewportOffset,viewportCellWidth,viewportCellHeight,effectiveCellSize,initialDataLoaded,currentUser,userLandBorderColor,otherLandBorderColor]);
+  const drawCanvasContent = useCallback(() => {
+    console.log(
+      '[Canvas] drawCanvasContent called. initialDataLoaded:', initialDataLoaded,
+      'canvasWidth (state):', canvasWidth, 'canvasHeight (state):', canvasHeight,
+      'viewportCellWidth:', viewportCellWidth, 'viewportCellHeight:', viewportCellHeight
+    );
+    
+  if (canvasRef.current) {
+    const useWindowDimensions = canvasWidth === 0 || canvasHeight === 0;
+    
+    if (useWindowDimensions) {
+      console.log('[Canvas] Using window dimensions as fallback');
+      canvasRef.current.width = window.innerWidth;
+      canvasRef.current.height = window.innerHeight;
+
+      setCanvasWidth(window.innerWidth);
+      setCanvasHeight(window.innerHeight);
+      
+      if (viewportCellWidth === 0 || viewportCellHeight === 0) {
+        const cellSize = effectiveCellSize > 0 ? effectiveCellSize : 10;
+        setViewportCellWidth(Math.ceil(window.innerWidth / cellSize) + 2);
+        setViewportCellHeight(Math.ceil(window.innerHeight / cellSize) + 2);
+      }
+    }
+  }
+  
+  if (!canvasRef.current || !initialDataLoaded) {
+    console.log('[Canvas] drawCanvasContent returning early - no canvas ref or data not loaded');
+    return;
+  }
+
+  const canvas = canvasRef.current;
+  const ctx = canvas.getContext('2d');
+  
+  if (!ctx) {
+      console.error('[Canvas] Failed to get 2D context');
+      return;
+    }
+
+  console.log(
+    '[Canvas] Drawing. Canvas actual dimensions:', canvas.width, 'x', canvas.height,
+    'EffectiveCellSize:', effectiveCellSize,
+    'Theme Default Pixel:', currentTheme.defaultPixelColor,
+    'Theme BG:', currentTheme.backgroundColor
+  );
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const startWorldX = Math.floor(viewportOffset.x);
+  const startWorldY = Math.floor(viewportOffset.y);
+  
+  const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
+  const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;
+
+  const activeAnimatedPixels = new Map<string, string>();
+  const animatedLandAreas = new Set<string>();
+  
+  animatedLands.forEach((animatedLandState, landId) => {
+    if (!animatedLandState.isActive) return;
+    const land = allLands.find(l => l.id === landId);
+    if (!land) return;
+
+    const animatedPixels = getAnimatedLandPixels(land, animatedLandState);
+    animatedPixels.forEach((color, pixelKey) => {
+      activeAnimatedPixels.set(pixelKey, color);
+    });
+
+    const halfSize = Math.floor(land.ownedSize / 2);
+    const landStartX = land.centerX - halfSize;
+    const landEndX = land.centerX + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0);
+    const landStartY = land.centerY - halfSize;
+    const landEndY = land.centerY + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0);
+
+    for (let y = landStartY; y <= landEndY; y++) {
+      for (let x = landStartX; x <= landEndX; x++) {
+        animatedLandAreas.add(`${x}:${y}`);
+      }
+    }
+  });
+
+  for (let screenY = 0; screenY < viewportCellHeight; screenY++) {
+    for (let screenX = 0; screenX < viewportCellWidth; screenX++) {
+      const worldX = screenX + startWorldX;
+      const worldY = screenY + startWorldY;
+      const pixelKey = getPixelKey(worldX, worldY);
+      
+      let color = currentTheme.defaultPixelColor;
+      
+      const isInAnimatedArea = animatedLandAreas.has(pixelKey);
+      const animatedColor = activeAnimatedPixels.get(pixelKey);
+
+      if (animatedColor) {
+        color = animatedColor;
+      } else if (isInAnimatedArea) {
+        color = currentTheme.defaultPixelColor; 
+      } else {
+        const pixelData = grid.get(pixelKey);
+        if (pixelData) {
+          try {
+            if (typeof pixelData === 'string' && pixelData.includes('stickerId')) {
+              const parsed = JSON.parse(pixelData);
+              color = parsed.color; 
+            } else {
+              color = pixelData;
+            }
+          } catch (e) {
+            color = pixelData;
+          }
+        }
+      }
+      
+      const cellScreenX = screenX * effectiveCellSize - offsetX;
+      const cellScreenY = screenY * effectiveCellSize - offsetY;
+      ctx.fillStyle = color;
+      ctx.fillRect(cellScreenX, cellScreenY, effectiveCellSize, effectiveCellSize);
+
+      if (showGridLines && zoomLevel >= GRID_LINE_THRESHOLD) {
+        ctx.strokeStyle = currentTheme.gridLineColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cellScreenX, cellScreenY, effectiveCellSize, effectiveCellSize);
+      }
+    }
+  }
+
+  stickerOverlays.forEach((stickerData, _pixelKey) => {
+      const { sticker, x: worldX, y: worldY } = stickerData;
+
+      if (worldX >= startWorldX && worldX < startWorldX + viewportCellWidth &&
+          worldY >= startWorldY && worldY < startWorldY + viewportCellHeight) {
+
+          const cellScreenX = (worldX - startWorldX) * effectiveCellSize - offsetX;
+          const cellScreenY = (worldY - startWorldY) * effectiveCellSize - offsetY;
+
+          let img = imageCache.current.get(sticker.url);
+          if (img && img.complete && img.naturalHeight !== 0) {
+              ctx.drawImage(img, cellScreenX, cellScreenY, effectiveCellSize, effectiveCellSize);
+          } else if (!img || img.dataset.loading !== 'true') { 
+              const newImg = new Image();
+              newImg.src = sticker.url;
+              newImg.dataset.loading = 'true'; 
+              newImg.onload = () => {
+                  imageCache.current.set(sticker.url, newImg);
+              };
+              newImg.onerror = () => {
+                  console.error('Failed to load sticker image:', sticker.url);
+                  imageCache.current.delete(sticker.url);
+              };
+              if (!img) {
+                  imageCache.current.set(sticker.url, newImg);
+              }
+          }
+      }
+    });
+    allLands.forEach((land) => {
+      const halfSize = Math.floor(land.ownedSize / 2);
+      const landMinX = land.centerX - halfSize;
+      const landMaxX = land.centerX + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0);
+      const landMinY = land.centerY - halfSize;
+      const landMaxY = land.centerY + halfSize - (land.ownedSize % 2 === 0 ? 1 : 0);
+
+      const viewMinX = startWorldX -1;
+      const viewMaxX = startWorldX + viewportCellWidth;
+      const viewMinY = startWorldY -1;
+      const viewMaxY = startWorldY + viewportCellHeight;
+
+      if (landMaxX < viewMinX || landMinX > viewMaxX || landMaxY < viewMinY || landMinY > viewMaxY) {
+        return;
+      }
+
+      const screenLeft = (landMinX - startWorldX) * effectiveCellSize - offsetX;
+      const screenTop = (landMinY - startWorldY) * effectiveCellSize - offsetY;
+      const screenWidth = land.ownedSize * effectiveCellSize;
+      const screenHeight = land.ownedSize * effectiveCellSize;
+      
+      const isCurrentUserLand = currentUser && currentUser.uid === land.owner;
+      const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
+      const borderWidth = 2;
+
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = borderWidth;
+      ctx.strokeRect(screenLeft, screenTop, screenWidth, screenHeight);
+    });
+  }, [initialDataLoaded, canvasWidth, canvasHeight, viewportCellWidth, viewportCellHeight,currentTheme, viewportOffset, effectiveCellSize, animatedLands, allLands, getAnimatedLandPixels, grid, getPixelKey, showGridLines, zoomLevel, GRID_LINE_THRESHOLD, stickerOverlays, currentUser, userLandBorderColor, otherLandBorderColor]);
+
+  const triggerCanvasRedraw = useCallback(() => {
+    if (canvasRef.current && initialDataLoaded && canvasWidth > 0 && canvasHeight > 0) {
+      drawCanvasContent();
+    }  }, [drawCanvasContent, initialDataLoaded, canvasWidth, canvasHeight]);
+
+useEffect(() => {
+  console.log('[Canvas] useEffect for drawCanvas check running');
+  
+  if (initialDataLoaded && canvasRef.current) {
+    console.log('[Canvas] FORCE calling drawCanvasContent from useEffect');
+    setTimeout(() => {
+      drawCanvasContent();
+    }, 10);
+  } else {
+    console.log('[Canvas] NOT calling drawCanvasContent - conditions not met');
+  }
+}, [drawCanvasContent,grid, viewportOffset, zoomLevel, currentTheme, animatedLands, allLands, stickerOverlays,effectiveCellSize, viewportCellWidth, viewportCellHeight, initialDataLoaded,canvasWidth, canvasHeight
+]);
   
   const cellLandMap = useMemo(() => {
     console.log('[Canvas] Recalculating cellLandMap - allLands count:', allLands.length, 'userProfile.landInfo:', userProfile?.landInfo);
@@ -2884,72 +3173,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     console.log('[Canvas] cellLandMap built with', newCellLandMap.size, 'cells');
     return newCellLandMap;
   }, [currentUser, userProfile?.landInfo, allLands]);
-
-  const showGridLines = SHOW_GRID_LINES && zoomLevel >= GRID_LINE_THRESHOLD;
-
-    const landBorderOverlays = useMemo(() => {
-    if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
-      return [];
-    }
-
-    const overlays: JSX.Element[] = [];
-    const startWorldX = Math.floor(viewportOffset.x);
-    const startWorldY = Math.floor(viewportOffset.y);
-    const offsetX = (viewportOffset.x - startWorldX) * effectiveCellSize;
-    const offsetY = (viewportOffset.y - startWorldY) * effectiveCellSize;    allLands.forEach((land) => {
-      const halfSize = Math.floor(land.ownedSize / 2);
-      const landMinX = land.centerX - halfSize;
-      const landMaxX = land.centerX + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
-      const landMinY = land.centerY - halfSize;
-      const landMaxY = land.centerY + halfSize + (land.ownedSize % 2 === 0 ? -1 : 0);
-
-      const viewMinX = startWorldX;
-      const viewMaxX = startWorldX + viewportCellWidth;
-      const viewMinY = startWorldY;
-      const viewMaxY = startWorldY + viewportCellHeight;
-
-      if (landMaxX < viewMinX || landMinX > viewMaxX || landMaxY < viewMinY || landMinY > viewMaxY) {
-        return;
-      }
-
-      const screenLeft = (landMinX - startWorldX) * effectiveCellSize - offsetX;
-      const screenTop = (landMinY - startWorldY) * effectiveCellSize - offsetY;
-      const screenWidth = land.ownedSize * effectiveCellSize;
-      const screenHeight = land.ownedSize * effectiveCellSize;
-      const isCurrentUserLand = currentUser && currentUser.uid === land.owner;
-      const borderColor = isCurrentUserLand ? userLandBorderColor : otherLandBorderColor;
-      const borderWidth = 2;
-
-      overlays.push(
-        <div
-          key={`land-border-${land.centerX}-${land.centerY}`}
-          style={{
-            position: 'absolute',
-            left: screenLeft,
-            top: screenTop,
-            width: screenWidth,
-            height: screenHeight,
-            border: `${borderWidth}px solid ${borderColor}`,
-            boxSizing: 'border-box',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
-        />
-      );
-    });
-
-    return overlays;
-  }, [
-    allLands,
-    viewportOffset,
-    viewportCellWidth,
-    viewportCellHeight,
-    effectiveCellSize,
-    initialDataLoaded,
-    currentUser,
-    userLandBorderColor,
-    otherLandBorderColor
-  ]);
 
   const gridCells = useMemo(() => {
     if (viewportCellWidth === 0 || viewportCellHeight === 0 || !initialDataLoaded) {
@@ -3897,21 +4120,21 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
             Size: {userProfile.landInfo.ownedSize}x{userProfile.landInfo.ownedSize}
           </div>        )}
       </div>
-      )}
-        <div 
-        className="absolute inset-0"
-        style={{
-          transform: 'translate3d(0, 0, 0)',
-          willChange: 'transform',
-          width: '100%',
-          height: '100%'
-        }}
-      >
-        {gridCells}
-        {landBorderOverlays}
-        {renderStickerOverlays()}
+      )}        <canvas
+          ref={canvasRef}
+          width={window.innerWidth}  /* Force initial dimensions */
+          height={window.innerHeight}
+          className="absolute inset-0 w-full h-full z-10" /* Use Tailwind for positioning */
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%', 
+            height: '100%',
+            backgroundColor: currentTheme.backgroundColor, /* Ensure we have a background */
+          }}
+        />
         {auctionOverlays}
-      </div>
       
       <div className="absolute bottom-4 right-4 bg-white px-3 py-1 rounded shadow-md text-xs">
         Zoom: {Math.round(zoomLevel * 100)}%
