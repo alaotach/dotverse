@@ -51,7 +51,7 @@ const Navbar: React.FC = () => {
     setMobileMenuOpen(false);
   };    
   return (
-    <nav className="text-white relative z-[10000] bg-black/10 backdrop-blur-sm border-b border-purple-500/10 shadow-xl shadow-purple-500/10">
+    <nav className="text-white relative z-[10000] bg-black/90 backdrop-blur-md border-b border-purple-500/20 shadow-xl shadow-purple-500/10">
       <div className="max-w-8xl mx-auto px-1 sm:px-2 md:px-4 lg:px-6">
         <div className="flex items-center justify-between h-14 sm:h-16 lg:h-18">
           <div className="flex items-center">
@@ -124,7 +124,7 @@ const Navbar: React.FC = () => {
                   <div> <DailyCheckInButton /> </div>
                   <button
                     onClick={togglePlayerVisibility}
-                    className={`p-1 md:p-1.5 lg:p-2 xl:p-2.5 rounded-xl transition-all duration-300 hover:scale-110`}
+                    className={`p-1 md:p-1.5 lg:p-2 xl:p-2.5 rounded-xl transition-all duration-300 hover:scale-110 text-white hover:text-purple-300`}
                     title={isPlayerVisible ? "Hide Music Player" : "Show Music Player"}
                   >
                     <FiMusic size={14} />
@@ -184,7 +184,7 @@ const Navbar: React.FC = () => {
                 )}
             <button
               onClick={toggleMobileMenu}
-              className="group relative text-white hover:text-purple-300 p-2 sm:p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20" /* Adjusted padding for mobile */
+              className="group relative text-white hover:text-purple-300 p-2 sm:p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-purple-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20"
             >
               <div className="relative z-10">
                 {mobileMenuOpen ? <FiX size={24} /> : <FiMenu size={24} />}
@@ -195,8 +195,8 @@ const Navbar: React.FC = () => {
         </div>
       </div>
       {mobileMenuOpen && (
-        <div className="fixed top-16 left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-white/10 shadow-lg z-50 max-h-[calc(100vh-4rem)] overflow-y-auto">
-          <div className="px-3 pt-2 pb-3 space-y-2 w-full min-w-0 overflow-hidden">            {/* Navigation Links - Horizontal Scrollable */}
+        <div className="fixed top-16 left-0 right-0 bg-black/95 backdrop-blur-xl border-t border-white/10 shadow-lg z-50 max-h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="px-3 pt-2 pb-3 space-y-2 w-full min-w-0 overflow-hidden">            
             <div className="pb-3 border-b border-white/10">
               <div className="text-gray-400 text-xs font-semibold uppercase tracking-wide px-2 py-1 mb-2">
                 Navigation

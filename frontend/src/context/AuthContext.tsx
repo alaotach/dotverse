@@ -7,6 +7,7 @@ import {
   UserProfile
 } from '../services/authService';
 import { analyticsService } from '../services/AnalyticsService';
+import websocketService from '../services/websocketService';
 
 export interface AppUserProfile {
   uid: string;
@@ -52,6 +53,15 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AppUserProfile | null>(null);
   const [userProfile, setUserProfile] = useState<AppUserProfile | null>(null); 
   const [isLoading, setIsLoading] = useState(true);
+
+  const authContextForWebSocket = {
+    currentUser,
+    userProfile
+  };
+
+  useEffect(() => {
+    websocketService.setAuthContext(authContextForWebSocket);
+  }, [currentUser, userProfile]);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -191,6 +201,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
       setIsLoading(false);
     }
   };
+
   const logout = async () => {
     setIsLoading(true);
     

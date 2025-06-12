@@ -29,9 +29,11 @@ class WebSocketService {
   private pingTimeoutId: NodeJS.Timeout | null = null;
   private connectionTimeoutId: NodeJS.Timeout | null = null;
   private isManualDisconnect: boolean = false;
+  private authContextRef: any = null;
 
   private eventListeners: Map<string, Set<(...args: any[]) => void>> = new Map();
   private connectionChangeListeners: Set<(isConnected: boolean, state: 'disconnected' | 'connecting' | 'connected') => void> = new Set();
+  private onlineUsersListeners: Set<OnlineUsersHandler> = new Set();
 
   constructor() {
     this.handleConnect = this.handleConnect.bind(this);
@@ -42,15 +44,13 @@ class WebSocketService {
   }
 
   public connect(): void {
-    
     if (this.connectionState === 'connecting') {
-      console.log('[WS] Already connecting, skipping...');
+      console.log('[WS] Already connecting, ignoring duplicate connect request');
       return;
     }
     
     if (this.connectionState === 'connected' && this.socket?.connected) {
-      console.log('[WS] Already connected.');
-      this.notifyConnectionChange();
+      console.log('[WS] Already connected');
       return;
     }
 
@@ -61,13 +61,8 @@ class WebSocketService {
     this.cleanup();
     
     this.connectionTimeoutId = setTimeout(() => {
-      if (this.connectionState === 'connecting') {
-        console.error('[WS] Connection timeout - forcing disconnect');
-        if (this.socket) {
-          this.socket.disconnect();
-        }
-        this.handleConnectError(new Error('Connection timeout'));
-      }
+      console.log('[WS] Connection timeout');
+      this.handleConnectError(new Error('Connection timeout'));
     }, CONNECTION_TIMEOUT);
     
     this.socket = io(WEBSOCKET_URL, {
@@ -89,19 +84,13 @@ class WebSocketService {
     
     this.socket.on('ping', () => {
       console.log('[WS] Received ping from server');
-      this.lastPongTime = Date.now();
     });
     
     this.socket.on('pong', this.handlePong);
 
     this.socket.on('heartbeat_ack', (data) => {
-      console.log('[WS] Received heartbeat_ack from server:', data);
+      console.log('[WS] Received heartbeat ack:', data);
       this.lastPongTime = Date.now();
-      
-      if (this.pingTimeoutId) {
-        clearTimeout(this.pingTimeoutId);
-        this.pingTimeoutId = null;
-      }
     });
 
     this.eventListeners.forEach((callbacks, event) => {
@@ -128,11 +117,132 @@ class WebSocketService {
     }
     
     this.startHeartbeat();
+
+    this.socket?.on('online_users_update', (users: OnlineUser[]) => {
+      console.log('[WS] Received online users update:', users);
+      this.notifyOnlineUsersChange(users);
+    });
+
+    const userId = this.getCurrentUserId();
+    const displayName = this.getCurrentUserDisplayName();
+    
+    if (userId && displayName) {
+      console.log('[WS] Registering user for presence tracking:', { userId, displayName });
+      this.socket?.emit('register_for_presence', {
+        userId,
+        displayName
+      });
+    } else {
+      console.warn('[WS] Cannot register for presence tracking - missing user data');
+    }
+  }
+
+  public onOnlineUsersChange(callback: OnlineUsersHandler): void {
+    this.onlineUsersListeners.add(callback);
+  }
+
+  public offOnlineUsersChange(callback: OnlineUsersHandler): void {
+    this.onlineUsersListeners.delete(callback);
+  }
+
+  private notifyOnlineUsersChange(users: OnlineUser[]): void {
+    this.onlineUsersListeners.forEach(callback => {
+      try {
+        callback(users);
+      } catch (error) {
+        console.error('[WS] Error in online users callback:', error);
+      }
+    });
+  }
+
+  public setAuthContext(authContext: any): void {
+    this.authContextRef = authContext;
+  }
+
+  private getCurrentUserId(): string | null {
+    try {
+      if (this.authContextRef?.currentUser?.uid) {
+        return this.authContextRef.currentUser.uid;
+      }
+
+      const storedUserUID = localStorage.getItem('dotverse_user_uid');
+      if (storedUserUID) {
+        return storedUserUID;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[WS] Error getting current user ID:', error);
+      return null;
+    }
+  }
+
+  private getCurrentUserDisplayName(): string | null {
+    try {
+      if (this.authContextRef?.userProfile?.displayName) {
+        return this.authContextRef.userProfile.displayName;
+      }
+
+      if (this.authContextRef?.userProfile?.email) {
+        return this.authContextRef.userProfile.email;
+      }
+
+      if (this.authContextRef?.currentUser?.email) {
+        return this.authContextRef.currentUser.email;
+      }
+
+      return 'Anonymous User';
+    } catch (error) {
+      console.error('[WS] Error getting current user display name:', error);
+      return 'Anonymous User';
+    }
+  }
+
+  public updateUserPresence(): void {
+    if (this.socket && this.isConnected()) {
+      const userId = this.getCurrentUserId();
+      const displayName = this.getCurrentUserDisplayName();
+      
+      if (userId && displayName) {
+        this.socket.emit('update_presence', {
+          userId,
+          displayName,
+          timestamp: Date.now()
+        });
+        console.log('[WS] Updated user presence for:', displayName);
+      }
+    }
   }
 
   private handleDisconnect(reason: Socket.DisconnectReason): void {
-    const socketId = this.socket?.id;
-    console.warn(`[WS] Disconnected. Reason: ${reason}. Socket ID was: ${socketId}`);
+    console.log('[WS] Disconnected. Reason:', reason);
+    this.setConnectionState('disconnected');
+    this.stopHeartbeat();
+    
+    if (this.connectionTimeoutId) {
+      clearTimeout(this.connectionTimeoutId);
+      this.connectionTimeoutId = null;
+    }
+    
+    if (!this.isManualDisconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(
+        RECONNECT_DELAY_BASE * Math.pow(2, this.reconnectAttempts),
+        RECONNECT_DELAY_MAX
+      );
+      
+      console.log(`[WS] Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+      
+      this.reconnectTimeoutId = setTimeout(() => {
+        this.reconnectAttempts++;
+        this.connect();
+      }, delay);
+    } else if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('[WS] Max reconnection attempts reached. Giving up.');
+    }
+  }
+
+  private handleConnectError(error: Error): void {
+    console.error('[WS] Connection error:', error);
     
     if (this.connectionTimeoutId) {
       clearTimeout(this.connectionTimeoutId);
@@ -140,64 +250,25 @@ class WebSocketService {
     }
     
     this.setConnectionState('disconnected');
-    this.stopHeartbeat();
-
-    if (this.isManualDisconnect) {
-      console.log('[WS] Manual disconnect - not attempting to reconnect');
-      return;
-    }
-
-    switch (reason) {
-      case 'io server disconnect':
-        console.log('[WS] Server initiated disconnect');
-        this.attemptReconnect();
-        break;
-        
-      case 'io client disconnect':
-        console.log('[WS] Client initiated disconnect');
-        break;
-        
-      case 'ping timeout':
-        console.log('[WS] Ping timeout - attempting to reconnect');
-        this.attemptReconnect();
-        break;
-        
-      case 'transport close':
-        console.log('[WS] Transport closed - attempting to reconnect');
-        this.attemptReconnect();
-        break;
-        
-      case 'transport error':
-        console.log('[WS] Transport error - attempting to reconnect');
-        this.attemptReconnect();
-        break;
-        
-      default:
-        console.log(`[WS] Unexpected disconnect reason: ${reason} - attempting to reconnect`);
-        this.attemptReconnect();
-        break;
-    }
-  }
-
-  private handleConnectError(error: Error): void {
-    console.error('[WS] Connection error:', error.message);
     
-    if (this.connectionTimeoutId) {
-      clearTimeout(this.connectionTimeoutId);
-      this.connectionTimeoutId = null;
+    if (!this.isManualDisconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(
+        RECONNECT_DELAY_BASE * Math.pow(2, this.reconnectAttempts),
+        RECONNECT_DELAY_MAX
+      );
+      
+      console.log(`[WS] Retrying connection in ${delay}ms due to error (attempt ${this.reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+      
+      this.reconnectTimeoutId = setTimeout(() => {
+        this.reconnectAttempts++;
+        this.connect();
+      }, delay);
     }
-    
-    if (this.connectionState !== 'disconnected') {
-      this.setConnectionState('disconnected');
-    }
-    
-    this.stopHeartbeat();
-    this.attemptReconnect();
   }
 
   private handlePong(): void {
-    this.lastPongTime = Date.now();
     console.log('[WS] Received pong from server');
+    this.lastPongTime = Date.now();
     
     if (this.pingTimeoutId) {
       clearTimeout(this.pingTimeoutId);
@@ -208,17 +279,11 @@ class WebSocketService {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     
-    console.log('[WS] Starting heartbeat mechanism');
-    this.lastPongTime = Date.now();
-    
     this.heartbeatIntervalId = setInterval(() => {
-      if (this.socket?.connected && this.connectionState === 'connected') {
-        this.sendHeartbeat();
-      } else {
-        console.warn('[WS] Socket not connected during heartbeat - stopping heartbeat');
-        this.stopHeartbeat();
-      }
+      this.sendHeartbeat();
     }, HEARTBEAT_INTERVAL);
+    
+    console.log('[WS] Started heartbeat with interval:', HEARTBEAT_INTERVAL);
   }
 
   private stopHeartbeat(): void {

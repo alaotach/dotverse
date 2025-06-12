@@ -4,7 +4,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Hide scrollbar but keep functionality */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* Internet Explorer 10+ */
   scrollbar-width: none;  /* Firefox */
@@ -330,22 +329,10 @@ select {
     background: rgba(255, 255, 255, 0.95) !important;
     backdrop-filter: blur(10px) !important;
     border-radius: 12px !important;
-    padding: 8px !important; /* Reduced padding */
+    padding: 16px !important;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
-    overflow-x: auto; /* Enable horizontal scrolling */
-    white-space: nowrap; /* Prevent wrapping */
   }
   
-  /* Adjust padding for toolbar items on mobile */
-  [data-toolbar] > div > * {
-    padding: 4px 8px !important; 
-    margin-right: 8px !important; /* Add some spacing between items */
-  }
-
-  [data-toolbar] label {
-    font-size: 14px !important; /* Smaller labels */
-  }
-
   input[type="color"] {
     height: 48px !important;
     width: 48px !important;
@@ -493,4 +480,57 @@ body.modal-open {
   div.dada {
     display: none;
   }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thumb-purple-600\/50::-webkit-scrollbar-thumb {
+  background-color: rgba(147, 51, 234, 0.5);
+  border-radius: 3px;
+}
+
+.scrollbar-thumb-purple-600\/50::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(147, 51, 234, 0.7);
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes cyber-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(168, 85, 247, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.6), 0 0 30px rgba(168, 85, 247, 0.4);
+  }
+}
+
+.cyber-glow {
+  animation: cyber-pulse 2s ease-in-out infinite;
 }
