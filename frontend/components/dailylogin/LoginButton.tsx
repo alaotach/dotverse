@@ -25,14 +25,17 @@ export const DailyCheckInButton: React.FC = () => {
     <>
       <button
         onClick={() => setShowModal(true)}
+        onTouchEnd={() => setShowModal(true)}
         className={`
-          relative flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200
+          relative flex items-center gap-2 px-4 py-3 rounded-lg transition-all duration-200 min-h-[48px]
           ${canCheckIn
-            ? 'bg-yellow-600 hover:bg-yellow-700 text-white shadow-lg animate-pulse'
-            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            ? 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg animate-pulse'
+            : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-gray-300'
           }
         `}
+        style={{ touchAction: 'manipulation' }}
         title={canCheckIn ? 'Daily check-in available!' : 'Daily check-in'}
+        aria-label={canCheckIn ? 'Daily check-in available!' : 'Daily check-in'}
       >
         <FiCalendar size={18} />
         <span className="hidden sm:inline font-medium">Check-in</span>

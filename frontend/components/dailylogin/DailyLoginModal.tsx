@@ -13,7 +13,6 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
   const [currentStreak, setCurrentStreak] = useState(0);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [canCheckIn, setCanCheckIn] = useState(false);
-  const [isChecking, setIsChecking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastReward, setLastReward] = useState(0);
   const { addCoins } = useEconomy();
@@ -22,11 +21,14 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
     if (isOpen) {
       loadCheckInData();
       document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
     } else {
       document.body.style.overflow = 'unset';
+      document.body.style.touchAction = 'auto';
     }
     return () => {
       document.body.style.overflow = 'unset';
+      document.body.style.touchAction = 'auto';
     };
   }, [isOpen]);
 
@@ -37,11 +39,24 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
     setCanCheckIn(dailyCheckInService.canCheckInToday());
   };
 
-  const handleCheckIn = async () => {
-    if (!canCheckIn || isChecking) return;
+  const handleBackdropClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
 
-    setIsChecking(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
+  const handleCloseClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClose();
+  };
+
+  const handleCheckInClick = async (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canCheckIn) return;
 
     const result = dailyCheckInService.checkIn();
     
@@ -52,15 +67,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
       loadCheckInData();
       setTimeout(() => {
         setShowSuccess(false);
-      }, 3000);
-    }
-
-    setIsChecking(false);
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
+      }, 2000);
     }
   };
 
@@ -68,8 +75,11 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
 
   return (
     <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={handleBackdropClick}
+      onTouchEnd={handleBackdropClick}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
       style={{ 
         position: 'fixed',
         top: 0,
@@ -78,16 +88,24 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
         bottom: 0,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        touchAction: 'none',
+        pointerEvents: 'all',
+        zIndex: 99999
       }}
     >
       <div 
         className="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl shadow-purple-500/20 relative transform transition-all duration-300 scale-100"
         onClick={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
         style={{ 
           margin: 'auto',
           maxHeight: '85vh',
-          overflowY: 'auto'
+          overflowY: 'auto',
+          touchAction: 'pan-y',
+          pointerEvents: 'all'
         }}
       >
         <div className="sticky top-0 bg-gray-900 flex items-center justify-between p-4 border-b border-gray-700 z-10">
@@ -96,8 +114,13 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
             <h2 className="text-xl font-bold text-white">Daily Check-In</h2>
           </div>
           <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800 rounded-lg"
+            onClick={handleCloseClick}
+            onTouchEnd={handleCloseClick}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="text-gray-400 hover:text-white active:text-white transition-colors p-3 hover:bg-gray-800 active:bg-gray-700 rounded-lg min-w-[48px] min-h-[48px] flex items-center justify-center"
+            style={{ touchAction: 'manipulation', pointerEvents: 'all' }}
+            aria-label="Close modal"
           >
             <FiX size={24} />
           </button>
@@ -163,27 +186,17 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
         <div className="sticky bottom-0 bg-gray-900 p-4 border-t border-gray-700">
           {canCheckIn ? (
             <button
-              onClick={handleCheckIn}
-              disabled={isChecking}
-              className={`
-                w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[48px]
-                ${isChecking
-                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                  : 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
-                }
-              `}
+              onClick={handleCheckInClick}
+              onTouchEnd={handleCheckInClick}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="w-full py-4 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[56px] text-lg bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]"
+              style={{ touchAction: 'manipulation', pointerEvents: 'all' }}
             >
-              {isChecking ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                  Checking in...
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2">
-                  <FiGift />
-                  Check In (+{dailyCheckInService.getNextReward()} coins)
-                </div>
-              )}
+              <div className="flex items-center justify-center gap-2">
+                <FiGift />
+                Check In (+{dailyCheckInService.getNextReward()} coins)
+              </div>
             </button>
           ) : (
             <div className="text-center py-2">

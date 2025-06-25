@@ -22,7 +22,6 @@ import { DailyCheckInModal } from './dailylogin/DailyLoginModal';
 import LandAnimationModal from "./lands/LandAnimationModal";
 import type { LandFramePixelData, LandFrame } from "../src/services/landService";
 import LandSelectionModal from './lands/LandSelectionModal';
-import CanvasLoading from './layout/CanvasLoading'
 
 interface AnimatedLandState {
   landId: string;
@@ -651,28 +650,7 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
     mergeCandidates: MergeCandidate[];
   } | null>(null);
 
-  const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);  const [showCanvasAnimation, setShowCanvasAnimation] = useState(true);
-  const [canvasAnimationComplete, setCanvasAnimationComplete] = useState(false);
-
-  const handleCanvasAnimationComplete = () => {
-    setCanvasAnimationComplete(true);
-    setTimeout(() => {
-      setShowCanvasAnimation(false);
-    }, 500);
-  };
-
-  useEffect(() => {
-    if (isMobile && showCanvasAnimation) {
-      const timer = setTimeout(() => {
-        console.log('[Canvas] Auto-skipping heavy animation on mobile');
-        setShowCanvasAnimation(false);
-        setCanvasAnimationComplete(true);
-      }, 1500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isMobile, showCanvasAnimation]);
-
+  const [showMergeModal, setShowMergeModal] = useState(false);  const [selectedMergeCandidate, setSelectedMergeCandidate] = useState<MergeCandidate | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (_event: MouseEvent) => {
@@ -3451,100 +3429,18 @@ useEffect(() => {
     lastAnimationUpdate.current.delete(landId);
   }, []);
 
-  if (!initialDataLoaded || showCanvasAnimation) {
-    console.log("Canvas render: Displaying LOADING screen because initialDataLoaded is false.");
+  if (!initialDataLoaded) {
+    console.log("Canvas render: Displaying simple loading screen because initialDataLoaded is false.");
     
     return (
-      <div className="relative w-screen h-screen overflow-hidden bg-gray-900">
-        {showCanvasAnimation && !isMobile && (
-          <CanvasLoading 
-            onAnimationComplete={handleCanvasAnimationComplete}
-            className="canvas-loading-animation"
-          />
-        )}
-        
-        {showCanvasAnimation && isMobile && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
-            <div className="text-center text-white">
-              <div className="text-6xl mb-4 animate-pulse">🎨</div>
-              <div className="text-2xl font-bold mb-2">dotVerse</div>
-              <div className="text-lg opacity-75">Loading Canvas...</div>
-              <div className="mt-4">
-                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
-              </div>
-              <div className="mt-4 text-sm opacity-50">
-                Loading...
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {isMobile && showCanvasAnimation && (
-          <div className="absolute bottom-4 right-4">
-            <button
-              onClick={() => {
-                setShowCanvasAnimation(false);
-                setCanvasAnimationComplete(true);
-                handleCanvasAnimationComplete();
-              }}
-              className="px-4 py-2 bg-white/20 text-white rounded-lg backdrop-blur-sm"
-            >
-              Skip Animation
-            </button>
-          </div>
-        )}
-      
-      {canvasAnimationComplete && (!initialDataLoaded || !isViewportReady) && (
-      <div ref={canvasContainerRef} className="flex justify-center items-center h-screen bg-gray-800" onWheel={handleWheel}>
-        <div className="flex flex-col items-center text-white max-w-sm mx-4">
-          <div className="w-12 h-12 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>          
-          <div className="text-xl mb-2 text-center">Loading Canvas...</div>
-          <div className="text-sm text-gray-300 mb-4 text-center">
-            {!initialDataLoaded 
-              ? (wsConnected ? "Connected to server, loading data..." : "Connecting to server...")
-              : "Setting up viewport..."
-            }
-          </div>
-            <div className="flex flex-col space-y-3 w-full">
-            <button 
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('[Canvas] Force loading canvas');
-                setInitialDataLoaded(true);
-                setIsViewportReady(true);
-                setGrid(new Map());
-                masterGridDataRef.current = new Map();
-              }}
-              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-lg font-medium"
-            >
-              Enter Canvas
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('[Canvas] Retry sync');
-                requestFullSync();
-              }}
-              className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-            >
-              Retry Connection
-            </button>
-          </div>
-          
-          <div className="mt-4 text-xs text-gray-400 text-center space-y-1">
-            <div>Status: {wsConnected ? 'Connected' : 'Disconnected'}</div>
-            <div>Data: {initialDataLoaded ? 'Loaded' : 'Loading'}</div>
-            <div>Viewport: {isViewportReady ? 'Ready' : 'Setting up'}</div>          </div>
+      <div className="relative w-screen h-screen overflow-hidden bg-gray-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="text-lg">Loading Canvas...</div>
         </div>
-      </div>
-      )}
       </div>
     );
   }
-
 
   return (
     <div 
