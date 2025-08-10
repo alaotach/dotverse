@@ -1013,7 +1013,6 @@ const loadAnimatedLandData = useCallback(async (land: UserLandInfo) => {
       link.download = `dotverse_screenshot_${new Date().toISOString()}.png`;
       link.href = dataUrl;
       link.click();
-      window.location.href = '/gallery';
     } catch (error) {
       console.error("Error capturing screenshot:", error);
       alert("Failed to capture screenshot. Please try again.");
