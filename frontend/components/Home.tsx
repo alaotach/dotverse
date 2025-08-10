@@ -116,7 +116,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-none">
+        <div className="w-1/2 flex flex-col justify-center items-end pr-8 lg:pr-16 xl:pr-24 pointer-events-auto">
           {currentUser && userProfile ? (
             <div className={`hidden max-w-md w-full transition-all duration-1000 delay-700 ${
               isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'
@@ -379,7 +379,7 @@ export default function Home() {
           <div className="px-6 pb-12">
             {currentUser && userProfile ? (
   
-              <div className="max-w-sm mx-auto">
+              <div className="max-w-sm mx-auto pointer-events-auto">
                 <div className="group relative">
                   <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-500"></div>
                   
@@ -440,7 +440,7 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="max-w-sm mx-auto">
+              <div className="max-w-sm mx-auto pointer-events-auto">
                 <div className="relative">
                   <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/30 via-purple-600/30 to-pink-600/30 rounded-2xl blur"></div>
                   <div className="relative bg-black/80 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6 text-center">

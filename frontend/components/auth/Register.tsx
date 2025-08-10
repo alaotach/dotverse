@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../src/context/AuthContext';
+import { Fetch } from 'socket.io-client';
 
 export default function Register() {
   const [email, setEmail] = useState('');

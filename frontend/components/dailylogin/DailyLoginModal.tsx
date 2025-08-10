@@ -13,6 +13,7 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
   const [currentStreak, setCurrentStreak] = useState(0);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [canCheckIn, setCanCheckIn] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastReward, setLastReward] = useState(0);
   const { addCoins } = useEconomy();
@@ -56,7 +57,9 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
   const handleCheckInClick = async (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!canCheckIn) return;
+    if (!canCheckIn || isChecking) return;
+
+    setIsChecking(true);
 
     const result = dailyCheckInService.checkIn();
     
@@ -69,6 +72,8 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
         setShowSuccess(false);
       }, 2000);
     }
+
+    setIsChecking(false);
   };
 
   if (!isOpen) return null;
@@ -190,13 +195,27 @@ export const DailyCheckInModal: React.FC<DailyCheckInModalProps> = ({ isOpen, on
               onTouchEnd={handleCheckInClick}
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
-              className="w-full py-4 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[56px] text-lg bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]"
+              disabled={isChecking}
+              className={`
+                w-full py-4 px-4 rounded-lg font-semibold transition-all duration-200 min-h-[56px] text-lg
+                ${isChecking
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                  : 'bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]'
+                }
+              `}
               style={{ touchAction: 'manipulation', pointerEvents: 'all' }}
             >
-              <div className="flex items-center justify-center gap-2">
-                <FiGift />
-                Check In (+{dailyCheckInService.getNextReward()} coins)
-              </div>
+              {isChecking ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  Checking in...
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  <FiGift />
+                  Check In (+{dailyCheckInService.getNextReward()} coins)
+                </div>
+              )}
             </button>
           ) : (
             <div className="text-center py-2">
